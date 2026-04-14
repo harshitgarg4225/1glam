@@ -471,9 +471,11 @@ app.post("/webhooks/meta", async (req, res, next) => {
   try {
     const body = req.body as Record<string, unknown>;
     const object = typeof body.object === "string" ? body.object : "";
+    const field = typeof body.field === "string" ? body.field : "";
     let workspace = null;
     let channel: "WhatsApp" | "Instagram" | null = null;
     let actorId = "";
+    let recipientId = "";
 
     if (object === "whatsapp_business_account") {
       const entry = Array.isArray(body.entry) ? (body.entry[0] as Record<string, unknown>) : undefined;
@@ -502,21 +504,51 @@ app.post("/webhooks/meta", async (req, res, next) => {
       const messaging =
         entry && Array.isArray(entry.messaging) ? (entry.messaging[0] as Record<string, unknown>) : undefined;
       const sender = messaging?.sender as Record<string, unknown> | undefined;
+      const recipient = messaging?.recipient as Record<string, unknown> | undefined;
       actorId = typeof sender?.id === "string" ? sender.id : "";
+      recipientId = typeof recipient?.id === "string" ? recipient.id : "";
       workspace = await findWorkspaceByMetaAsset({
         channel: "instagram",
-        instagramBusinessAccountId,
+        instagramBusinessAccountId: instagramBusinessAccountId ?? recipientId,
       });
       channel = "Instagram";
+    } else if (field === "messages") {
+      const value = body.value as Record<string, unknown> | undefined;
+      const sender = value?.sender as Record<string, unknown> | undefined;
+      const recipient = value?.recipient as Record<string, unknown> | undefined;
+      actorId = typeof sender?.id === "string" ? sender.id : "";
+      recipientId = typeof recipient?.id === "string" ? recipient.id : "";
+      workspace = await findWorkspaceByMetaAsset({
+        channel: "instagram",
+        instagramBusinessAccountId: recipientId,
+      });
+      channel = workspace ? "Instagram" : null;
     }
 
     if (workspace && channel) {
       const tokens = await getWorkspaceCredentials(workspace.email);
+      const inboundText = extractInboundTextFromMetaWebhook(body);
+
+      if (channel === "Instagram" && inboundText) {
+        await ingestNormalizedLead(tokens, {
+          workspaceEmail: workspace.email,
+          source: "Instagram",
+          clientName: actorId ? `Instagram ${actorId}` : "Instagram Lead",
+          clientWhatsApp: "",
+          clientInstagram: actorId || undefined,
+          eventType: "Other",
+          eventDate: new Date().toISOString().slice(0, 10),
+          locationText: "Unknown",
+          inboundMessage: inboundText,
+          actorId: actorId || "instagram-user",
+        });
+      }
+
       await logInteractionForWorkspace(workspace.email, tokens, {
         direction: "Inbound",
         channel,
         actor: actorId || "meta-user",
-        message: extractInboundTextFromMetaWebhook(body) || JSON.stringify(body).slice(0, 500),
+        message: inboundText || JSON.stringify(body).slice(0, 500),
         aiSummary: "Direct Meta webhook received",
       });
     }

@@ -91,6 +91,7 @@ export async function ingestNormalizedLead(tokens: Credentials, input: Normalize
 
 export function extractInboundTextFromMetaWebhook(payload: Record<string, unknown>) {
   const object = typeof payload.object === "string" ? payload.object : "";
+  const field = typeof payload.field === "string" ? payload.field : "";
 
   if (object === "whatsapp_business_account") {
     const entry = Array.isArray(payload.entry) ? payload.entry[0] : undefined;
@@ -111,6 +112,21 @@ export function extractInboundTextFromMetaWebhook(payload: Record<string, unknow
       ? ((entry as Record<string, unknown>).messaging as Array<Record<string, unknown>>)[0]
       : undefined;
     const message = messaging?.message as Record<string, unknown> | undefined;
+    return typeof message?.text === "string" ? message.text : "";
+  }
+
+  if (object === "instagram") {
+    const entry = Array.isArray(payload.entry) ? payload.entry[0] : undefined;
+    const messaging = entry && Array.isArray((entry as Record<string, unknown>).messaging)
+      ? ((entry as Record<string, unknown>).messaging as Array<Record<string, unknown>>)[0]
+      : undefined;
+    const message = messaging?.message as Record<string, unknown> | undefined;
+    return typeof message?.text === "string" ? message.text : "";
+  }
+
+  if (field === "messages") {
+    const value = payload.value as Record<string, unknown> | undefined;
+    const message = value?.message as Record<string, unknown> | undefined;
     return typeof message?.text === "string" ? message.text : "";
   }
 
