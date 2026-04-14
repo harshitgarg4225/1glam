@@ -610,6 +610,15 @@
           const handle = channel === "instagram"
             ? (connection?.instagramUsername || connection?.pageName || "No asset selected yet")
             : (connection?.businessAccountName || connection?.phoneNumberId || "No phone number linked yet");
+          const connectControl = channel === "instagram"
+            ? `<button class="button small" type="button" disabled>Use Token Below</button>`
+            : `<a href="/auth/meta/start?channel=${channel}&workspaceEmail=${encodeURIComponent(profile.email)}"><button class="button small" type="button">Connect</button></a>`;
+          const instagramTokenInput = channel === "instagram" ? `
+            <div style="margin-top:10px;">
+              <input type="password" placeholder="Paste Instagram token" data-instagram-token-input style="width:100%;margin-bottom:8px;" />
+              <button class="button small secondary" type="button" data-instagram-token-save>Save Token</button>
+            </div>
+          ` : "";
 
           return `
             <div class="mini-card">
@@ -617,9 +626,10 @@
               <p style="margin:8px 0 6px;"><span class="${status === "connected" ? "pill success" : "pill warning"}">${status}</span></p>
               <p class="muted" style="margin:0 0 10px;">${handle}</p>
               <div class="action-row">
-                <a href="/auth/meta/start?channel=${channel}&workspaceEmail=${encodeURIComponent(profile.email)}"><button class="button small" type="button">Connect</button></a>
+                ${connectControl}
                 <button class="button small secondary" type="button" data-meta-disconnect="${channel}">Disconnect</button>
               </div>
+              ${instagramTokenInput}
             </div>
           `;
         }
@@ -751,6 +761,28 @@
       });
 
       metaSummary.addEventListener("click", async (event) => {
+        const tokenButton = event.target.closest("button[data-instagram-token-save]");
+        if (tokenButton) {
+          const card = tokenButton.closest(".mini-card");
+          const input = card?.querySelector("input[data-instagram-token-input]");
+          const accessToken = input?.value?.trim();
+          if (!accessToken) {
+            loginState.textContent = "Paste the Instagram token first.";
+            return;
+          }
+
+          try {
+            loginState.textContent = "Saving Instagram token...";
+            await postJson("/api/meta/instagram/token", { accessToken });
+            if (input) input.value = "";
+            await refreshSession();
+            loginState.textContent = "Instagram connected.";
+          } catch (error) {
+            loginState.textContent = error.message;
+          }
+          return;
+        }
+
         const button = event.target.closest("button[data-meta-disconnect]");
         if (!button) return;
         const channel = button.getAttribute("data-meta-disconnect");

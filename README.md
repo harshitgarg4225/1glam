@@ -44,6 +44,8 @@ Private-code booking infrastructure for luxury makeup artists. The app keeps pla
    - `META_APP_SECRET`
    - `META_REDIRECT_PATH`
    - `META_WEBHOOK_VERIFY_TOKEN`
+   - `META_INSTAGRAM_CONFIG_ID`
+   - `META_WHATSAPP_CONFIG_ID`
 5. Install dependencies:
    - `npm install`
 6. Start the app:
@@ -173,9 +175,20 @@ Each webhook response now also includes an `outboundTemplate` object you can han
 
 - Each MUA connects her own Meta assets through self-serve login and consent.
 - Meta connections are stored per workspace and never shared across artists.
+- The preferred connect flow uses Meta Business Login `configuration_id` values for Instagram and WhatsApp.
 - Direct Meta webhooks are verified through `GET /webhooks/meta`.
 - Data deletion callbacks are handled through `POST /compliance/meta/data-deletion`.
 - The current implementation stores Meta tokens in the local workspace JSON store for development. Production should move this to encrypted storage.
+
+### Meta Business Login setup
+
+- Create one Business Login configuration for Instagram onboarding
+- Create one Business Login configuration for WhatsApp onboarding
+- Put those values into:
+  - `META_INSTAGRAM_CONFIG_ID`
+  - `META_WHATSAPP_CONFIG_ID`
+- Use the same redirect URI:
+  - `https://1glam-production.up.railway.app/auth/meta/callback`
 
 ## Important note
 

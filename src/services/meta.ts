@@ -2,6 +2,11 @@ import crypto from "node:crypto";
 import { appConfig } from "../config.js";
 import type { MetaChannel, MetaChannelConnection } from "../types.js";
 
+const INSTAGRAM_LOGIN_SCOPES = [
+  "instagram_business_basic",
+  "instagram_business_manage_messages",
+];
+
 const INSTAGRAM_SCOPES = [
   "pages_show_list",
   "pages_manage_metadata",
@@ -25,8 +30,21 @@ export function getMetaConnectUrl(input: { workspaceEmail: string; channel: Meta
   url.searchParams.set("client_id", appConfig.metaAppId);
   url.searchParams.set("redirect_uri", appConfig.metaRedirectUrl);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", getMetaScopes(input.channel).join(","));
   url.searchParams.set("state", encodeState(input));
+
+  const configurationId =
+    input.channel === "instagram"
+      ? appConfig.metaInstagramConfigId
+      : appConfig.metaWhatsappConfigId;
+
+  // Meta Business Login prefers configuration_id-based auth for business asset onboarding.
+  if (configurationId) {
+    url.searchParams.set("config_id", configurationId);
+  } else {
+    // Fallback for development only. Raw scopes may not work for all Meta business login setups.
+    url.searchParams.set("scope", getMetaScopes(input.channel).join(","));
+  }
+
   return url.toString();
 }
 
@@ -83,6 +101,49 @@ export async function fetchMetaConnectionProfile(input: {
     dataIsolationKey: crypto
       .createHash("sha256")
       .update(`${input.channel}:${String(me?.id ?? "")}:${String(firstPage?.id ?? "")}`)
+      .digest("hex"),
+  };
+}
+
+export async function fetchInstagramLoginConnectionProfile(
+  accessToken: string,
+): Promise<MetaChannelConnection> {
+  const me = await instagramGraphGet(
+    "me?fields=id,user_id,username,name,account_type,profile_picture_url",
+    accessToken,
+  );
+  const profile = Array.isArray(me?.data) ? me.data[0] : me;
+  if (!profile || (typeof profile !== "object")) {
+    throw new Error("Instagram token lookup failed");
+  }
+
+  const appScopedId = typeof profile.id === "string" ? profile.id : "";
+  const professionalAccountId =
+    typeof profile.user_id === "string" ? profile.user_id : appScopedId;
+  const username = typeof profile.username === "string" ? profile.username : "";
+  const displayName =
+    typeof profile.name === "string" && profile.name.trim().length > 0
+      ? profile.name
+      : username;
+
+  if (!professionalAccountId || !username) {
+    throw new Error("Instagram account details are incomplete");
+  }
+
+  return {
+    channel: "instagram",
+    status: "connected",
+    connectedAt: new Date().toISOString(),
+    metaUserId: appScopedId || professionalAccountId,
+    metaUserName: displayName,
+    accessToken,
+    tokenExpiresAt: null,
+    scopes: INSTAGRAM_LOGIN_SCOPES,
+    instagramBusinessAccountId: professionalAccountId,
+    instagramUsername: username,
+    dataIsolationKey: crypto
+      .createHash("sha256")
+      .update(`instagram-login:${professionalAccountId}`)
       .digest("hex"),
   };
 }
@@ -146,6 +207,17 @@ async function graphGet(path: string, accessToken: string) {
   const response = await fetch(url.toString());
   if (!response.ok) {
     return null;
+  }
+  return (await response.json()) as Record<string, unknown>;
+}
+
+async function instagramGraphGet(path: string, accessToken: string) {
+  const url = new URL(`https://graph.instagram.com/${path}`);
+  url.searchParams.set("access_token", accessToken);
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Instagram token lookup failed: ${message}`);
   }
   return (await response.json()) as Record<string, unknown>;
 }

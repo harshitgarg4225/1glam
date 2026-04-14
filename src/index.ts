@@ -19,6 +19,7 @@ import { exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./service
 import { extractInboundTextFromMetaWebhook, ingestNormalizedLead, logInteractionForWorkspace } from "./services/integrations.js";
 import {
   exchangeMetaCode,
+  fetchInstagramLoginConnectionProfile,
   fetchMetaConnectionProfile,
   getMetaConnectUrl,
   parseMetaState,
@@ -147,6 +148,10 @@ app.get("/auth/meta/callback", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.get("/auth/instagram/callback", (_req, res) => {
+  res.redirect("/?instagram_login_ready=1");
 });
 
 app.get("/api/session", async (req, res, next) => {
@@ -326,6 +331,26 @@ app.post("/api/meta/connections/:channel/assets", async (req, res, next) => {
   }
 });
 
+app.post("/api/meta/instagram/token", async (req, res, next) => {
+  try {
+    if (!req.session.profile) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const accessToken =
+      typeof req.body?.accessToken === "string" ? req.body.accessToken.trim() : "";
+    if (!accessToken) {
+      return res.status(400).json({ error: "Instagram access token is required" });
+    }
+
+    const connection = await fetchInstagramLoginConnectionProfile(accessToken);
+    const workspace = await upsertMetaConnection(req.session.profile.email, "instagram", connection);
+    res.json({ ok: true, connection, workspace });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
   try {
     if (!req.session.profile) {
@@ -469,6 +494,19 @@ app.post("/webhooks/meta", async (req, res, next) => {
       const sender = messaging?.sender as Record<string, unknown> | undefined;
       actorId = typeof sender?.id === "string" ? sender.id : "";
       workspace = await findWorkspaceByMetaAsset({ channel: "instagram", pageId });
+      channel = "Instagram";
+    } else if (object === "instagram") {
+      const entry = Array.isArray(body.entry) ? (body.entry[0] as Record<string, unknown>) : undefined;
+      const instagramBusinessAccountId =
+        typeof entry?.id === "string" ? entry.id : undefined;
+      const messaging =
+        entry && Array.isArray(entry.messaging) ? (entry.messaging[0] as Record<string, unknown>) : undefined;
+      const sender = messaging?.sender as Record<string, unknown> | undefined;
+      actorId = typeof sender?.id === "string" ? sender.id : "";
+      workspace = await findWorkspaceByMetaAsset({
+        channel: "instagram",
+        instagramBusinessAccountId,
+      });
       channel = "Instagram";
     }
 

@@ -18,6 +18,8 @@ const envSchema = z.object({
   META_APP_SECRET: z.string().optional().default(""),
   META_REDIRECT_PATH: z.string().default("/auth/meta/callback"),
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional().default(""),
+  META_INSTAGRAM_CONFIG_ID: z.string().optional().default(""),
+  META_WHATSAPP_CONFIG_ID: z.string().optional().default(""),
   GOOGLE_OAUTH_SCOPES: z
     .string()
     .default(
@@ -51,6 +53,8 @@ export const appConfig = {
   metaRedirectPath: parsed.META_REDIRECT_PATH,
   metaRedirectUrl: new URL(parsed.META_REDIRECT_PATH, parsed.APP_BASE_URL).toString(),
   metaWebhookVerifyToken: parsed.META_WEBHOOK_VERIFY_TOKEN,
+  metaInstagramConfigId: parsed.META_INSTAGRAM_CONFIG_ID,
+  metaWhatsappConfigId: parsed.META_WHATSAPP_CONFIG_ID,
   googleScopes: parsed.GOOGLE_OAUTH_SCOPES.split(",").map((scope) => scope.trim()).filter(Boolean),
   workspaceDbPath: path.join(process.cwd(), "data", "workspaces.json"),
 };
