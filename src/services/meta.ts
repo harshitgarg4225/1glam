@@ -117,9 +117,8 @@ export async function fetchInstagramLoginConnectionProfile(
     throw new Error("Instagram token lookup failed");
   }
 
-  const appScopedId = typeof profile.id === "string" ? profile.id : "";
-  const professionalAccountId =
-    typeof profile.user_id === "string" ? profile.user_id : appScopedId;
+  const appScopedId = normalizeStringValue(profile.id);
+  const professionalAccountId = normalizeStringValue(profile.user_id) || appScopedId;
   const username = typeof profile.username === "string" ? profile.username : "";
   const displayName =
     typeof profile.name === "string" && profile.name.trim().length > 0
@@ -226,4 +225,14 @@ function base64UrlDecode(input: string) {
   const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
   const pad = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
   return Buffer.from(normalized + pad, "base64");
+}
+
+function normalizeStringValue(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return "";
 }
