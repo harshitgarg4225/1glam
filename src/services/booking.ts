@@ -1,0 +1,824 @@
+import { nanoid } from "nanoid";
+import type { Credentials } from "google-auth-library";
+import type { calendar_v3 } from "googleapis";
+import { createGoogleClients } from "./google.js";
+import { enrichLeadWithGrok } from "./grok.js";
+import { resolveTravelIntelligence } from "./maps.js";
+import { getWorkspaceByEmail } from "./workspace.js";
+import { bookingHeaders, leadHeaders, sheetNames } from "./sheet-definitions.js";
+import type { WorkspaceRecord } from "../types.js";
+
+export type LeadStatus =
+  | "New"
+  | "Awaiting Client"
+  | "Confirmed"
+  | "Payment Pending"
+  | "Payment Received"
+  | "Completed"
+  | "Lost";
+
+export type LeadRecord = {
+  leadId: string;
+  createdAt: string;
+  source: string;
+  clientName: string;
+  clientWhatsApp: string;
+  clientInstagram: string;
+  eventType: string;
+  eventDate: string;
+  eventTime: string;
+  locationText: string;
+  distanceKm: number;
+  travelTimeMin: number;
+  outstationFlag: string;
+  profileTier: string;
+  followers: number;
+  clientTags: string;
+  aiInsight: string;
+  suggestedReply: string;
+  demandCount: number;
+  scarcityTag: string;
+  holdExpiresAt: string;
+  initialAiPrice: number;
+  finalApprovedPrice: number;
+  discountPercent: number;
+  ownerDecision: string;
+  ownerNotes: string;
+  status: LeadStatus;
+  assignedArtist: string;
+  lastContactedAt: string;
+  tentativeCalendarEventId: string;
+  confirmedCalendarEventId: string;
+  bookingId: string;
+  paymentStatus: string;
+};
+
+type BookingRecord = {
+  bookingId: string;
+  leadId: string;
+  bookedAt: string;
+  clientName: string;
+  clientWhatsApp: string;
+  eventType: string;
+  eventDate: string;
+  eventTime: string;
+  venue: string;
+  assignedArtist: string;
+  finalPrice: number;
+  advanceAmount: number;
+  balanceDue: number;
+  tentativeCalendarEventId: string;
+  confirmedCalendarEventId: string;
+  contractUrl: string;
+  invoiceUrl: string;
+  paymentStatus: string;
+  status: string;
+};
+
+export type DashboardData = {
+  leads: LeadRecord[];
+  bookings: BookingRecord[];
+};
+
+type PricingResult = {
+  basePrice: number;
+  seasonMultiplier: number;
+  demandMultiplier: number;
+  profileMultiplier: number;
+  travelCost: number;
+  finalPrice: number;
+  scarcityTag: string;
+  travelSource: "google_maps" | "fallback" | "manual";
+};
+
+export type CreateLeadInput = {
+  source: string;
+  clientName: string;
+  clientWhatsApp: string;
+  clientInstagram?: string;
+  eventType: string;
+  eventDate: string;
+  eventTime?: string;
+  locationText: string;
+  distanceKm?: number;
+  travelTimeMin?: number;
+  profileTier?: string;
+  followers?: number;
+  clientTags?: string;
+  inboundMessage?: string;
+};
+
+export async function createLeadForWorkspace(
+  email: string,
+  tokens: Credentials,
+  input: CreateLeadInput,
+) {
+  const workspace = await getRequiredWorkspace(email);
+  const { sheets } = createGoogleClients(tokens);
+  const demandCount = await getDemandCountForDate(workspace, tokens, input.eventDate);
+  const travel = await resolveTravelIntelligence({
+    originCity: workspace.config.city,
+    destinationText: input.locationText,
+    manualDistanceKm: input.distanceKm,
+    manualTravelTimeMin: input.travelTimeMin,
+    outstationThresholdKm: workspace.config.travelOutstationThresholdKm,
+  });
+  const aiLeadIntel = await enrichLeadWithGrok({
+    ownerName: workspace.config.ownerName,
+    brandName: workspace.config.businessName,
+    city: workspace.config.city,
+    source: input.source,
+    clientName: input.clientName,
+    clientInstagram: input.clientInstagram,
+    eventType: input.eventType,
+    eventDate: input.eventDate,
+    eventTime: input.eventTime,
+    locationText: input.locationText,
+    followers: input.followers,
+    inboundMessage: input.inboundMessage,
+  });
+  const resolvedProfileTier = input.profileTier ?? aiLeadIntel?.profileTier ?? "Mid";
+  const pricing = calculatePricing(workspace, { ...input, profileTier: resolvedProfileTier }, demandCount, travel);
+  const createdAt = new Date().toISOString();
+
+  const lead: LeadRecord = {
+    leadId: buildId("L"),
+    createdAt,
+    source: input.source,
+    clientName: input.clientName,
+    clientWhatsApp: input.clientWhatsApp,
+    clientInstagram: input.clientInstagram ?? "",
+    eventType: input.eventType,
+    eventDate: input.eventDate,
+    eventTime: input.eventTime ?? "",
+    locationText: travel.normalizedDestination || input.locationText,
+    distanceKm: travel.distanceKm,
+    travelTimeMin: travel.travelTimeMin,
+    outstationFlag: travel.outstation ? "Yes" : "No",
+    profileTier: resolvedProfileTier,
+    followers: input.followers ?? 0,
+    clientTags: input.clientTags ?? aiLeadIntel?.clientTags ?? "",
+    aiInsight: aiLeadIntel?.aiInsight ?? "",
+    suggestedReply: aiLeadIntel?.suggestedReply ?? "",
+    demandCount,
+    scarcityTag: pricing.scarcityTag,
+    holdExpiresAt: "",
+    initialAiPrice: pricing.finalPrice,
+    finalApprovedPrice: pricing.finalPrice,
+    discountPercent: 0,
+    ownerDecision: "",
+    ownerNotes: "",
+    status: "New",
+    assignedArtist: workspace.config.ownerName || "Owner",
+    lastContactedAt: createdAt,
+    tentativeCalendarEventId: "",
+    confirmedCalendarEventId: "",
+    bookingId: "",
+    paymentStatus: "Not Started",
+  };
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.leads}!A:${toColumn(leadHeaders.length)}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [leadToRow(lead)],
+    },
+  });
+
+  return {
+    lead,
+    pricing,
+    travel,
+    aiLeadIntel,
+  };
+}
+
+export async function applyOwnerDecision(
+  email: string,
+  tokens: Credentials,
+  leadId: string,
+  decision: "YES" | "NO" | "EDIT",
+  approvedPrice?: number,
+  ownerNotes?: string,
+) {
+  const workspace = await getRequiredWorkspace(email);
+  const lead = await findLeadById(workspace, tokens, leadId);
+  if (!lead) {
+    throw new Error("Lead not found");
+  }
+
+  if (decision === "NO") {
+    const updated: LeadRecord = {
+      ...lead.record,
+      ownerDecision: "NO",
+      ownerNotes: ownerNotes ?? "",
+      status: "Lost",
+      lastContactedAt: new Date().toISOString(),
+    };
+    await updateLeadRow(workspace, tokens, lead.rowNumber, updated);
+    return { lead: updated };
+  }
+
+  const finalApprovedPrice = approvedPrice ?? lead.record.initialAiPrice;
+  const discountPercent =
+    lead.record.initialAiPrice > 0
+      ? Math.max(0, Math.round(((lead.record.initialAiPrice - finalApprovedPrice) / lead.record.initialAiPrice) * 100))
+      : 0;
+  const holdExpiresAt = new Date(
+    Date.now() + workspace.config.holdExpiryHours * 60 * 60 * 1000,
+  ).toISOString();
+
+  const tentativeEventId = await upsertTentativeCalendarEvent(workspace, tokens, {
+    ...lead.record,
+    finalApprovedPrice,
+    holdExpiresAt,
+    status: "Awaiting Client",
+  });
+
+  const updated: LeadRecord = {
+    ...lead.record,
+    ownerDecision: decision,
+    ownerNotes: ownerNotes ?? "",
+    finalApprovedPrice,
+    discountPercent,
+    holdExpiresAt,
+    status: "Awaiting Client",
+    lastContactedAt: new Date().toISOString(),
+    tentativeCalendarEventId: tentativeEventId,
+  };
+
+  await updateLeadRow(workspace, tokens, lead.rowNumber, updated);
+  return { lead: updated };
+}
+
+export async function confirmLeadBooking(email: string, tokens: Credentials, leadId: string) {
+  const workspace = await getRequiredWorkspace(email);
+  const lead = await findLeadById(workspace, tokens, leadId);
+  if (!lead) {
+    throw new Error("Lead not found");
+  }
+
+  const bookingId = buildId("B");
+  const advanceAmount = roundToPremiumNumber(
+    (lead.record.finalApprovedPrice * workspace.config.advancePercentage) / 100,
+  );
+  const balanceDue = Math.max(0, lead.record.finalApprovedPrice - advanceAmount);
+  const confirmedEventId = await createConfirmedCalendarEvent(workspace, tokens, {
+    ...lead.record,
+    bookingId,
+  });
+
+  if (lead.record.tentativeCalendarEventId) {
+    await deleteCalendarEvent(
+      tokens,
+      workspace.tentativeCalendarId,
+      lead.record.tentativeCalendarEventId,
+    );
+  }
+
+  const booking: BookingRecord = {
+    bookingId,
+    leadId: lead.record.leadId,
+    bookedAt: new Date().toISOString(),
+    clientName: lead.record.clientName,
+    clientWhatsApp: lead.record.clientWhatsApp,
+    eventType: lead.record.eventType,
+    eventDate: lead.record.eventDate,
+    eventTime: lead.record.eventTime,
+    venue: lead.record.locationText,
+    assignedArtist: lead.record.assignedArtist,
+    finalPrice: lead.record.finalApprovedPrice,
+    advanceAmount,
+    balanceDue,
+    tentativeCalendarEventId: lead.record.tentativeCalendarEventId,
+    confirmedCalendarEventId: confirmedEventId,
+    contractUrl: "",
+    invoiceUrl: "",
+    paymentStatus: "Advance Due",
+    status: "Confirmed",
+  };
+
+  const updatedLead: LeadRecord = {
+    ...lead.record,
+    status: "Confirmed",
+    bookingId,
+    paymentStatus: "Advance Due",
+    lastContactedAt: new Date().toISOString(),
+    confirmedCalendarEventId: confirmedEventId,
+    tentativeCalendarEventId: "",
+  };
+
+  const { sheets } = createGoogleClients(tokens);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.bookings}!A:${toColumn(bookingHeaders.length)}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [bookingToRow(booking)],
+    },
+  });
+
+  await updateLeadRow(workspace, tokens, lead.rowNumber, updatedLead);
+
+  return { lead: updatedLead, booking };
+}
+
+export async function updatePaymentStatus(
+  email: string,
+  tokens: Credentials,
+  leadId: string,
+  paymentStatus: "Advance Paid" | "Paid in Full",
+) {
+  const workspace = await getRequiredWorkspace(email);
+  const lead = await findLeadById(workspace, tokens, leadId);
+  if (!lead) {
+    throw new Error("Lead not found");
+  }
+
+  const nextLead: LeadRecord = {
+    ...lead.record,
+    paymentStatus,
+    status: paymentStatus === "Paid in Full" ? "Payment Received" : lead.record.status,
+    lastContactedAt: new Date().toISOString(),
+  };
+
+  await updateLeadRow(workspace, tokens, lead.rowNumber, nextLead);
+  await updateBookingPaymentStatus(workspace, tokens, lead.record.bookingId, paymentStatus);
+  return { lead: nextLead };
+}
+
+export async function getDashboardData(email: string, tokens: Credentials): Promise<DashboardData> {
+  const workspace = await getRequiredWorkspace(email);
+  const leads = await listLeadRows(workspace, tokens);
+  const bookings = await listBookingRows(workspace, tokens);
+
+  return {
+    leads: leads.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    bookings: bookings.sort((a, b) => b.bookedAt.localeCompare(a.bookedAt)),
+  };
+}
+
+async function getRequiredWorkspace(email: string) {
+  const workspace = await getWorkspaceByEmail(email);
+  if (!workspace) {
+    throw new Error("Workspace not found");
+  }
+  return workspace;
+}
+
+async function getDemandCountForDate(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  eventDate: string,
+) {
+  const leads = await listLeadRows(workspace, tokens);
+  return leads.filter(
+    (lead) =>
+      lead.eventDate === eventDate &&
+      !["Lost", "Completed"].includes(lead.status),
+  ).length;
+}
+
+function calculatePricing(
+  workspace: WorkspaceRecord,
+  input: CreateLeadInput,
+  demandCount: number,
+  travel: Awaited<ReturnType<typeof resolveTravelIntelligence>>,
+): PricingResult {
+  const basePriceMap: Record<string, number> = {
+    Bridal: workspace.config.basePriceBridal,
+    Engagement: workspace.config.basePriceEngagement,
+    Reception: workspace.config.basePriceReception,
+    Party: workspace.config.basePriceParty,
+    Shoot: workspace.config.basePriceShoot,
+    Other: workspace.config.basePriceOther,
+  };
+
+  const eventMonth = new Date(input.eventDate).getMonth();
+  const seasonKeys = [
+    workspace.config.multiplierJan,
+    workspace.config.multiplierFeb,
+    workspace.config.multiplierMar,
+    workspace.config.multiplierApr,
+    workspace.config.multiplierMay,
+    workspace.config.multiplierJun,
+    workspace.config.multiplierJul,
+    workspace.config.multiplierAug,
+    workspace.config.multiplierSep,
+    workspace.config.multiplierOct,
+    workspace.config.multiplierNov,
+    workspace.config.multiplierDec,
+  ];
+
+  const basePrice = basePriceMap[input.eventType] ?? workspace.config.basePriceOther;
+  const seasonMultiplier = seasonKeys[eventMonth] ?? 1;
+  const demandMultiplier = demandCount >= workspace.config.scarcityThresholdHard
+    ? 1.2
+    : demandCount >= workspace.config.scarcityThresholdSoft
+      ? 1.1
+      : demandCount >= 1
+        ? 1.05
+        : 1;
+  const profileMultiplier =
+    input.profileTier === "High"
+      ? workspace.config.profileHighMultiplier
+      : input.profileTier === "Low"
+        ? workspace.config.profileLowMultiplier
+        : workspace.config.profileMidMultiplier;
+
+  const travelCost =
+    travel.distanceKm >= workspace.config.travelOutstationThresholdKm
+      ? workspace.config.travelOutstation
+      : travel.distanceKm > 25
+        ? workspace.config.travelNearbyCity
+        : workspace.config.travelWithinCity;
+
+  const rawPrice = basePrice * seasonMultiplier * demandMultiplier * profileMultiplier + travelCost;
+  const finalPrice = roundToPremiumNumber(rawPrice);
+  const scarcityTag =
+    demandCount >= workspace.config.scarcityThresholdHard
+      ? "High"
+      : demandCount >= workspace.config.scarcityThresholdSoft
+        ? "Warm"
+        : "Open";
+
+  return {
+    basePrice,
+    seasonMultiplier,
+    demandMultiplier,
+    profileMultiplier,
+    travelCost,
+    finalPrice,
+    scarcityTag,
+    travelSource: travel.source,
+  };
+}
+
+function roundToPremiumNumber(value: number) {
+  const rounded = Math.round(value / 500) * 500;
+  const premium = rounded - 200;
+  return premium > 0 ? premium : rounded;
+}
+
+async function listLeadRows(workspace: WorkspaceRecord, tokens: Credentials) {
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.leads}!A2:${toColumn(leadHeaders.length)}`,
+  });
+
+  const rows = response.data.values ?? [];
+  return rows
+    .filter((row) => row[0])
+    .map((row) => rowToLead(row));
+}
+
+async function findLeadById(workspace: WorkspaceRecord, tokens: Credentials, leadId: string) {
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.leads}!A2:${toColumn(leadHeaders.length)}`,
+  });
+
+  const rows = response.data.values ?? [];
+  for (let index = 0; index < rows.length; index += 1) {
+    if (rows[index][0] === leadId) {
+      return {
+        rowNumber: index + 2,
+        record: rowToLead(rows[index]),
+      };
+    }
+  }
+
+  return null;
+}
+
+async function listBookingRows(workspace: WorkspaceRecord, tokens: Credentials) {
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.bookings}!A2:${toColumn(bookingHeaders.length)}`,
+  });
+
+  const rows = response.data.values ?? [];
+  return rows
+    .filter((row) => row[0])
+    .map((row) => rowToBooking(row));
+}
+
+async function updateLeadRow(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  rowNumber: number,
+  lead: LeadRecord,
+) {
+  const { sheets } = createGoogleClients(tokens);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.leads}!A${rowNumber}:${toColumn(leadHeaders.length)}${rowNumber}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [leadToRow(lead)],
+    },
+  });
+}
+
+async function updateBookingPaymentStatus(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  bookingId: string,
+  paymentStatus: string,
+) {
+  if (!bookingId) return;
+
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.bookings}!A2:${toColumn(bookingHeaders.length)}`,
+  });
+
+  const rows = response.data.values ?? [];
+  for (let index = 0; index < rows.length; index += 1) {
+    if (rows[index][0] === bookingId) {
+      const booking = rowToBooking(rows[index]);
+      booking.paymentStatus = paymentStatus;
+      booking.status = paymentStatus === "Paid in Full" ? "Paid" : booking.status;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: workspace.spreadsheetId,
+        range: `${sheetNames.bookings}!A${index + 2}:${toColumn(bookingHeaders.length)}${index + 2}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [bookingToRow(booking)],
+        },
+      });
+      return;
+    }
+  }
+}
+
+async function upsertTentativeCalendarEvent(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  lead: LeadRecord,
+) {
+  const { calendar } = createGoogleClients(tokens);
+  const requestBody = buildCalendarEventBody({
+    title: `Tentative: ${lead.eventType} - ${lead.clientName}`,
+    description: [
+      `Lead ID: ${lead.leadId}`,
+      `Client: ${lead.clientName}`,
+      `WhatsApp: ${lead.clientWhatsApp}`,
+      `Approved Price: INR ${lead.finalApprovedPrice}`,
+      `Venue: ${lead.locationText}`,
+      `Event Time: ${lead.eventTime || "To be confirmed"}`,
+      `Hold Expires: ${lead.holdExpiresAt}`,
+      `Status: Awaiting Client`,
+    ].join("\n"),
+    location: lead.locationText,
+    eventDate: lead.eventDate,
+    eventTime: lead.eventTime,
+  });
+
+  if (lead.tentativeCalendarEventId) {
+    const response = await calendar.events.update({
+      calendarId: workspace.tentativeCalendarId,
+      eventId: lead.tentativeCalendarEventId,
+      requestBody,
+    });
+    return response.data.id ?? lead.tentativeCalendarEventId;
+  }
+
+  const response = await calendar.events.insert({
+    calendarId: workspace.tentativeCalendarId,
+    requestBody,
+  });
+
+  return response.data.id ?? "";
+}
+
+async function createConfirmedCalendarEvent(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  lead: LeadRecord & { bookingId: string },
+) {
+  const { calendar } = createGoogleClients(tokens);
+  const response = await calendar.events.insert({
+    calendarId: workspace.confirmedCalendarId,
+    requestBody: buildCalendarEventBody({
+      title: `Confirmed: ${lead.eventType} - ${lead.clientName}`,
+      description: [
+        `Booking ID: ${lead.bookingId}`,
+        `Lead ID: ${lead.leadId}`,
+        `Client: ${lead.clientName}`,
+        `Artist: ${lead.assignedArtist}`,
+        `Final Price: INR ${lead.finalApprovedPrice}`,
+        `Venue: ${lead.locationText}`,
+        `Event Time: ${lead.eventTime || "To be confirmed"}`,
+        `Status: Confirmed`,
+      ].join("\n"),
+      location: lead.locationText,
+      eventDate: lead.eventDate,
+      eventTime: lead.eventTime,
+    }),
+  });
+
+  return response.data.id ?? "";
+}
+
+async function deleteCalendarEvent(tokens: Credentials, calendarId: string, eventId: string) {
+  const { calendar } = createGoogleClients(tokens);
+  try {
+    await calendar.events.delete({
+      calendarId,
+      eventId,
+    });
+  } catch {
+    // Calendar event may already be removed. Keep the workflow idempotent.
+  }
+}
+
+function buildCalendarEventBody(input: {
+  title: string;
+  description: string;
+  location: string;
+  eventDate: string;
+  eventTime?: string;
+}): calendar_v3.Schema$Event {
+  const { start, end } = buildEventWindow(input.eventDate, input.eventTime);
+  return {
+    summary: input.title,
+    description: input.description,
+    location: input.location,
+    start: {
+      dateTime: start.toISOString(),
+      timeZone: "Asia/Kolkata",
+    },
+    end: {
+      dateTime: end.toISOString(),
+      timeZone: "Asia/Kolkata",
+    },
+  };
+}
+
+function buildEventWindow(eventDate: string, eventTime?: string) {
+  const time = normalizeEventTime(eventTime);
+  if (!time) {
+    return {
+      start: new Date(`${eventDate}T06:00:00+05:30`),
+      end: new Date(`${eventDate}T10:00:00+05:30`),
+    };
+  }
+
+  const start = new Date(`${eventDate}T${time}:00+05:30`);
+  const end = new Date(start.getTime() + 4 * 60 * 60 * 1000);
+  return { start, end };
+}
+
+function normalizeEventTime(eventTime?: string) {
+  if (!eventTime) return "";
+  const trimmed = eventTime.trim();
+  if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{1}:\d{2}$/.test(trimmed)) return `0${trimmed}`;
+  return "";
+}
+
+function leadToRow(lead: LeadRecord) {
+  return [
+    lead.leadId,
+    lead.createdAt,
+    lead.source,
+    lead.clientName,
+    lead.clientWhatsApp,
+    lead.clientInstagram,
+    lead.eventType,
+    lead.eventDate,
+    lead.eventTime,
+    lead.locationText,
+    lead.distanceKm,
+    lead.travelTimeMin,
+    lead.outstationFlag,
+    lead.profileTier,
+    lead.followers,
+    lead.clientTags,
+    lead.aiInsight,
+    lead.suggestedReply,
+    lead.demandCount,
+    lead.scarcityTag,
+    lead.holdExpiresAt,
+    lead.initialAiPrice,
+    lead.finalApprovedPrice,
+    lead.discountPercent,
+    lead.ownerDecision,
+    lead.ownerNotes,
+    lead.status,
+    lead.assignedArtist,
+    lead.lastContactedAt,
+    lead.tentativeCalendarEventId,
+    lead.confirmedCalendarEventId,
+    lead.bookingId,
+    lead.paymentStatus,
+  ];
+}
+
+function rowToLead(row: string[]): LeadRecord {
+  return {
+    leadId: row[0] ?? "",
+    createdAt: row[1] ?? "",
+    source: row[2] ?? "",
+    clientName: row[3] ?? "",
+    clientWhatsApp: row[4] ?? "",
+    clientInstagram: row[5] ?? "",
+    eventType: row[6] ?? "",
+    eventDate: row[7] ?? "",
+    eventTime: row[8] ?? "",
+    locationText: row[9] ?? "",
+    distanceKm: Number(row[10] ?? 0),
+    travelTimeMin: Number(row[11] ?? 0),
+    outstationFlag: row[12] ?? "No",
+    profileTier: row[13] ?? "Mid",
+    followers: Number(row[14] ?? 0),
+    clientTags: row[15] ?? "",
+    aiInsight: row[16] ?? "",
+    suggestedReply: row[17] ?? "",
+    demandCount: Number(row[18] ?? 0),
+    scarcityTag: row[19] ?? "",
+    holdExpiresAt: row[20] ?? "",
+    initialAiPrice: Number(row[21] ?? 0),
+    finalApprovedPrice: Number(row[22] ?? 0),
+    discountPercent: Number(row[23] ?? 0),
+    ownerDecision: row[24] ?? "",
+    ownerNotes: row[25] ?? "",
+    status: (row[26] ?? "New") as LeadStatus,
+    assignedArtist: row[27] ?? "",
+    lastContactedAt: row[28] ?? "",
+    tentativeCalendarEventId: row[29] ?? "",
+    confirmedCalendarEventId: row[30] ?? "",
+    bookingId: row[31] ?? "",
+    paymentStatus: row[32] ?? "Not Started",
+  };
+}
+
+function bookingToRow(booking: BookingRecord) {
+  return [
+    booking.bookingId,
+    booking.leadId,
+    booking.bookedAt,
+    booking.clientName,
+    booking.clientWhatsApp,
+    booking.eventType,
+    booking.eventDate,
+    booking.eventTime,
+    booking.venue,
+    booking.assignedArtist,
+    booking.finalPrice,
+    booking.advanceAmount,
+    booking.balanceDue,
+    booking.tentativeCalendarEventId,
+    booking.confirmedCalendarEventId,
+    booking.contractUrl,
+    booking.invoiceUrl,
+    booking.paymentStatus,
+    booking.status,
+  ];
+}
+
+function rowToBooking(row: string[]): BookingRecord {
+  return {
+    bookingId: row[0] ?? "",
+    leadId: row[1] ?? "",
+    bookedAt: row[2] ?? "",
+    clientName: row[3] ?? "",
+    clientWhatsApp: row[4] ?? "",
+    eventType: row[5] ?? "",
+    eventDate: row[6] ?? "",
+    eventTime: row[7] ?? "",
+    venue: row[8] ?? "",
+    assignedArtist: row[9] ?? "",
+    finalPrice: Number(row[10] ?? 0),
+    advanceAmount: Number(row[11] ?? 0),
+    balanceDue: Number(row[12] ?? 0),
+    tentativeCalendarEventId: row[13] ?? "",
+    confirmedCalendarEventId: row[14] ?? "",
+    contractUrl: row[15] ?? "",
+    invoiceUrl: row[16] ?? "",
+    paymentStatus: row[17] ?? "",
+    status: row[18] ?? "",
+  };
+}
+
+function buildId(prefix: "L" | "B") {
+  return `${prefix}${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}${nanoid(4)}`;
+}
+
+function toColumn(columnNumber: number) {
+  let dividend = columnNumber;
+  let columnName = "";
+  while (dividend > 0) {
+    const modulo = (dividend - 1) % 26;
+    columnName = String.fromCharCode(65 + modulo) + columnName;
+    dividend = Math.floor((dividend - modulo) / 26);
+  }
+  return columnName;
+}

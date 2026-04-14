@@ -1,0 +1,56 @@
+import "dotenv/config";
+import path from "node:path";
+import { z } from "zod";
+
+const envSchema = z.object({
+  PORT: z.coerce.number().default(3000),
+  APP_BASE_URL: z.string().url().default("http://localhost:3000"),
+  SESSION_SECRET: z.string().min(8, "SESSION_SECRET must be at least 8 characters"),
+  GOOGLE_CLIENT_ID: z.string().optional().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().optional().default(""),
+  GOOGLE_REDIRECT_PATH: z.string().default("/auth/google/callback"),
+  GOOGLE_MAPS_API_KEY: z.string().optional().default(""),
+  WATI_WEBHOOK_SECRET: z.string().optional().default(""),
+  MANYCHAT_WEBHOOK_SECRET: z.string().optional().default(""),
+  XAI_API_KEY: z.string().optional().default(""),
+  XAI_MODEL: z.string().default("grok-4.20-reasoning"),
+  META_APP_ID: z.string().optional().default(""),
+  META_APP_SECRET: z.string().optional().default(""),
+  META_REDIRECT_PATH: z.string().default("/auth/meta/callback"),
+  META_WEBHOOK_VERIFY_TOKEN: z.string().optional().default(""),
+  GOOGLE_OAUTH_SCOPES: z
+    .string()
+    .default(
+      [
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/drive.file",
+      ].join(","),
+    ),
+});
+
+const parsed = envSchema.parse(process.env);
+
+export const appConfig = {
+  port: parsed.PORT,
+  baseUrl: parsed.APP_BASE_URL,
+  sessionSecret: parsed.SESSION_SECRET,
+  googleClientId: parsed.GOOGLE_CLIENT_ID,
+  googleClientSecret: parsed.GOOGLE_CLIENT_SECRET,
+  googleRedirectPath: parsed.GOOGLE_REDIRECT_PATH,
+  googleRedirectUrl: new URL(parsed.GOOGLE_REDIRECT_PATH, parsed.APP_BASE_URL).toString(),
+  googleMapsApiKey: parsed.GOOGLE_MAPS_API_KEY,
+  watiWebhookSecret: parsed.WATI_WEBHOOK_SECRET,
+  manychatWebhookSecret: parsed.MANYCHAT_WEBHOOK_SECRET,
+  xaiApiKey: parsed.XAI_API_KEY,
+  xaiModel: parsed.XAI_MODEL,
+  metaAppId: parsed.META_APP_ID,
+  metaAppSecret: parsed.META_APP_SECRET,
+  metaRedirectPath: parsed.META_REDIRECT_PATH,
+  metaRedirectUrl: new URL(parsed.META_REDIRECT_PATH, parsed.APP_BASE_URL).toString(),
+  metaWebhookVerifyToken: parsed.META_WEBHOOK_VERIFY_TOKEN,
+  googleScopes: parsed.GOOGLE_OAUTH_SCOPES.split(",").map((scope) => scope.trim()).filter(Boolean),
+  workspaceDbPath: path.join(process.cwd(), "data", "workspaces.json"),
+};

@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>1Glam Booking OS</title>
+    <style>
+      :root {
+        --paper: #f8f1e8;
+        --panel: rgba(255, 250, 244, 0.78);
+        --text: #201711;
+        --muted: #726257;
+        --line: rgba(79, 51, 35, 0.12);
+        --accent: #9d6948;
+        --accent-dark: #6f452b;
+        --accent-soft: #f0e1d2;
+        --success: #285844;
+        --warning: #8f6232;
+        --danger: #8b3f35;
+        --shadow: 0 24px 80px rgba(74, 46, 30, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(210, 172, 138, 0.26), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(155, 114, 86, 0.14), transparent 25%),
+          linear-gradient(145deg, #fcf8f2 0%, #f4eadf 55%, #ecdccf 100%);
+        min-height: 100vh;
+      }
+
+      .shell {
+        width: min(1240px, calc(100vw - 32px));
+        margin: 24px auto 40px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 20px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .intro, .cta-card, .section {
+        padding: 30px;
+      }
+
+      .kicker {
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      h1, h2, h3, p { margin-top: 0; }
+
+      h1 {
+        font-size: clamp(38px, 6vw, 70px);
+        line-height: 0.96;
+        margin: 14px 0 18px;
+        font-weight: 600;
+      }
+
+      h2 {
+        font-size: 26px;
+        margin-bottom: 18px;
+      }
+
+      .lead {
+        font-size: 18px;
+        line-height: 1.65;
+        color: #47382f;
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-top: 22px;
+      }
+
+      .stat {
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(255,255,255,0.46);
+        border: 1px solid var(--line);
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 28px;
+        margin-bottom: 6px;
+      }
+
+      .button {
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        border-radius: 999px;
+        padding: 13px 20px;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+        color: #fff;
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        box-shadow: 0 14px 30px rgba(109, 69, 42, 0.24);
+      }
+
+      .button.secondary {
+        background: transparent;
+        color: var(--accent-dark);
+        border: 1px solid rgba(109, 69, 42, 0.18);
+        box-shadow: none;
+      }
+
+      .button.small {
+        padding: 9px 14px;
+        font-size: 12px;
+      }
+
+      .login-state, .workspace, .status {
+        margin-top: 16px;
+      }
+
+      form { display: none; margin-top: 18px; }
+      form.ready, .dashboard.ready { display: block; }
+
+      .dashboard {
+        display: none;
+        margin-top: 22px;
+      }
+
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-top: 20px;
+      }
+
+      .section-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .wide { grid-column: 1 / -1; }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      input, textarea, select {
+        width: 100%;
+        border: 1px solid rgba(75, 51, 36, 0.12);
+        border-radius: 16px;
+        padding: 13px 15px;
+        background: rgba(255,255,255,0.74);
+        color: var(--text);
+        font: inherit;
+      }
+
+      textarea { min-height: 96px; resize: vertical; }
+
+      .status {
+        min-height: 24px;
+        color: var(--success);
+      }
+
+      .workspace-links, .action-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .mini-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 14px;
+      }
+
+      .mini-card {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 16px;
+        background: rgba(255,255,255,0.42);
+      }
+
+      .workspace-links a { color: var(--accent-dark); }
+
+      .table-wrap {
+        overflow: auto;
+        border-radius: 20px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,0.45);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 860px;
+      }
+
+      th, td {
+        padding: 14px 14px;
+        text-align: left;
+        border-bottom: 1px solid rgba(79, 51, 35, 0.08);
+        vertical-align: top;
+      }
+
+      th {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        background: var(--accent-soft);
+        color: var(--accent-dark);
+      }
+
+      .pill.success { background: rgba(40,88,68,0.12); color: var(--success); }
+      .pill.warning { background: rgba(143,98,50,0.14); color: var(--warning); }
+      .pill.danger { background: rgba(139,63,53,0.12); color: var(--danger); }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+
+      .muted { color: var(--muted); }
+
+      @media (max-width: 980px) {
+        .hero, .dashboard-grid, .section-grid, .mini-grid { grid-template-columns: 1fr; }
+        .shell { width: min(100vw - 20px, 1240px); margin: 10px auto 28px; }
+        .intro, .cta-card, .section { padding: 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div class="panel intro">
+          <div class="kicker">Private Luxury Booking Infrastructure</div>
+          <h1>1Glam Booking OS</h1>
+          <p class="lead">
+            A self-serve booking system for luxury makeup artists that provisions a private Google Sheet
+            in the owner’s account, syncs directly with their Google Calendar, and keeps your code hidden.
+          </p>
+          <div class="meta">
+            <div class="stat"><strong id="stat-leads">0</strong> Active leads</div>
+            <div class="stat"><strong id="stat-bookings">0</strong> Confirmed bookings</div>
+            <div class="stat"><strong id="stat-awaiting">0</strong> Awaiting clients</div>
+          </div>
+        </div>
+
+        <aside class="panel cta-card">
+          <div>
+            <div class="kicker">Owner Onboarding</div>
+            <p class="lead" style="font-size:16px;line-height:1.8;">
+              Sign in with Google. We create your booking sheet, a tentative calendar, and a premium control surface without exposing platform code.
+            </p>
+          </div>
+          <div class="login-state" id="login-state">Checking session...</div>
+          <div class="workspace" id="workspace-summary"></div>
+          <div class="workspace" id="meta-summary"></div>
+          <div class="action-row">
+            <a href="/auth/google" id="connect-link"><button class="button">Connect Google Account</button></a>
+            <button id="logout-button" class="button secondary" type="button" style="display:none;">Log out</button>
+          </div>
+        </aside>
+      </section>
+
+      <form id="config-form" class="panel section">
+        <div class="kicker">Luxury Owner Setup</div>
+        <h2>Configuration</h2>
+        <div class="section-grid">
+          <div><label for="businessName">Business Name</label><input id="businessName" name="businessName" required /></div>
+          <div><label for="ownerName">Owner Name</label><input id="ownerName" name="ownerName" required /></div>
+          <div><label for="ownerEmail">Owner Email</label><input id="ownerEmail" name="ownerEmail" type="email" required /></div>
+          <div><label for="ownerWhatsApp">Owner WhatsApp</label><input id="ownerWhatsApp" name="ownerWhatsApp" required /></div>
+          <div><label for="city">City</label><input id="city" name="city" required /></div>
+          <div><label for="instagramHandle">Instagram Handle</label><input id="instagramHandle" name="instagramHandle" /></div>
+          <div><label for="confirmedCalendarId">Confirmed Calendar ID</label><input id="confirmedCalendarId" name="confirmedCalendarId" required /></div>
+          <div><label for="tentativeCalendarId">Tentative Calendar ID</label><input id="tentativeCalendarId" name="tentativeCalendarId" required /></div>
+          <div><label for="upiId">UPI ID</label><input id="upiId" name="upiId" /></div>
+          <div><label for="googleReviewLink">Google Review Link</label><input id="googleReviewLink" name="googleReviewLink" /></div>
+          <div class="wide"><label for="paymentTerms">Payment Terms</label><textarea id="paymentTerms" name="paymentTerms" required></textarea></div>
+        </div>
+        <div class="section-grid" style="margin-top:14px;">
+          <div><label for="basePriceBridal">Bridal Price</label><input id="basePriceBridal" name="basePriceBridal" type="number" required /></div>
+          <div><label for="basePriceEngagement">Engagement Price</label><input id="basePriceEngagement" name="basePriceEngagement" type="number" required /></div>
+          <div><label for="basePriceReception">Reception Price</label><input id="basePriceReception" name="basePriceReception" type="number" required /></div>
+          <div><label for="basePriceParty">Party Price</label><input id="basePriceParty" name="basePriceParty" type="number" required /></div>
+          <div><label for="travelWithinCity">Within-City Travel</label><input id="travelWithinCity" name="travelWithinCity" type="number" required /></div>
+          <div><label for="travelOutstation">Outstation Travel</label><input id="travelOutstation" name="travelOutstation" type="number" required /></div>
+          <div><label for="holdExpiryHours">Hold Expiry (hours)</label><input id="holdExpiryHours" name="holdExpiryHours" type="number" required /></div>
+          <div><label for="advancePercentage">Advance Percentage</label><input id="advancePercentage" name="advancePercentage" type="number" required /></div>
+          <div><label for="scarcityThresholdSoft">Soft Scarcity Threshold</label><input id="scarcityThresholdSoft" name="scarcityThresholdSoft" type="number" required /></div>
+          <div><label for="scarcityThresholdHard">Hard Scarcity Threshold</label><input id="scarcityThresholdHard" name="scarcityThresholdHard" type="number" required /></div>
+        </div>
+        <input type="hidden" name="aiLanguage" value="English" />
+        <input type="hidden" name="aiSignOff" value="With love," />
+        <input type="hidden" name="basePriceShoot" value="10000" />
+        <input type="hidden" name="basePriceOther" value="8000" />
+        <input type="hidden" name="multiplierJan" value="1" />
+        <input type="hidden" name="multiplierFeb" value="1.2" />
+        <input type="hidden" name="multiplierMar" value="1.1" />
+        <input type="hidden" name="multiplierApr" value="1" />
+        <input type="hidden" name="multiplierMay" value="0.9" />
+        <input type="hidden" name="multiplierJun" value="0.9" />
+        <input type="hidden" name="multiplierJul" value="0.9" />
+        <input type="hidden" name="multiplierAug" value="0.9" />
+        <input type="hidden" name="multiplierSep" value="1" />
+        <input type="hidden" name="multiplierOct" value="1.2" />
+        <input type="hidden" name="multiplierNov" value="1.5" />
+        <input type="hidden" name="multiplierDec" value="1.5" />
+        <input type="hidden" name="travelNearbyCity" value="2000" />
+        <input type="hidden" name="travelOutstationThresholdKm" value="100" />
+        <input type="hidden" name="profileLowMultiplier" value="1" />
+        <input type="hidden" name="profileMidMultiplier" value="1.1" />
+        <input type="hidden" name="profileHighMultiplier" value="1.25" />
+        <input type="hidden" name="profileHighMinFollowers" value="10000" />
+        <input type="hidden" name="qrImageUrl" value="" />
+        <input type="hidden" name="contractTemplateUrl" value="" />
+        <div class="action-row" style="margin-top:14px;">
+          <button class="button" type="submit">Save Owner Configuration</button>
+        </div>
+        <div class="status" id="form-status"></div>
+      </form>
+
+      <section id="dashboard" class="dashboard">
+        <div class="dashboard-grid">
+          <div class="panel section">
+            <div class="kicker">New Enquiry</div>
+            <h2>Create Lead</h2>
+            <form id="lead-form" class="ready" style="display:block;margin-top:0;">
+              <div class="section-grid">
+                <div><label for="clientName">Client Name</label><input id="clientName" name="clientName" required /></div>
+                <div><label for="clientWhatsApp">Client WhatsApp</label><input id="clientWhatsApp" name="clientWhatsApp" required /></div>
+                <div><label for="clientInstagram">Client Instagram</label><input id="clientInstagram" name="clientInstagram" /></div>
+                <div>
+                  <label for="source">Source</label>
+                  <select id="source" name="source">
+                    <option>Instagram</option>
+                    <option>WhatsApp</option>
+                    <option>Manual</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="eventType">Event Type</label>
+                  <select id="eventType" name="eventType">
+                    <option>Bridal</option>
+                    <option>Engagement</option>
+                    <option>Reception</option>
+                    <option>Party</option>
+                    <option>Shoot</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+                <div><label for="eventDate">Event Date</label><input id="eventDate" name="eventDate" type="date" required /></div>
+                <div><label for="eventTime">Event Time</label><input id="eventTime" name="eventTime" type="time" /></div>
+                <div class="wide"><label for="locationText">Location Text</label><input id="locationText" name="locationText" required /></div>
+                <div><label for="distanceKm">Distance (km)</label><input id="distanceKm" name="distanceKm" type="number" placeholder="Auto from Google Maps" /></div>
+                <div><label for="travelTimeMin">Travel Time (min)</label><input id="travelTimeMin" name="travelTimeMin" type="number" placeholder="Auto from Google Maps" /></div>
+                <div>
+                  <label for="profileTier">Profile Tier</label>
+                  <select id="profileTier" name="profileTier">
+                    <option>Low</option>
+                    <option selected>Mid</option>
+                    <option>High</option>
+                  </select>
+                </div>
+                <div><label for="followers">Followers</label><input id="followers" name="followers" type="number" value="0" /></div>
+                <div class="wide"><label for="clientTags">Client Tags</label><input id="clientTags" name="clientTags" placeholder="LUXURY_BRIDE,HIGH_INTENT" /></div>
+              </div>
+              <div class="action-row" style="margin-top:14px;">
+                <button class="button" type="submit">Create Lead</button>
+              </div>
+              <div class="status" id="lead-status"></div>
+            </form>
+          </div>
+
+          <div class="panel section">
+            <div class="kicker">Operator View</div>
+            <h2>Booking Snapshot</h2>
+            <div id="snapshot-content" class="lead" style="font-size:16px;">
+              Sign in to see live leads, approvals, and confirmed bookings.
+            </div>
+          </div>
+        </div>
+
+        <div class="panel section" style="margin-top:20px;">
+          <div class="kicker">Approval Queue</div>
+          <h2>Leads</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Event</th>
+              <th>Price</th>
+              <th>Travel</th>
+              <th>Status</th>
+              <th>Hold</th>
+              <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="leads-body">
+                <tr><td colspan="7" class="muted">No leads yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel section" style="margin-top:20px;">
+          <div class="kicker">Confirmed Work</div>
+          <h2>Bookings</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Booking</th>
+                  <th>Client</th>
+                  <th>Event</th>
+                  <th>Financials</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="bookings-body">
+                <tr><td colspan="5" class="muted">No bookings yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const configForm = document.getElementById("config-form");
+      const leadForm = document.getElementById("lead-form");
+      const dashboard = document.getElementById("dashboard");
+      const loginState = document.getElementById("login-state");
+      const workspaceSummary = document.getElementById("workspace-summary");
+      const metaSummary = document.getElementById("meta-summary");
+      const formStatus = document.getElementById("form-status");
+      const leadStatus = document.getElementById("lead-status");
+      const logoutButton = document.getElementById("logout-button");
+      const snapshotContent = document.getElementById("snapshot-content");
+      const leadsBody = document.getElementById("leads-body");
+      const bookingsBody = document.getElementById("bookings-body");
+
+      let sessionState = null;
+
+      function setValue(form, name, value) {
+        const field = form.elements.namedItem(name);
+        if (field) field.value = value ?? "";
+      }
+
+      function fillConfig(config) {
+        Object.entries(config).forEach(([key, value]) => setValue(configForm, key, value));
+      }
+
+      function formatDate(value) {
+        if (!value) return "—";
+        try {
+          return new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+        } catch {
+          return value;
+        }
+      }
+
+      function formatMoney(value) {
+        const amount = Number(value || 0);
+        return `₹${amount.toLocaleString("en-IN")}`;
+      }
+
+      function pillClass(status) {
+        if (["Confirmed", "Payment Received", "Advance Paid", "Paid in Full", "Paid"].includes(status)) return "pill success";
+        if (["Awaiting Client", "Advance Due", "Payment Pending", "New"].includes(status)) return "pill warning";
+        if (["Lost"].includes(status)) return "pill danger";
+        return "pill";
+      }
+
+      function updateStats(leads, bookings) {
+        document.getElementById("stat-leads").textContent = String(leads.filter((lead) => !["Lost", "Completed"].includes(lead.status)).length);
+        document.getElementById("stat-bookings").textContent = String(bookings.length);
+        document.getElementById("stat-awaiting").textContent = String(leads.filter((lead) => lead.status === "Awaiting Client").length);
+      }
+
+      function renderSnapshot(leads, bookings) {
+        const awaiting = leads.filter((lead) => lead.status === "Awaiting Client").length;
+        const confirmedRevenue = bookings.reduce((sum, booking) => sum + Number(booking.finalPrice || 0), 0);
+        snapshotContent.innerHTML = `
+          <p class="lead" style="font-size:16px;">
+            ${awaiting} leads are waiting on clients. ${bookings.length} confirmed bookings are already reflected in Google Calendar.
+          </p>
+          <p class="lead" style="font-size:16px;">
+            Confirmed revenue in the sheet: <strong>${formatMoney(confirmedRevenue)}</strong>
+          </p>
+        `;
+      }
+
+      function renderLeads(leads) {
+        if (!leads.length) {
+          leadsBody.innerHTML = `<tr><td colspan="7" class="muted">No leads yet.</td></tr>`;
+          return;
+        }
+
+        leadsBody.innerHTML = leads.map((lead) => {
+          const editValue = lead.finalApprovedPrice || lead.initialAiPrice || 0;
+          return `
+            <tr>
+              <td>
+                <strong>${lead.clientName}</strong><br>
+                <span class="mono">${lead.leadId}</span><br>
+                <span class="muted">${lead.source}</span>
+              </td>
+              <td>
+                ${lead.eventType}<br>
+                <span class="muted">${lead.eventDate}${lead.eventTime ? ` at ${lead.eventTime}` : ""}</span><br>
+                <span class="muted">${lead.locationText}</span>
+              </td>
+              <td>
+                <strong>${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)}</strong><br>
+                <span class="muted">AI: ${formatMoney(lead.initialAiPrice)}</span><br>
+                <span class="muted">${lead.scarcityTag} demand</span><br>
+                <span class="muted">${lead.aiInsight || "AI insight pending"}</span>
+              </td>
+              <td>
+                ${lead.distanceKm ? `${lead.distanceKm} km` : "—"}<br>
+                <span class="muted">${lead.travelTimeMin ? `${lead.travelTimeMin} min` : "Travel pending"}</span><br>
+                <span class="muted">${lead.outstationFlag === "Yes" ? "Outstation" : "Local / nearby"}</span>
+              </td>
+              <td><span class="${pillClass(lead.status)}">${lead.status}</span></td>
+              <td>
+                ${lead.holdExpiresAt ? formatDate(lead.holdExpiresAt) : "Not placed"}
+              </td>
+              <td>
+                <div class="action-row">
+                  <button class="button small" data-action="yes" data-lead-id="${lead.leadId}">YES</button>
+                  <button class="button small secondary" data-action="confirm" data-lead-id="${lead.leadId}" ${lead.status !== "Awaiting Client" ? "disabled" : ""}>Confirm</button>
+                  <button class="button small secondary" data-action="advance" data-lead-id="${lead.leadId}" ${lead.status !== "Confirmed" ? "disabled" : ""}>Advance Paid</button>
+                  <button class="button small secondary" data-action="full" data-lead-id="${lead.leadId}" ${lead.status !== "Confirmed" && lead.status !== "Payment Received" ? "disabled" : ""}>Paid Full</button>
+                </div>
+                <div class="action-row" style="margin-top:10px;">
+                  <input data-edit-input="${lead.leadId}" type="number" value="${editValue}" style="max-width:140px;" />
+                  <button class="button small secondary" data-action="edit" data-lead-id="${lead.leadId}">Edit Price</button>
+                  <button class="button small secondary" data-action="no" data-lead-id="${lead.leadId}">No</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      function renderBookings(bookings) {
+        if (!bookings.length) {
+          bookingsBody.innerHTML = `<tr><td colspan="5" class="muted">No bookings yet.</td></tr>`;
+          return;
+        }
+
+        bookingsBody.innerHTML = bookings.map((booking) => `
+          <tr>
+            <td><strong>${booking.bookingId}</strong><br><span class="muted">${formatDate(booking.bookedAt)}</span></td>
+            <td>${booking.clientName}<br><span class="muted">${booking.clientWhatsApp}</span></td>
+            <td>${booking.eventType}<br><span class="muted">${booking.eventDate}${booking.eventTime ? ` at ${booking.eventTime}` : ""}</span><br><span class="muted">${booking.venue}</span></td>
+            <td>${formatMoney(booking.finalPrice)}<br><span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br><span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span></td>
+            <td><span class="${pillClass(booking.paymentStatus || booking.status)}">${booking.paymentStatus || booking.status}</span></td>
+          </tr>
+        `).join("");
+      }
+
+      function renderDashboard(session) {
+        const leads = session.dashboard?.leads || [];
+        const bookings = session.dashboard?.bookings || [];
+        updateStats(leads, bookings);
+        renderSnapshot(leads, bookings);
+        renderLeads(leads);
+        renderBookings(bookings);
+      }
+
+      function renderMetaConnections(workspace, profile) {
+        const instagram = workspace?.metaConnections?.instagram;
+        const whatsapp = workspace?.metaConnections?.whatsapp;
+
+        function block(label, channel, connection) {
+          const status = connection?.status || "not connected";
+          const handle = channel === "instagram"
+            ? (connection?.instagramUsername || connection?.pageName || "No asset selected yet")
+            : (connection?.businessAccountName || connection?.phoneNumberId || "No phone number linked yet");
+
+          return `
+            <div class="mini-card">
+              <div class="kicker">${label}</div>
+              <p style="margin:8px 0 6px;"><span class="${status === "connected" ? "pill success" : "pill warning"}">${status}</span></p>
+              <p class="muted" style="margin:0 0 10px;">${handle}</p>
+              <div class="action-row">
+                <a href="/auth/meta/start?channel=${channel}&workspaceEmail=${encodeURIComponent(profile.email)}"><button class="button small" type="button">Connect</button></a>
+                <button class="button small secondary" type="button" data-meta-disconnect="${channel}">Disconnect</button>
+              </div>
+            </div>
+          `;
+        }
+
+        metaSummary.innerHTML = `
+          <div class="kicker">Meta Channels</div>
+          <div class="mini-grid">
+            ${block("Instagram", "instagram", instagram)}
+            ${block("WhatsApp", "whatsapp", whatsapp)}
+          </div>
+          <p class="muted" style="margin-top:10px;">
+            Each MUA connects only her own Meta assets. Data stays isolated per workspace, and disconnect/deletion flows are available for compliance.
+          </p>
+        `;
+      }
+
+      async function refreshSession() {
+        const response = await fetch("/api/session");
+        const payload = await response.json();
+        sessionState = payload;
+
+        if (!payload.authenticated) {
+          loginState.textContent = "Connect your Google account to provision your private sheet and calendar.";
+          configForm.classList.remove("ready");
+          dashboard.classList.remove("ready");
+          logoutButton.style.display = "none";
+          return;
+        }
+
+        logoutButton.style.display = "inline-flex";
+        loginState.innerHTML = `<strong>${payload.profile.name}</strong><br>${payload.profile.email}`;
+
+        if (payload.workspace) {
+          fillConfig(payload.workspace.config);
+          workspaceSummary.innerHTML = `
+            <p class="lead" style="font-size:16px;margin:0 0 10px;">
+              Your workspace is live. Google Sheets is the source of truth, and bookings sync directly into your own calendar.
+            </p>
+            <div class="workspace-links">
+              <a href="${payload.workspace.spreadsheetUrl}" target="_blank" rel="noreferrer">Open Sheet</a>
+              <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noreferrer">Open Calendar</a>
+            </div>
+          `;
+          configForm.classList.add("ready");
+          dashboard.classList.add("ready");
+          renderMetaConnections(payload.workspace, payload.profile);
+          renderDashboard(payload);
+        }
+      }
+
+      async function postJson(url, body) {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Request failed");
+        return payload;
+      }
+
+      configForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        formStatus.textContent = "Saving configuration...";
+        try {
+          await postJson("/api/workspace/config", Object.fromEntries(new FormData(configForm).entries()));
+          formStatus.textContent = "Configuration saved to your private Google Sheet.";
+          await refreshSession();
+        } catch (error) {
+          formStatus.textContent = error.message;
+        }
+      });
+
+      leadForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        leadStatus.textContent = "Creating lead...";
+        try {
+          await postJson("/api/leads", Object.fromEntries(new FormData(leadForm).entries()));
+          leadStatus.textContent = "Lead created and written to Google Sheets.";
+          leadForm.reset();
+          leadForm.elements.namedItem("source").value = "Instagram";
+          leadForm.elements.namedItem("eventType").value = "Bridal";
+          leadForm.elements.namedItem("profileTier").value = "Mid";
+          await refreshSession();
+        } catch (error) {
+          leadStatus.textContent = error.message;
+        }
+      });
+
+      leadsBody.addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+
+        const leadId = button.getAttribute("data-lead-id");
+        const action = button.getAttribute("data-action");
+        if (!leadId || !action) return;
+
+        leadStatus.textContent = "Updating lead...";
+
+        try {
+          if (action === "yes") {
+            await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
+          } else if (action === "no") {
+            await postJson(`/api/leads/${leadId}/decision`, { decision: "NO" });
+          } else if (action === "edit") {
+            const input = document.querySelector(`[data-edit-input="${leadId}"]`);
+            await postJson(`/api/leads/${leadId}/decision`, {
+              decision: "EDIT",
+              approvedPrice: input ? input.value : "",
+            });
+          } else if (action === "confirm") {
+            await postJson(`/api/leads/${leadId}/confirm`, {});
+          } else if (action === "advance") {
+            await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Advance Paid" });
+          } else if (action === "full") {
+            await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
+          }
+
+          leadStatus.textContent = "Lead updated.";
+          await refreshSession();
+        } catch (error) {
+          leadStatus.textContent = error.message;
+        }
+      });
+
+      logoutButton.addEventListener("click", async () => {
+        await fetch("/api/logout", { method: "POST" });
+        window.location.reload();
+      });
+
+      metaSummary.addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-meta-disconnect]");
+        if (!button) return;
+        const channel = button.getAttribute("data-meta-disconnect");
+        if (!channel) return;
+
+        try {
+          await postJson(`/api/meta/disconnect/${channel}`, {});
+          await refreshSession();
+        } catch (error) {
+          loginState.textContent = error.message;
+        }
+      });
+
+      refreshSession().catch((error) => {
+        loginState.textContent = error.message || "Unable to load session.";
+      });
+    </script>
+  </body>
+</html>
