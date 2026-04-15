@@ -306,6 +306,7 @@
           <div><label for="tentativeCalendarId">Tentative Calendar ID</label><input id="tentativeCalendarId" name="tentativeCalendarId" required /></div>
           <div><label for="upiId">UPI ID</label><input id="upiId" name="upiId" /></div>
           <div><label for="googleReviewLink">Google Review Link</label><input id="googleReviewLink" name="googleReviewLink" /></div>
+          <div><label for="contractTemplateUrl">Leegality Template ID / URL</label><input id="contractTemplateUrl" name="contractTemplateUrl" /></div>
           <div class="wide"><label for="paymentTerms">Payment Terms</label><textarea id="paymentTerms" name="paymentTerms" required></textarea></div>
         </div>
         <div class="section-grid" style="margin-top:14px;">
@@ -343,7 +344,6 @@
         <input type="hidden" name="profileHighMultiplier" value="1.25" />
         <input type="hidden" name="profileHighMinFollowers" value="10000" />
         <input type="hidden" name="qrImageUrl" value="" />
-        <input type="hidden" name="contractTemplateUrl" value="" />
         <div class="action-row" style="margin-top:14px;">
           <button class="button" type="submit">Save Owner Configuration</button>
         </div>
@@ -446,13 +446,15 @@
                   <th>Event</th>
                   <th>Financials</th>
                   <th>Status</th>
+                  <th>Docs</th>
                 </tr>
               </thead>
               <tbody id="bookings-body">
-                <tr><td colspan="5" class="muted">No bookings yet.</td></tr>
+                <tr><td colspan="6" class="muted">No bookings yet.</td></tr>
               </tbody>
             </table>
           </div>
+          <div class="status" id="document-status" style="margin-top:12px;"></div>
         </div>
       </section>
     </main>
@@ -470,6 +472,7 @@
       const snapshotContent = document.getElementById("snapshot-content");
       const leadsBody = document.getElementById("leads-body");
       const bookingsBody = document.getElementById("bookings-body");
+      const documentStatus = document.getElementById("document-status");
 
       let sessionState = null;
 
@@ -573,6 +576,10 @@
                   <input data-reply-input="${lead.leadId}" type="text" value="${(lead.suggestedReply || "").replace(/"/g, "&quot;")}" style="width:100%;" />
                   <button class="button small secondary" style="margin-top:8px;" data-action="reply" data-lead-id="${lead.leadId}">Send Reply</button>
                 </div>
+                <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
+                  <button class="button small secondary" data-action="quote" data-lead-id="${lead.leadId}">Generate Quote</button>
+                  ${lead.quoteUrl ? `<a href="${lead.quoteUrl}" target="_blank" rel="noreferrer">Open Quote</a>` : `<span class="muted">No quote yet</span>`}
+                </div>
               </td>
             </tr>
           `;
@@ -581,7 +588,7 @@
 
       function renderBookings(bookings) {
         if (!bookings.length) {
-          bookingsBody.innerHTML = `<tr><td colspan="5" class="muted">No bookings yet.</td></tr>`;
+          bookingsBody.innerHTML = `<tr><td colspan="6" class="muted">No bookings yet.</td></tr>`;
           return;
         }
 
@@ -592,6 +599,16 @@
             <td>${booking.eventType}<br><span class="muted">${booking.eventDate}${booking.eventTime ? ` at ${booking.eventTime}` : ""}</span><br><span class="muted">${booking.venue}</span></td>
             <td>${formatMoney(booking.finalPrice)}<br><span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br><span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span></td>
             <td><span class="${pillClass(booking.paymentStatus || booking.status)}">${booking.paymentStatus || booking.status}</span></td>
+            <td>
+              <div class="action-row" style="align-items:center;flex-wrap:wrap;">
+                <button class="button small secondary" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Generate Invoice</button>
+                ${booking.invoiceUrl ? `<a href="${booking.invoiceUrl}" target="_blank" rel="noreferrer">Open Invoice</a>` : ""}
+              </div>
+              <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
+                <button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create Contract</button>
+                ${booking.contractUrl ? `<a href="${booking.contractUrl}" target="_blank" rel="noreferrer">Open Contract</a>` : `<span class="muted">${booking.contractStatus || "Draft"}</span>`}
+              </div>
+            </td>
           </tr>
         `).join("");
       }
@@ -755,12 +772,42 @@
             await postJson(`/api/leads/${leadId}/reply`, {
               message: input?.value || "",
             });
+          } else if (action === "quote") {
+            const result = await postJson(`/api/leads/${leadId}/quote`, {});
+            documentStatus.textContent = result.quote?.fileUrl
+              ? "Quote generated."
+              : "Quote generated.";
           }
 
           leadStatus.textContent = "Lead updated.";
           await refreshSession();
         } catch (error) {
           leadStatus.textContent = error.message;
+        }
+      });
+
+      bookingsBody.addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-booking-action]");
+        if (!button) return;
+
+        const bookingId = button.getAttribute("data-booking-id");
+        const action = button.getAttribute("data-booking-action");
+        if (!bookingId || !action) return;
+
+        documentStatus.textContent = "Processing document...";
+
+        try {
+          if (action === "invoice") {
+            await postJson(`/api/bookings/${bookingId}/invoice`, {});
+            documentStatus.textContent = "Invoice generated.";
+          } else if (action === "contract") {
+            await postJson(`/api/bookings/${bookingId}/contract`, {});
+            documentStatus.textContent = "Contract sent to Leegality.";
+          }
+
+          await refreshSession();
+        } catch (error) {
+          documentStatus.textContent = error.message;
         }
       });
 

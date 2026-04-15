@@ -51,9 +51,11 @@ export type LeadRecord = {
   confirmedCalendarEventId: string;
   bookingId: string;
   paymentStatus: string;
+  quoteUrl: string;
+  quoteGeneratedAt: string;
 };
 
-type BookingRecord = {
+export type BookingRecord = {
   bookingId: string;
   leadId: string;
   bookedAt: string;
@@ -73,6 +75,9 @@ type BookingRecord = {
   invoiceUrl: string;
   paymentStatus: string;
   status: string;
+  contractStatus: string;
+  contractSentAt: string;
+  invoiceGeneratedAt: string;
 };
 
 export type DashboardData = {
@@ -175,6 +180,8 @@ export async function createLeadForWorkspace(
     confirmedCalendarEventId: "",
     bookingId: "",
     paymentStatus: "Not Started",
+    quoteUrl: "",
+    quoteGeneratedAt: "",
   };
 
   await sheets.spreadsheets.values.append({
@@ -297,6 +304,9 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     invoiceUrl: "",
     paymentStatus: "Advance Due",
     status: "Confirmed",
+    contractStatus: "Draft",
+    contractSentAt: "",
+    invoiceGeneratedAt: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -410,6 +420,29 @@ export async function getLeadRecord(email: string, tokens: Credentials, leadId: 
   const workspace = await getRequiredWorkspace(email);
   const lead = await findLeadById(workspace, tokens, leadId);
   return lead?.record ?? null;
+}
+
+export async function getBookingRecord(email: string, tokens: Credentials, bookingId: string) {
+  const workspace = await getRequiredWorkspace(email);
+  const booking = await findBookingById(workspace, tokens, bookingId);
+  return booking?.record ?? null;
+}
+
+export async function updateBookingRecord(
+  email: string,
+  tokens: Credentials,
+  bookingId: string,
+  updater: (booking: BookingRecord) => BookingRecord,
+) {
+  const workspace = await getRequiredWorkspace(email);
+  const booking = await findBookingById(workspace, tokens, bookingId);
+  if (!booking) {
+    throw new Error("Booking not found");
+  }
+
+  const updated = updater(booking.record);
+  await updateBookingRow(workspace, tokens, booking.rowNumber, updated);
+  return updated;
 }
 
 async function getRequiredWorkspace(email: string) {
@@ -560,6 +593,26 @@ async function listBookingRows(workspace: WorkspaceRecord, tokens: Credentials) 
     .map((row) => rowToBooking(row));
 }
 
+async function findBookingById(workspace: WorkspaceRecord, tokens: Credentials, bookingId: string) {
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.bookings}!A2:${toColumn(bookingHeaders.length)}`,
+  });
+
+  const rows = response.data.values ?? [];
+  for (let index = 0; index < rows.length; index += 1) {
+    if (rows[index][0] === bookingId) {
+      return {
+        rowNumber: index + 2,
+        record: rowToBooking(rows[index]),
+      };
+    }
+  }
+
+  return null;
+}
+
 async function updateLeadRow(
   workspace: WorkspaceRecord,
   tokens: Credentials,
@@ -573,6 +626,23 @@ async function updateLeadRow(
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [leadToRow(lead)],
+    },
+  });
+}
+
+async function updateBookingRow(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  rowNumber: number,
+  booking: BookingRecord,
+) {
+  const { sheets } = createGoogleClients(tokens);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.bookings}!A${rowNumber}:${toColumn(bookingHeaders.length)}${rowNumber}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [bookingToRow(booking)],
     },
   });
 }
@@ -597,15 +667,7 @@ async function updateBookingPaymentStatus(
       const booking = rowToBooking(rows[index]);
       booking.paymentStatus = paymentStatus;
       booking.status = paymentStatus === "Paid in Full" ? "Paid" : booking.status;
-
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: workspace.spreadsheetId,
-        range: `${sheetNames.bookings}!A${index + 2}:${toColumn(bookingHeaders.length)}${index + 2}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: [bookingToRow(booking)],
-        },
-      });
+      await updateBookingRow(workspace, tokens, index + 2, booking);
       return;
     }
   }
@@ -772,6 +834,8 @@ function leadToRow(lead: LeadRecord) {
     lead.confirmedCalendarEventId,
     lead.bookingId,
     lead.paymentStatus,
+    lead.quoteUrl,
+    lead.quoteGeneratedAt,
   ];
 }
 
@@ -810,6 +874,8 @@ function rowToLead(row: string[]): LeadRecord {
     confirmedCalendarEventId: row[30] ?? "",
     bookingId: row[31] ?? "",
     paymentStatus: row[32] ?? "Not Started",
+    quoteUrl: row[33] ?? "",
+    quoteGeneratedAt: row[34] ?? "",
   };
 }
 
@@ -834,6 +900,9 @@ function bookingToRow(booking: BookingRecord) {
     booking.invoiceUrl,
     booking.paymentStatus,
     booking.status,
+    booking.contractStatus,
+    booking.contractSentAt,
+    booking.invoiceGeneratedAt,
   ];
 }
 
@@ -858,6 +927,9 @@ function rowToBooking(row: string[]): BookingRecord {
     invoiceUrl: row[16] ?? "",
     paymentStatus: row[17] ?? "",
     status: row[18] ?? "",
+    contractStatus: row[19] ?? "Draft",
+    contractSentAt: row[20] ?? "",
+    invoiceGeneratedAt: row[21] ?? "",
   };
 }
 

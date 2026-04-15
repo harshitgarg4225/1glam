@@ -10,8 +10,10 @@ import {
   confirmLeadBooking,
   createLeadForWorkspace,
   findLatestLeadByActor,
+  getBookingRecord,
   getLeadRecord,
   getDashboardData,
+  updateBookingRecord,
   type LeadRecord,
   updateLeadRecord,
   updatePaymentStatus,
@@ -40,6 +42,8 @@ import {
 } from "./services/meta.js";
 import { generateConversationReply } from "./services/grok.js";
 import { sendChannelMessage } from "./services/messaging.js";
+import { generateInvoiceDocument, generateQuoteDocument } from "./services/documents.js";
+import { createLeegalityContract } from "./services/contracts.js";
 import {
   disconnectMetaConnection,
   getWorkspaceByEmail,
@@ -283,6 +287,119 @@ app.post("/api/leads/:leadId/payment", async (req, res, next) => {
     );
 
     res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/leads/:leadId/quote", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+    );
+    if (!workspace || !lead) {
+      return res.status(404).json({ error: "Lead not found" });
+    }
+
+    const quote = await generateQuoteDocument(workspace, req.session.googleTokens, lead);
+    const updatedLead = await updateLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+      (current) => ({
+        ...current,
+        quoteUrl: quote.fileUrl,
+        quoteGeneratedAt: new Date().toISOString(),
+        lastContactedAt: new Date().toISOString(),
+      }),
+    );
+
+    res.json({ ok: true, lead: updatedLead, quote });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const invoice = await generateInvoiceDocument(workspace, req.session.googleTokens, booking);
+    const updatedBooking = await updateBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      (current) => ({
+        ...current,
+        invoiceUrl: invoice.fileUrl,
+        invoiceGeneratedAt: new Date().toISOString(),
+      }),
+    );
+
+    res.json({ ok: true, booking: updatedBooking, invoice });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      booking.leadId,
+    );
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found for booking" });
+    }
+
+    const contract = await createLeegalityContract(workspace, lead, booking);
+    const updatedBooking = await updateBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      (current) => ({
+        ...current,
+        contractUrl: contract.contractUrl || current.contractUrl,
+        contractStatus: contract.contractStatus || "Sent",
+        contractSentAt: new Date().toISOString(),
+      }),
+    );
+
+    res.json({ ok: true, booking: updatedBooking, contract });
   } catch (error) {
     next(error);
   }

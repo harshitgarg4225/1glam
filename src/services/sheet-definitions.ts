@@ -42,6 +42,8 @@ export const leadHeaders = [
   "Confirmed Calendar Event ID",
   "Booking ID",
   "Payment Status",
+  "Quote URL",
+  "Quote Generated At",
 ] as const;
 
 export const bookingHeaders = [
@@ -64,6 +66,9 @@ export const bookingHeaders = [
   "Invoice URL",
   "Payment Status",
   "Status",
+  "Contract Status",
+  "Contract Sent At",
+  "Invoice Generated At",
 ] as const;
 
 export const artistHeaders = [
