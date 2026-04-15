@@ -16,7 +16,12 @@ import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
 import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId } from "./services/database.js";
 import { exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
-import { extractInboundTextFromMetaWebhook, ingestNormalizedLead, logInteractionForWorkspace } from "./services/integrations.js";
+import {
+  extractInboundTextFromMetaWebhook,
+  ingestNormalizedLead,
+  logInteractionForWorkspace,
+  parseInstagramLeadSignalsFromMessage,
+} from "./services/integrations.js";
 import {
   exchangeMetaCode,
   fetchInstagramLoginConnectionProfile,
@@ -528,29 +533,35 @@ app.post("/webhooks/meta", async (req, res, next) => {
     if (workspace && channel) {
       const tokens = await getWorkspaceCredentials(workspace.email);
       const inboundText = extractInboundTextFromMetaWebhook(body);
+      let leadCreated = false;
 
       if (channel === "Instagram" && inboundText) {
+        const parsedLead = parseInstagramLeadSignalsFromMessage(inboundText);
         await ingestNormalizedLead(tokens, {
           workspaceEmail: workspace.email,
           source: "Instagram",
           clientName: actorId ? `Instagram ${actorId}` : "Instagram Lead",
           clientWhatsApp: "",
           clientInstagram: actorId || undefined,
-          eventType: "Other",
-          eventDate: new Date().toISOString().slice(0, 10),
-          locationText: "Unknown",
+          eventType: parsedLead.eventType,
+          eventDate: parsedLead.eventDate,
+          locationText: parsedLead.locationText,
+          clientTags: parsedLead.clientTags,
           inboundMessage: inboundText,
           actorId: actorId || "instagram-user",
         });
+        leadCreated = true;
       }
 
-      await logInteractionForWorkspace(workspace.email, tokens, {
-        direction: "Inbound",
-        channel,
-        actor: actorId || "meta-user",
-        message: inboundText || JSON.stringify(body).slice(0, 500),
-        aiSummary: "Direct Meta webhook received",
-      });
+      if (!leadCreated) {
+        await logInteractionForWorkspace(workspace.email, tokens, {
+          direction: "Inbound",
+          channel,
+          actor: actorId || "meta-user",
+          message: inboundText || JSON.stringify(body).slice(0, 500),
+          aiSummary: "Direct Meta webhook received",
+        });
+      }
     }
 
     res.json({ ok: true });
