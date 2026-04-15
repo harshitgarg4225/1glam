@@ -359,6 +359,59 @@ export async function getDashboardData(email: string, tokens: Credentials): Prom
   };
 }
 
+export async function findLatestLeadByActor(
+  email: string,
+  tokens: Credentials,
+  input: { channel: "Instagram" | "WhatsApp"; actorId: string },
+) {
+  const workspace = await getRequiredWorkspace(email);
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.leads}!A2:${toColumn(leadHeaders.length)}`,
+  });
+
+  const rows = response.data.values ?? [];
+  const matches = rows
+    .map((row, index) => ({ rowNumber: index + 2, record: rowToLead(row) }))
+    .filter(({ record }) => {
+      if (["Lost", "Completed"].includes(record.status)) return false;
+      return input.channel === "Instagram"
+        ? record.clientInstagram === input.actorId
+        : record.clientWhatsApp === input.actorId;
+    })
+    .sort((a, b) =>
+      (b.record.lastContactedAt || b.record.createdAt).localeCompare(
+        a.record.lastContactedAt || a.record.createdAt,
+      ),
+    );
+
+  return matches[0] ?? null;
+}
+
+export async function updateLeadRecord(
+  email: string,
+  tokens: Credentials,
+  leadId: string,
+  updater: (lead: LeadRecord) => LeadRecord,
+) {
+  const workspace = await getRequiredWorkspace(email);
+  const lead = await findLeadById(workspace, tokens, leadId);
+  if (!lead) {
+    throw new Error("Lead not found");
+  }
+
+  const updated = updater(lead.record);
+  await updateLeadRow(workspace, tokens, lead.rowNumber, updated);
+  return updated;
+}
+
+export async function getLeadRecord(email: string, tokens: Credentials, leadId: string) {
+  const workspace = await getRequiredWorkspace(email);
+  const lead = await findLeadById(workspace, tokens, leadId);
+  return lead?.record ?? null;
+}
+
 async function getRequiredWorkspace(email: string) {
   const workspace = await getWorkspaceByEmail(email);
   if (!workspace) {

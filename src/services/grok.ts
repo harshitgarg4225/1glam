@@ -7,6 +7,13 @@ export type GrokLeadIntelligence = {
   suggestedReply: string;
 };
 
+export type GrokConversationReply = {
+  reply: string;
+  ownerSummary: string;
+  memorySummary: string;
+  openQuestions: string[];
+};
+
 export async function enrichLeadWithGrok(input: {
   ownerName: string;
   brandName: string;
@@ -71,6 +78,69 @@ export async function enrichLeadWithGrok(input: {
   };
 }
 
+export async function generateConversationReply(input: {
+  ownerName: string;
+  brandName: string;
+  city: string;
+  channel: "Instagram" | "WhatsApp";
+  clientName: string;
+  leadStatus: string;
+  eventType: string;
+  eventDate: string;
+  eventTime?: string;
+  locationText: string;
+  suggestedReply?: string;
+  currentPrice?: number;
+  latestMessage: string;
+  memorySummary?: string;
+}): Promise<GrokConversationReply> {
+  if (!appConfig.xaiApiKey) {
+    return fallbackConversationReply(input);
+  }
+
+  const systemPrompt =
+    "You are a luxury makeup artist booking conversation agent for an Indian beauty business. " +
+    "Return strict JSON only with keys: reply, ownerSummary, memorySummary, openQuestions. " +
+    "reply should be warm, polished, concise, and client-facing. " +
+    "ownerSummary should be brief internal context. " +
+    "memorySummary should be a compact rolling summary for future turns. " +
+    "openQuestions must be an array of concise strings for missing information.";
+
+  const response = await fetch("https://api.x.ai/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${appConfig.xaiApiKey}`,
+    },
+    body: JSON.stringify({
+      model: appConfig.xaiModel,
+      input: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(input, null, 2) },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    return fallbackConversationReply(input);
+  }
+
+  const payload = (await response.json()) as { output_text?: string };
+  const parsed = payload.output_text ? safeParseJson(payload.output_text) : null;
+  if (!parsed) {
+    return fallbackConversationReply(input);
+  }
+
+  return {
+    reply: String(parsed.reply ?? "").trim() || fallbackConversationReply(input).reply,
+    ownerSummary: String(parsed.ownerSummary ?? "").trim(),
+    memorySummary: String(parsed.memorySummary ?? "").trim(),
+    openQuestions: Array.isArray(parsed.openQuestions)
+      ? parsed.openQuestions.map((value) => String(value).trim()).filter(Boolean)
+      : [],
+  };
+}
+
 function safeParseJson(input: string) {
   const trimmed = input.trim();
   const direct = tryParse(trimmed);
@@ -97,4 +167,40 @@ function normalizeProfileTier(value: unknown): "Low" | "Mid" | "High" {
   if (normalized === "low") return "Low";
   if (normalized === "high") return "High";
   return "Mid";
+}
+
+function fallbackConversationReply(input: {
+  ownerName: string;
+  brandName: string;
+  city: string;
+  channel: "Instagram" | "WhatsApp";
+  clientName: string;
+  leadStatus: string;
+  eventType: string;
+  eventDate: string;
+  eventTime?: string;
+  locationText: string;
+  suggestedReply?: string;
+  currentPrice?: number;
+  latestMessage: string;
+  memorySummary?: string;
+}): GrokConversationReply {
+  const missing = [];
+  if (!input.eventTime) missing.push("event time");
+  if (!input.locationText || input.locationText === "Unknown") missing.push("venue");
+  const replyBase =
+    input.suggestedReply?.trim() ||
+    `Hi ${input.clientName || "love"}, thank you for reaching out to ${input.brandName}.`;
+  const questionLine = missing.length
+    ? ` Could you please share your ${missing.join(" and ")} so we can guide you properly?`
+    : " We’d love to help you with the next steps.";
+
+  return {
+    reply: `${replyBase}${questionLine}`.trim(),
+    ownerSummary: `Latest ${input.channel} message reviewed. Lead is in ${input.leadStatus}.`,
+    memorySummary:
+      input.memorySummary ||
+      `Client asked about ${input.eventType} on ${input.eventDate} in ${input.locationText}.`,
+    openQuestions: missing,
+  };
 }

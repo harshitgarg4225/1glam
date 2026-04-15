@@ -9,7 +9,11 @@ import {
   applyOwnerDecision,
   confirmLeadBooking,
   createLeadForWorkspace,
+  findLatestLeadByActor,
+  getLeadRecord,
   getDashboardData,
+  type LeadRecord,
+  updateLeadRecord,
   updatePaymentStatus,
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
@@ -23,6 +27,7 @@ import {
   parseInstagramLeadSignalsFromMessage,
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
+import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
   exchangeMetaCode,
   fetchInstagramLoginConnectionProfile,
@@ -33,6 +38,8 @@ import {
   verifyAndParseMetaSignedRequest,
   verifyMetaWebhook,
 } from "./services/meta.js";
+import { generateConversationReply } from "./services/grok.js";
+import { sendChannelMessage } from "./services/messaging.js";
 import {
   disconnectMetaConnection,
   getWorkspaceByEmail,
@@ -276,6 +283,87 @@ app.post("/api/leads/:leadId/payment", async (req, res, next) => {
     );
 
     res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/leads/:leadId/reply", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const lead = await getLeadRecord(req.session.profile.email, req.session.googleTokens, req.params.leadId);
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!lead || !workspace) {
+      return res.status(404).json({ error: "Lead not found" });
+    }
+
+    const channel = lead.source === "WhatsApp" ? "WhatsApp" : "Instagram";
+    const connection =
+      channel === "WhatsApp"
+        ? workspace.metaConnections?.whatsapp
+        : workspace.metaConnections?.instagram;
+    if (!connection || connection.status !== "connected") {
+      return res.status(400).json({ error: `${channel} is not connected` });
+    }
+
+    const message =
+      typeof req.body?.message === "string" && req.body.message.trim().length > 0
+        ? req.body.message.trim()
+        : lead.suggestedReply;
+    if (!message) {
+      return res.status(400).json({ error: "Reply message is empty" });
+    }
+
+    const actorId = channel === "WhatsApp" ? lead.clientWhatsApp : lead.clientInstagram;
+    if (!actorId) {
+      return res.status(400).json({ error: "Lead does not have a channel actor id" });
+    }
+
+    await sendChannelMessage({
+      workspace,
+      connection,
+      channel,
+      actorId,
+      message,
+    });
+
+    const updatedLead = await updateLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+      (current) => ({
+        ...current,
+        suggestedReply: message,
+        lastContactedAt: new Date().toISOString(),
+      }),
+    );
+
+    const existingMemory = await loadConversationMemory(workspace.workspaceId, updatedLead.leadId);
+    await saveConversationMemory({
+      workspaceId: workspace.workspaceId,
+      leadId: updatedLead.leadId,
+      clientName: updatedLead.clientName,
+      channel,
+      summary: updatedLead.aiInsight || extractSummaryFromMemory(existingMemory),
+      knownDetails: buildKnownDetails(updatedLead),
+      openQuestions: inferOpenQuestions(updatedLead),
+      lastInboundMessage: extractLastInboundFromMemory(existingMemory),
+      lastOutboundMessage: message,
+    });
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: updatedLead.leadId,
+      direction: "Outbound",
+      channel,
+      actor: actorId,
+      message,
+      aiSummary: "Reply sent from dashboard",
+    });
+
+    res.json({ ok: true, lead: updatedLead });
   } catch (error) {
     next(error);
   }
@@ -561,23 +649,55 @@ app.post("/webhooks/meta", async (req, res, next) => {
       const tokens = await getWorkspaceCredentials(workspace.email);
       const inboundText = extractInboundTextFromMetaWebhook(body);
       let leadCreated = false;
+      let resolvedLeadId = "";
 
       if (channel === "Instagram" && inboundText) {
+        const existingLead = actorId
+          ? await findLatestLeadByActor(workspace.email, tokens, { channel, actorId })
+          : null;
         const parsedLead = parseInstagramLeadSignalsFromMessage(inboundText);
-        await ingestNormalizedLead(tokens, {
-          workspaceEmail: workspace.email,
-          source: "Instagram",
-          clientName: actorId ? `Instagram ${actorId}` : "Instagram Lead",
-          clientWhatsApp: "",
-          clientInstagram: actorId || undefined,
-          eventType: parsedLead.eventType,
-          eventDate: parsedLead.eventDate,
-          locationText: parsedLead.locationText,
-          clientTags: parsedLead.clientTags,
-          inboundMessage: inboundText,
-          actorId: actorId || "instagram-user",
-        });
-        leadCreated = true;
+        if (existingLead) {
+          const updatedLead = await updateLeadRecord(
+            workspace.email,
+            tokens,
+            existingLead.record.leadId,
+            (current) => ({
+              ...current,
+              clientName: current.clientName || (actorId ? `Instagram ${actorId}` : "Instagram Lead"),
+              eventType: current.eventType === "Other" ? parsedLead.eventType : current.eventType,
+              eventDate: current.eventDate || parsedLead.eventDate,
+              locationText:
+                current.locationText === "Unknown" ? parsedLead.locationText : current.locationText,
+              clientTags: mergeTags(current.clientTags, parsedLead.clientTags),
+              lastContactedAt: new Date().toISOString(),
+            }),
+          );
+          resolvedLeadId = updatedLead.leadId;
+          await logInteractionForWorkspace(workspace.email, tokens, {
+            leadId: updatedLead.leadId,
+            direction: "Inbound",
+            channel,
+            actor: actorId || "instagram-user",
+            message: inboundText,
+            aiSummary: "Existing Instagram lead updated",
+          });
+        } else {
+          const result = await ingestNormalizedLead(tokens, {
+            workspaceEmail: workspace.email,
+            source: "Instagram",
+            clientName: actorId ? `Instagram ${actorId}` : "Instagram Lead",
+            clientWhatsApp: "",
+            clientInstagram: actorId || undefined,
+            eventType: parsedLead.eventType,
+            eventDate: parsedLead.eventDate,
+            locationText: parsedLead.locationText,
+            clientTags: parsedLead.clientTags,
+            inboundMessage: inboundText,
+            actorId: actorId || "instagram-user",
+          });
+          resolvedLeadId = result.lead.leadId;
+          leadCreated = true;
+        }
       } else if (channel === "WhatsApp" && inboundText) {
         const entry = Array.isArray(body.entry) ? (body.entry[0] as Record<string, unknown>) : undefined;
         const change = entry && Array.isArray(entry.changes) ? (entry.changes[0] as Record<string, unknown>) : undefined;
@@ -591,23 +711,96 @@ app.post("/webhooks/meta", async (req, res, next) => {
               ? `WhatsApp ${actorId}`
               : "WhatsApp Lead";
         const parsedLead = parseWhatsAppLeadSignalsFromMessage(inboundText);
+        const existingLead = actorId
+          ? await findLatestLeadByActor(workspace.email, tokens, { channel, actorId })
+          : null;
 
-        await ingestNormalizedLead(tokens, {
-          workspaceEmail: workspace.email,
-          source: "WhatsApp",
-          clientName: senderName,
-          clientWhatsApp: actorId || "",
-          eventType: parsedLead.eventType,
-          eventDate: parsedLead.eventDate,
-          locationText: parsedLead.locationText,
-          clientTags: parsedLead.clientTags,
-          inboundMessage: inboundText,
-          actorId: actorId || "whatsapp-user",
-        });
-        leadCreated = true;
+        if (existingLead) {
+          const updatedLead = await updateLeadRecord(
+            workspace.email,
+            tokens,
+            existingLead.record.leadId,
+            (current) => ({
+              ...current,
+              clientName: current.clientName || senderName,
+              eventType: current.eventType === "Other" ? parsedLead.eventType : current.eventType,
+              eventDate: current.eventDate || parsedLead.eventDate,
+              locationText:
+                current.locationText === "Unknown" ? parsedLead.locationText : current.locationText,
+              clientTags: mergeTags(current.clientTags, parsedLead.clientTags),
+              lastContactedAt: new Date().toISOString(),
+            }),
+          );
+          resolvedLeadId = updatedLead.leadId;
+          await logInteractionForWorkspace(workspace.email, tokens, {
+            leadId: updatedLead.leadId,
+            direction: "Inbound",
+            channel,
+            actor: actorId || "whatsapp-user",
+            message: inboundText,
+            aiSummary: "Existing WhatsApp lead updated",
+          });
+        } else {
+          const result = await ingestNormalizedLead(tokens, {
+            workspaceEmail: workspace.email,
+            source: "WhatsApp",
+            clientName: senderName,
+            clientWhatsApp: actorId || "",
+            eventType: parsedLead.eventType,
+            eventDate: parsedLead.eventDate,
+            locationText: parsedLead.locationText,
+            clientTags: parsedLead.clientTags,
+            inboundMessage: inboundText,
+            actorId: actorId || "whatsapp-user",
+          });
+          resolvedLeadId = result.lead.leadId;
+          leadCreated = true;
+        }
       }
 
-      if (!leadCreated) {
+      if ((channel === "Instagram" || channel === "WhatsApp") && inboundText && resolvedLeadId) {
+        const lead = await getLeadRecord(workspace.email, tokens, resolvedLeadId);
+        if (lead) {
+          const memory = await loadConversationMemory(workspace.workspaceId, lead.leadId);
+          const conversation = await generateConversationReply({
+            ownerName: workspace.config.ownerName,
+            brandName: workspace.config.businessName,
+            city: workspace.config.city,
+            channel,
+            clientName: lead.clientName,
+            leadStatus: lead.status,
+            eventType: lead.eventType,
+            eventDate: lead.eventDate,
+            eventTime: lead.eventTime,
+            locationText: lead.locationText,
+            suggestedReply: lead.suggestedReply,
+            currentPrice: lead.finalApprovedPrice || lead.initialAiPrice,
+            latestMessage: inboundText,
+            memorySummary: extractSummaryFromMemory(memory),
+          });
+
+          await updateLeadRecord(workspace.email, tokens, lead.leadId, (current) => ({
+            ...current,
+            aiInsight: conversation.ownerSummary || current.aiInsight,
+            suggestedReply: conversation.reply || current.suggestedReply,
+            lastContactedAt: new Date().toISOString(),
+          }));
+
+          await saveConversationMemory({
+            workspaceId: workspace.workspaceId,
+            leadId: lead.leadId,
+            clientName: lead.clientName,
+            channel,
+            summary: conversation.memorySummary || conversation.ownerSummary || buildLeadSummary(lead),
+            knownDetails: buildKnownDetails(lead),
+            openQuestions: conversation.openQuestions.length
+              ? conversation.openQuestions
+              : inferOpenQuestions(lead),
+            lastInboundMessage: inboundText,
+            lastOutboundMessage: "",
+          });
+        }
+      } else if (!leadCreated) {
         await logInteractionForWorkspace(workspace.email, tokens, {
           direction: "Inbound",
           channel,
@@ -663,3 +856,46 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 app.listen(appConfig.port, () => {
   console.log(`1Glam app listening on ${appConfig.baseUrl}`);
 });
+
+function mergeTags(existing: string, incoming: string) {
+  const values = [...existing.split(","), ...incoming.split(",")]
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set(values)].join(", ");
+}
+
+function buildKnownDetails(lead: LeadRecord) {
+  return [
+    `Lead ID: ${lead.leadId}`,
+    `Source: ${lead.source}`,
+    `Event Type: ${lead.eventType}`,
+    `Event Date: ${lead.eventDate}`,
+    `Event Time: ${lead.eventTime || "Not shared"}`,
+    `Location: ${lead.locationText || "Unknown"}`,
+    `Status: ${lead.status}`,
+    `Price: ${lead.finalApprovedPrice || lead.initialAiPrice || 0}`,
+  ];
+}
+
+function inferOpenQuestions(lead: LeadRecord) {
+  const questions = [];
+  if (!lead.eventTime) questions.push("What time is the event?");
+  if (!lead.locationText || lead.locationText === "Unknown") {
+    questions.push("What is the venue or exact location?");
+  }
+  return questions;
+}
+
+function extractSummaryFromMemory(memory: string) {
+  const match = memory.match(/## Summary\s+([\s\S]*?)(?:\n## |\s*$)/);
+  return match?.[1]?.trim() || "";
+}
+
+function extractLastInboundFromMemory(memory: string) {
+  const match = memory.match(/## Last Inbound Message\s+([\s\S]*?)(?:\n## |\s*$)/);
+  return match?.[1]?.trim() || "";
+}
+
+function buildLeadSummary(lead: LeadRecord) {
+  return `Client ${lead.clientName} is discussing a ${lead.eventType} booking for ${lead.eventDate} in ${lead.locationText}. Current status: ${lead.status}.`;
+}
