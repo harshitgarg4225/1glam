@@ -21,11 +21,13 @@ import {
   ingestNormalizedLead,
   logInteractionForWorkspace,
   parseInstagramLeadSignalsFromMessage,
+  parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
 import {
   exchangeMetaCode,
   fetchInstagramLoginConnectionProfile,
   fetchMetaConnectionProfile,
+  fetchWhatsAppCloudConnectionProfile,
   getMetaConnectUrl,
   parseMetaState,
   verifyAndParseMetaSignedRequest,
@@ -356,6 +358,31 @@ app.post("/api/meta/instagram/token", async (req, res, next) => {
   }
 });
 
+app.post("/api/meta/whatsapp/test-connect", async (req, res, next) => {
+  try {
+    if (!req.session.profile) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!appConfig.waAccessToken || !appConfig.waPhoneNumberId || !appConfig.waBusinessAccountId) {
+      return res.status(400).json({
+        error: "WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, and WA_BUSINESS_ACCOUNT_ID must be configured",
+      });
+    }
+
+    const connection = await fetchWhatsAppCloudConnectionProfile({
+      accessToken: appConfig.waAccessToken,
+      phoneNumberId: appConfig.waPhoneNumberId,
+      wabaId: appConfig.waBusinessAccountId,
+    });
+
+    const workspace = await upsertMetaConnection(req.session.profile.email, "whatsapp", connection);
+    res.json({ ok: true, connection, workspace });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
   try {
     if (!req.session.profile) {
@@ -549,6 +576,33 @@ app.post("/webhooks/meta", async (req, res, next) => {
           clientTags: parsedLead.clientTags,
           inboundMessage: inboundText,
           actorId: actorId || "instagram-user",
+        });
+        leadCreated = true;
+      } else if (channel === "WhatsApp" && inboundText) {
+        const entry = Array.isArray(body.entry) ? (body.entry[0] as Record<string, unknown>) : undefined;
+        const change = entry && Array.isArray(entry.changes) ? (entry.changes[0] as Record<string, unknown>) : undefined;
+        const value = change?.value as Record<string, unknown> | undefined;
+        const contacts = Array.isArray(value?.contacts) ? (value?.contacts[0] as Record<string, unknown>) : undefined;
+        const profile = contacts?.profile as Record<string, unknown> | undefined;
+        const senderName =
+          typeof profile?.name === "string" && profile.name.trim().length > 0
+            ? profile.name.trim()
+            : actorId
+              ? `WhatsApp ${actorId}`
+              : "WhatsApp Lead";
+        const parsedLead = parseWhatsAppLeadSignalsFromMessage(inboundText);
+
+        await ingestNormalizedLead(tokens, {
+          workspaceEmail: workspace.email,
+          source: "WhatsApp",
+          clientName: senderName,
+          clientWhatsApp: actorId || "",
+          eventType: parsedLead.eventType,
+          eventDate: parsedLead.eventDate,
+          locationText: parsedLead.locationText,
+          clientTags: parsedLead.clientTags,
+          inboundMessage: inboundText,
+          actorId: actorId || "whatsapp-user",
         });
         leadCreated = true;
       }

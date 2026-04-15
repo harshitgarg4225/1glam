@@ -46,6 +46,9 @@ Private-code booking infrastructure for luxury makeup artists. The app keeps pla
    - `META_WEBHOOK_VERIFY_TOKEN`
    - `META_INSTAGRAM_CONFIG_ID`
    - `META_WHATSAPP_CONFIG_ID`
+   - `WA_PHONE_NUMBER_ID`
+   - `WA_BUSINESS_ACCOUNT_ID`
+   - `WA_ACCESS_TOKEN`
 5. Install dependencies:
    - `npm install`
 6. Start the app:

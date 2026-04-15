@@ -612,7 +612,7 @@
             : (connection?.businessAccountName || connection?.phoneNumberId || "No phone number linked yet");
           const connectControl = channel === "instagram"
             ? `<button class="button small" type="button" disabled>Use Token Below</button>`
-            : `<a href="/auth/meta/start?channel=${channel}&workspaceEmail=${encodeURIComponent(profile.email)}"><button class="button small" type="button">Connect</button></a>`;
+            : `<button class="button small" type="button" data-whatsapp-test-connect>Use Test Number</button>`;
           const instagramTokenInput = channel === "instagram" ? `
             <div style="margin-top:10px;">
               <input type="password" placeholder="Paste Instagram token" data-instagram-token-input style="width:100%;margin-bottom:8px;" />
@@ -761,6 +761,19 @@
       });
 
       metaSummary.addEventListener("click", async (event) => {
+        const whatsappButton = event.target.closest("button[data-whatsapp-test-connect]");
+        if (whatsappButton) {
+          try {
+            loginState.textContent = "Connecting WhatsApp test number...";
+            await postJson("/api/meta/whatsapp/test-connect", {});
+            await refreshSession();
+            loginState.textContent = "WhatsApp connected.";
+          } catch (error) {
+            loginState.textContent = error.message;
+          }
+          return;
+        }
+
         const tokenButton = event.target.closest("button[data-instagram-token-save]");
         if (tokenButton) {
           const card = tokenButton.closest(".mini-card");

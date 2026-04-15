@@ -97,6 +97,14 @@ export async function ingestNormalizedLead(tokens: Credentials, input: Normalize
 }
 
 export function parseInstagramLeadSignalsFromMessage(message: string): ParsedInstagramSignals {
+  return parseServiceLeadSignalsFromMessage(message);
+}
+
+export function parseWhatsAppLeadSignalsFromMessage(message: string): ParsedInstagramSignals {
+  return parseServiceLeadSignalsFromMessage(message);
+}
+
+function parseServiceLeadSignalsFromMessage(message: string): ParsedInstagramSignals {
   const text = message.trim();
   const lower = text.toLowerCase();
   const eventType =

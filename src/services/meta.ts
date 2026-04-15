@@ -147,6 +147,43 @@ export async function fetchInstagramLoginConnectionProfile(
   };
 }
 
+export async function fetchWhatsAppCloudConnectionProfile(input: {
+  accessToken: string;
+  phoneNumberId: string;
+  wabaId: string;
+}): Promise<MetaChannelConnection> {
+  const [phoneNumber, businessAccount] = await Promise.all([
+    graphGet(`${input.phoneNumberId}?fields=id,display_phone_number,verified_name`, input.accessToken),
+    graphGet(`${input.wabaId}?fields=id,name`, input.accessToken),
+  ]);
+
+  const phoneNumberId =
+    normalizeStringValue(phoneNumber?.id) || input.phoneNumberId;
+  const businessName =
+    normalizeStringValue(businessAccount?.name) ||
+    normalizeStringValue(phoneNumber?.verified_name) ||
+    "WhatsApp Test Number";
+  const displayPhone = normalizeStringValue(phoneNumber?.display_phone_number);
+
+  return {
+    channel: "whatsapp",
+    status: "connected",
+    connectedAt: new Date().toISOString(),
+    metaUserId: normalizeStringValue(businessAccount?.id) || input.wabaId,
+    metaUserName: businessName,
+    accessToken: input.accessToken,
+    tokenExpiresAt: null,
+    scopes: WHATSAPP_SCOPES,
+    wabaId: input.wabaId,
+    phoneNumberId,
+    businessAccountName: displayPhone ? `${businessName} (${displayPhone})` : businessName,
+    dataIsolationKey: crypto
+      .createHash("sha256")
+      .update(`whatsapp:${input.wabaId}:${phoneNumberId}`)
+      .digest("hex"),
+  };
+}
+
 export function verifyMetaWebhook(mode?: string, token?: string, challenge?: string) {
   return (
     mode === "subscribe" &&

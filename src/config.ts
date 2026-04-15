@@ -20,6 +20,9 @@ const envSchema = z.object({
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional().default(""),
   META_INSTAGRAM_CONFIG_ID: z.string().optional().default(""),
   META_WHATSAPP_CONFIG_ID: z.string().optional().default(""),
+  WA_PHONE_NUMBER_ID: z.string().optional().default(""),
+  WA_BUSINESS_ACCOUNT_ID: z.string().optional().default(""),
+  WA_ACCESS_TOKEN: z.string().optional().default(""),
   GOOGLE_OAUTH_SCOPES: z
     .string()
     .default(
@@ -55,6 +58,9 @@ export const appConfig = {
   metaWebhookVerifyToken: parsed.META_WEBHOOK_VERIFY_TOKEN,
   metaInstagramConfigId: parsed.META_INSTAGRAM_CONFIG_ID,
   metaWhatsappConfigId: parsed.META_WHATSAPP_CONFIG_ID,
+  waPhoneNumberId: parsed.WA_PHONE_NUMBER_ID,
+  waBusinessAccountId: parsed.WA_BUSINESS_ACCOUNT_ID,
+  waAccessToken: parsed.WA_ACCESS_TOKEN,
   googleScopes: parsed.GOOGLE_OAUTH_SCOPES.split(",").map((scope) => scope.trim()).filter(Boolean),
   workspaceDbPath: path.join(process.cwd(), "data", "workspaces.json"),
 };
