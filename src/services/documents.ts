@@ -171,6 +171,66 @@ export async function generateInvoiceDocument(
   });
 }
 
+export async function generateContractPdfBytes(
+  workspace: WorkspaceRecord,
+  lead: LeadRecord,
+  booking: BookingRecord,
+) {
+  const contractNumber = `CTR-${booking.bookingId}`;
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([595, 842]);
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+  drawDocumentFrame(page, workspace);
+  drawHeader(page, {
+    title: "Booking Agreement",
+    subtitle: workspace.config.businessName || workspace.config.ownerName,
+    docNumber: contractNumber,
+    docDate: new Date().toLocaleDateString("en-IN"),
+  }, bold, regular);
+
+  let y = 650;
+  y = drawSection(page, "Client", [
+    lead.clientName || "Valued Client",
+    lead.clientWhatsApp ? `WhatsApp: ${lead.clientWhatsApp}` : "",
+    lead.clientInstagram ? `Instagram: ${lead.clientInstagram}` : "",
+  ].filter(Boolean), y, bold, regular);
+
+  y = drawSection(page, "Booking Details", [
+    `Booking ID: ${booking.bookingId}`,
+    `Event: ${booking.eventType}`,
+    `Date: ${booking.eventDate || "To be confirmed"}`,
+    `Time: ${booking.eventTime || "To be confirmed"}`,
+    `Venue: ${booking.venue || "To be confirmed"}`,
+    `Artist: ${booking.assignedArtist || workspace.config.ownerName}`,
+  ], y - 12, bold, regular);
+
+  y = drawPricingBlock(page, {
+    heading: "Commercial Terms",
+    lines: [
+      ["Booking Value", inr(booking.finalPrice)],
+      ["Advance", inr(booking.advanceAmount)],
+      ["Balance", inr(booking.balanceDue)],
+      ["Payment Terms", workspace.config.advancePercentage ? `${workspace.config.advancePercentage}% advance` : "As agreed"],
+    ],
+    y: y - 16,
+  }, bold, regular);
+
+  drawParagraph(
+    page,
+    [
+      `${workspace.config.businessName || workspace.config.ownerName} agrees to provide professional makeup services for the booking described above.`,
+      workspace.config.paymentTerms,
+      "By signing this agreement, the client confirms the booking details and accepts the quoted payment terms.",
+    ].join(" "),
+    { x: 56, y: y - 32, size: 11, font: regular, color: rgb(0.22, 0.22, 0.22), maxWidth: 480 },
+  );
+
+  drawFooter(page, workspace, regular);
+  return pdf.save();
+}
+
 function resolveInvoiceStage(booking: BookingRecord): InvoiceStage {
   if (booking.paymentStatus === "Advance Due") {
     return { label: "Advance", amount: booking.advanceAmount };

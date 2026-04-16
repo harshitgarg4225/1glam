@@ -1,6 +1,7 @@
 import type { WorkspaceRecord } from "../types.js";
 import type { BookingRecord, LeadRecord } from "./booking.js";
 import { appConfig } from "../config.js";
+import { generateContractPdfBytes } from "./documents.js";
 
 type LeegalityCreateResult = {
   contractUrl: string;
@@ -29,44 +30,27 @@ export async function createLeegalityContract(
 
   if (!workspace.config.contractTemplateUrl) {
     throw new Error(
-      "Add the Leegality template ID or template URL in Owner Configuration before creating a contract.",
+      "Add the Leegality workflow/profile ID in Owner Configuration before creating a contract.",
     );
   }
 
+  const contractPdfBytes = await generateContractPdfBytes(workspace, lead, booking);
+  const contractBase64 = Buffer.from(contractPdfBytes).toString("base64");
+
   const payload = {
-    templateId: workspace.config.contractTemplateUrl,
-    referenceId: booking.bookingId,
-    title: `${workspace.config.businessName || workspace.name} Booking Contract`,
-    callbackUrl: `${appConfig.baseUrl}/webhooks/leegality`,
-    customer: {
-      name: lead.clientName,
-      mobile: lead.clientWhatsApp,
-      email: "",
+    profileId: workspace.config.contractTemplateUrl,
+    file: {
+      name: `${workspace.config.businessName || workspace.name} Booking Contract ${booking.bookingId}`,
+      file: contractBase64,
     },
-    booking: {
-      bookingId: booking.bookingId,
-      leadId: lead.leadId,
-      eventType: booking.eventType,
-      eventDate: booking.eventDate,
-      eventTime: booking.eventTime,
-      venue: booking.venue,
-      finalPrice: booking.finalPrice,
-      advanceAmount: booking.advanceAmount,
-      balanceDue: booking.balanceDue,
-    },
-    mergeFields: {
-      client_name: lead.clientName,
-      client_mobile: lead.clientWhatsApp,
-      event_type: booking.eventType,
-      event_date: booking.eventDate,
-      event_time: booking.eventTime,
-      venue: booking.venue,
-      final_price: booking.finalPrice,
-      advance_amount: booking.advanceAmount,
-      balance_due: booking.balanceDue,
-      business_name: workspace.config.businessName || workspace.name,
-      owner_name: workspace.config.ownerName,
-    },
+    invitees: [
+      {
+        name: lead.clientName,
+        email: "",
+        phone: lead.clientWhatsApp,
+      },
+    ],
+    irn: booking.bookingId,
   };
 
   const response = await fetch(appConfig.leegalityCreateUrl, {
@@ -98,7 +82,9 @@ export async function createLeegalityContract(
     "sign_url",
   ]);
   const contractStatus = pickFirstString(parsed, ["status"]) || "Sent";
-  const referenceId = pickFirstString(parsed, ["referenceId", "reference_id", "requestId", "request_id"]) || booking.bookingId;
+  const referenceId =
+    pickFirstString(parsed, ["irn", "referenceId", "reference_id", "requestId", "request_id"]) ||
+    booking.bookingId;
 
   return {
     contractUrl,
@@ -122,6 +108,7 @@ export function verifyLeegalityWebhookSecret(
 
 export function parseLeegalityWebhook(body: unknown): LeegalityWebhookEvent {
   const referenceId = pickDeepString(body, [
+    ["irn"],
     ["referenceId"],
     ["reference_id"],
     ["requestId"],
