@@ -9,6 +9,13 @@ type LeegalityCreateResult = {
   rawResponse: unknown;
 };
 
+export type LeegalityWebhookEvent = {
+  referenceId: string;
+  contractStatus: string;
+  contractUrl: string;
+  rawPayload: unknown;
+};
+
 export async function createLeegalityContract(
   workspace: WorkspaceRecord,
   lead: LeadRecord,
@@ -101,6 +108,106 @@ export async function createLeegalityContract(
   };
 }
 
+export function verifyLeegalityWebhookSecret(
+  providedValues: Array<string | undefined>,
+) {
+  if (!appConfig.leegalityWebhookSecret) {
+    return true;
+  }
+
+  return providedValues.some(
+    (value) => typeof value === "string" && value.trim() === appConfig.leegalityWebhookSecret,
+  );
+}
+
+export function parseLeegalityWebhook(body: unknown): LeegalityWebhookEvent {
+  const referenceId = pickDeepString(body, [
+    ["referenceId"],
+    ["reference_id"],
+    ["requestId"],
+    ["request_id"],
+    ["documentId"],
+    ["document_id"],
+    ["data", "referenceId"],
+    ["data", "reference_id"],
+    ["data", "requestId"],
+    ["data", "request_id"],
+    ["document", "referenceId"],
+    ["document", "reference_id"],
+    ["event", "referenceId"],
+    ["event", "reference_id"],
+    ["payload", "referenceId"],
+    ["payload", "reference_id"],
+  ]);
+
+  if (!referenceId) {
+    throw new Error("Leegality webhook did not include a referenceId");
+  }
+
+  const rawStatus =
+    pickDeepString(body, [
+      ["status"],
+      ["event"],
+      ["action"],
+      ["documentStatus"],
+      ["document_status"],
+      ["data", "status"],
+      ["data", "event"],
+      ["document", "status"],
+      ["payload", "status"],
+    ]) || "received";
+
+  const contractUrl = pickDeepString(body, [
+    ["signUrl"],
+    ["sign_url"],
+    ["documentUrl"],
+    ["document_url"],
+    ["url"],
+    ["data", "signUrl"],
+    ["data", "documentUrl"],
+    ["document", "signUrl"],
+    ["document", "documentUrl"],
+  ]);
+
+  return {
+    referenceId,
+    contractStatus: normalizeLeegalityStatus(rawStatus),
+    contractUrl,
+    rawPayload: body,
+  };
+}
+
+export function normalizeLeegalityStatus(rawStatus: string) {
+  const normalized = rawStatus.trim().toLowerCase();
+
+  if (
+    normalized.includes("signed") ||
+    normalized.includes("executed") ||
+    normalized.includes("completed")
+  ) {
+    return "Signed";
+  }
+
+  if (
+    normalized.includes("declin") ||
+    normalized.includes("reject") ||
+    normalized.includes("cancel")
+  ) {
+    return "Declined";
+  }
+
+  if (
+    normalized.includes("sent") ||
+    normalized.includes("share") ||
+    normalized.includes("created") ||
+    normalized.includes("pending")
+  ) {
+    return "Sent";
+  }
+
+  return rawStatus;
+}
+
 function safeJsonParse(value: string) {
   try {
     return JSON.parse(value) as Record<string, unknown>;
@@ -118,5 +225,24 @@ function pickFirstString(source: unknown, keys: string[]) {
       return value.trim();
     }
   }
+  return "";
+}
+
+function pickDeepString(source: unknown, paths: string[][]) {
+  for (const path of paths) {
+    let current: unknown = source;
+    for (const key of path) {
+      if (!current || typeof current !== "object") {
+        current = undefined;
+        break;
+      }
+      current = (current as Record<string, unknown>)[key];
+    }
+
+    if (typeof current === "string" && current.trim()) {
+      return current.trim();
+    }
+  }
+
   return "";
 }

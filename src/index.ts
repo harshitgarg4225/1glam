@@ -20,7 +20,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId } from "./services/database.js";
+import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces } from "./services/database.js";
 import { exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
@@ -43,7 +43,11 @@ import {
 import { generateConversationReply } from "./services/grok.js";
 import { sendChannelMessage } from "./services/messaging.js";
 import { generateInvoiceDocument, generateQuoteDocument } from "./services/documents.js";
-import { createLeegalityContract } from "./services/contracts.js";
+import {
+  createLeegalityContract,
+  parseLeegalityWebhook,
+  verifyLeegalityWebhookSecret,
+} from "./services/contracts.js";
 import {
   disconnectMetaConnection,
   getWorkspaceByEmail,
@@ -957,6 +961,48 @@ app.post("/compliance/meta/data-deletion", async (req, res, next) => {
   }
 });
 
+app.post("/webhooks/leegality", async (req, res, next) => {
+  try {
+    const secretOk = verifyLeegalityWebhookSecret([
+      typeof req.headers["x-leegality-secret"] === "string" ? req.headers["x-leegality-secret"] : undefined,
+      typeof req.headers["x-webhook-secret"] === "string" ? req.headers["x-webhook-secret"] : undefined,
+      typeof req.query.secret === "string" ? req.query.secret : undefined,
+      typeof req.body?.secret === "string" ? req.body.secret : undefined,
+    ]);
+
+    if (!secretOk) {
+      return res.status(401).json({ error: "Invalid Leegality webhook secret" });
+    }
+
+    const event = parseLeegalityWebhook(req.body);
+    const resolved = await findBookingAcrossWorkspaces(event.referenceId);
+
+    if (!resolved) {
+      return res.status(404).json({ error: `No booking found for reference ${event.referenceId}` });
+    }
+
+    const updatedBooking = await updateBookingRecord(
+      resolved.workspace.email,
+      resolved.tokens,
+      resolved.booking.bookingId,
+      (current) => ({
+        ...current,
+        contractStatus: event.contractStatus || current.contractStatus,
+        contractUrl: event.contractUrl || current.contractUrl,
+        contractSentAt: current.contractSentAt || new Date().toISOString(),
+      }),
+    );
+
+    res.json({
+      ok: true,
+      bookingId: updatedBooking.bookingId,
+      contractStatus: updatedBooking.contractStatus,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/legal/privacy", (_req, res) => {
   res.type("html").send(`<!doctype html><html><body><h1>1Glam Privacy Policy</h1><p>1Glam stores each artist's Google and Meta connection data separately. Client messages, lead records, bookings, and operational data are isolated per workspace and used only to provide booking, communication, and fulfillment automation for that workspace.</p><p>To request deletion or disconnection, use the in-app disconnect flow or the Meta data deletion callback.</p></body></html>`);
 });
@@ -1015,4 +1061,22 @@ function extractLastInboundFromMemory(memory: string) {
 
 function buildLeadSummary(lead: LeadRecord) {
   return `Client ${lead.clientName} is discussing a ${lead.eventType} booking for ${lead.eventDate} in ${lead.locationText}. Current status: ${lead.status}.`;
+}
+
+async function findBookingAcrossWorkspaces(referenceId: string) {
+  const workspaces = await listWorkspaces();
+
+  for (const workspace of workspaces) {
+    try {
+      const tokens = await getWorkspaceCredentials(workspace.email);
+      const booking = await getBookingRecord(workspace.email, tokens, referenceId);
+      if (booking) {
+        return { workspace, tokens, booking };
+      }
+    } catch {
+      // Ignore individual workspace lookup failures and continue scanning.
+    }
+  }
+
+  return null;
 }

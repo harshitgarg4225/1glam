@@ -49,6 +49,10 @@ Private-code booking infrastructure for luxury makeup artists. The app keeps pla
    - `WA_PHONE_NUMBER_ID`
    - `WA_BUSINESS_ACCOUNT_ID`
    - `WA_ACCESS_TOKEN`
+   - `LEEGALITY_CREATE_URL`
+   - `LEEGALITY_API_KEY`
+   - optional `LEEGALITY_API_KEY_HEADER`
+   - optional `LEEGALITY_WEBHOOK_SECRET`
 5. Install dependencies:
    - `npm install`
 6. Start the app:
@@ -75,6 +79,10 @@ Authenticated routes use the signed-in owner's Google session and operate on tha
 - `POST /api/leads/:leadId/decision`
 - `POST /api/leads/:leadId/confirm`
 - `POST /api/leads/:leadId/payment`
+- `POST /api/leads/:leadId/quote`
+- `POST /api/leads/:leadId/reply`
+- `POST /api/bookings/:bookingId/invoice`
+- `POST /api/bookings/:bookingId/contract`
 - `GET /auth/meta/start`
 - `GET /auth/meta/callback`
 - `POST /api/meta/connections/:channel/assets`
@@ -83,6 +91,7 @@ Authenticated routes use the signed-in owner's Google session and operate on tha
 - `POST /webhooks/manychat`
 - `GET /webhooks/meta`
 - `POST /webhooks/meta`
+- `POST /webhooks/leegality`
 - `POST /compliance/meta/data-deletion`
 - `GET /legal/privacy`
 - `GET /legal/data-deletion`
@@ -200,8 +209,7 @@ This is intentionally a private-code architecture. Users never receive your serv
 ## Next build steps
 
 - Token refresh and secure token persistence
-- Leegality contract creation
-- Invoice PDF generation with UPI QR
+- Leegality webhook/status sync hardening against live account payloads
 - Review and collections workflows
 
 Webhook ingestion now uses stored per-workspace Google tokens with refresh support, so leads can be created even when the owner is not actively signed in.

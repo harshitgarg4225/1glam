@@ -28,6 +28,11 @@ export async function writeWorkspaceDb(db: WorkspaceDb) {
   await fs.writeFile(appConfig.workspaceDbPath, JSON.stringify(db, null, 2), "utf8");
 }
 
+export async function listWorkspaces() {
+  const db = await readWorkspaceDb();
+  return db.workspaces;
+}
+
 export async function findWorkspaceByEmail(email: string) {
   const db = await readWorkspaceDb();
   return db.workspaces.find((workspace) => workspace.email.toLowerCase() === email.toLowerCase()) ?? null;
