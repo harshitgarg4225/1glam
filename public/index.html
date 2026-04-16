@@ -606,6 +606,7 @@
               </div>
               <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
                 <button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create Contract</button>
+                <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync Contract</button>
                 ${booking.contractUrl ? `<a href="${booking.contractUrl}" target="_blank" rel="noreferrer">Open Contract</a>` : `<span class="muted">${booking.contractStatus || "Draft"}</span>`}
               </div>
             </td>
@@ -803,6 +804,9 @@
           } else if (action === "contract") {
             await postJson(`/api/bookings/${bookingId}/contract`, {});
             documentStatus.textContent = "Contract sent to Leegality.";
+          } else if (action === "sync-contract") {
+            const result = await postJson(`/api/bookings/${bookingId}/contract/sync`, {});
+            documentStatus.textContent = `Contract status synced: ${result.booking?.contractStatus || "Updated"}.`;
           }
 
           await refreshSession();

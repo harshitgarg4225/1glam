@@ -37,7 +37,7 @@ export async function logInteractionForWorkspace(
   input: {
     leadId?: string;
     direction: "Inbound" | "Outbound";
-    channel: "WhatsApp" | "Instagram";
+    channel: "WhatsApp" | "Instagram" | "Leegality";
     actor: string;
     message: string;
     aiSummary?: string;

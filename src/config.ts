@@ -26,6 +26,7 @@ const envSchema = z.object({
   LEEGALITY_CREATE_URL: z
     .string()
     .default("https://app1.leegality.com/api/v3.0/sign/request"),
+  LEEGALITY_DETAILS_URL: z.string().optional().default(""),
   LEEGALITY_API_KEY: z.string().optional().default(""),
   LEEGALITY_API_KEY_HEADER: z.string().default("X-Auth-Token"),
   LEEGALITY_WEBHOOK_SECRET: z.string().optional().default(""),
@@ -68,6 +69,7 @@ export const appConfig = {
   waBusinessAccountId: parsed.WA_BUSINESS_ACCOUNT_ID,
   waAccessToken: parsed.WA_ACCESS_TOKEN,
   leegalityCreateUrl: parsed.LEEGALITY_CREATE_URL,
+  leegalityDetailsUrl: parsed.LEEGALITY_DETAILS_URL,
   leegalityApiKey: parsed.LEEGALITY_API_KEY,
   leegalityApiKeyHeader: parsed.LEEGALITY_API_KEY_HEADER,
   leegalityWebhookSecret: parsed.LEEGALITY_WEBHOOK_SECRET,

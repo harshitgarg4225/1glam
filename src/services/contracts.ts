@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { WorkspaceRecord } from "../types.js";
 import type { BookingRecord, LeadRecord } from "./booking.js";
 import { appConfig } from "../config.js";
@@ -7,6 +8,7 @@ type LeegalityCreateResult = {
   contractUrl: string;
   contractStatus: string;
   referenceId: string;
+  documentId: string;
   rawResponse: unknown;
 };
 
@@ -14,7 +16,16 @@ export type LeegalityWebhookEvent = {
   referenceId: string;
   contractStatus: string;
   contractUrl: string;
+  documentId: string;
   rawPayload: unknown;
+};
+
+export type LeegalityDetailsResult = {
+  referenceId: string;
+  contractStatus: string;
+  contractUrl: string;
+  documentId: string;
+  rawResponse: unknown;
 };
 
 export async function createLeegalityContract(
@@ -85,20 +96,121 @@ export async function createLeegalityContract(
   const referenceId =
     pickFirstString(parsed, ["irn", "referenceId", "reference_id", "requestId", "request_id"]) ||
     booking.bookingId;
+  const documentId = pickFirstString(parsed, ["documentId", "document_id", "id"]);
 
   return {
     contractUrl,
     contractStatus,
     referenceId,
+    documentId,
     rawResponse: parsed,
   };
 }
 
-export function verifyLeegalityWebhookSecret(
+export async function checkLeegalityDocumentDetails(referenceId: string): Promise<LeegalityDetailsResult> {
+  if (!appConfig.leegalityDetailsUrl || !appConfig.leegalityApiKey) {
+    throw new Error(
+      "Leegality details sync is not configured. Set LEEGALITY_DETAILS_URL and LEEGALITY_API_KEY first.",
+    );
+  }
+
+  const response = await fetch(appConfig.leegalityDetailsUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [appConfig.leegalityApiKeyHeader]: appConfig.leegalityApiKey,
+    },
+    body: JSON.stringify({
+      irn: referenceId,
+    }),
+  });
+
+  const text = await response.text();
+  const parsed = safeJsonParse(text);
+  if (!response.ok) {
+    throw new Error(
+      `Leegality details request failed: ${
+        typeof parsed === "object" && parsed && "message" in parsed
+          ? String((parsed as { message?: unknown }).message)
+          : text || response.statusText
+      }`,
+    );
+  }
+
+  const resolvedReferenceId =
+    pickDeepString(parsed, [
+      ["irn"],
+      ["referenceId"],
+      ["reference_id"],
+      ["requestId"],
+      ["request_id"],
+      ["data", "irn"],
+      ["data", "referenceId"],
+      ["document", "irn"],
+      ["document", "referenceId"],
+    ]) || referenceId;
+
+  const rawStatus =
+    pickDeepString(parsed, [
+      ["documentStatus"],
+      ["document_status"],
+      ["status"],
+      ["event"],
+      ["data", "documentStatus"],
+      ["document", "documentStatus"],
+      ["document", "status"],
+    ]) || "received";
+
+  const contractUrl =
+    pickDeepString(parsed, [
+      ["url"],
+      ["signUrl"],
+      ["documentUrl"],
+      ["request", "0", "url"],
+      ["data", "url"],
+      ["data", "signUrl"],
+      ["document", "url"],
+    ]) || "";
+
+  const documentId = pickDeepString(parsed, [
+    ["documentId"],
+    ["document_id"],
+    ["data", "documentId"],
+    ["document", "documentId"],
+  ]);
+
+  return {
+    referenceId: resolvedReferenceId,
+    contractStatus: normalizeLeegalityStatus(rawStatus),
+    contractUrl,
+    documentId,
+    rawResponse: parsed,
+  };
+}
+
+export function verifyLeegalityWebhookRequest(
+  body: unknown,
   providedValues: Array<string | undefined>,
 ) {
   if (!appConfig.leegalityWebhookSecret) {
     return true;
+  }
+
+  const documentId = pickDeepString(body, [
+    ["documentId"],
+    ["document_id"],
+    ["data", "documentId"],
+  ]);
+  const mac = pickDeepString(body, [
+    ["mac"],
+    ["data", "mac"],
+  ]);
+
+  if (documentId && mac) {
+    const expected = createHmac("sha1", appConfig.leegalityWebhookSecret).update(documentId).digest("hex");
+    if (safeCompare(expected, mac)) {
+      return true;
+    }
   }
 
   return providedValues.some(
@@ -150,16 +262,25 @@ export function parseLeegalityWebhook(body: unknown): LeegalityWebhookEvent {
     ["documentUrl"],
     ["document_url"],
     ["url"],
+    ["request", "0", "url"],
     ["data", "signUrl"],
     ["data", "documentUrl"],
+    ["data", "url"],
     ["document", "signUrl"],
     ["document", "documentUrl"],
+  ]);
+  const documentId = pickDeepString(body, [
+    ["documentId"],
+    ["document_id"],
+    ["data", "documentId"],
+    ["document", "documentId"],
   ]);
 
   return {
     referenceId,
     contractStatus: normalizeLeegalityStatus(rawStatus),
     contractUrl,
+    documentId,
     rawPayload: body,
   };
 }
@@ -232,4 +353,11 @@ function pickDeepString(source: unknown, paths: string[][]) {
   }
 
   return "";
+}
+
+function safeCompare(expected: string, actual: string) {
+  const left = Buffer.from(expected);
+  const right = Buffer.from(actual);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }

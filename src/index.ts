@@ -44,9 +44,10 @@ import { generateConversationReply } from "./services/grok.js";
 import { sendChannelMessage } from "./services/messaging.js";
 import { generateInvoiceDocument, generateQuoteDocument } from "./services/documents.js";
 import {
+  checkLeegalityDocumentDetails,
   createLeegalityContract,
   parseLeegalityWebhook,
-  verifyLeegalityWebhookSecret,
+  verifyLeegalityWebhookRequest,
 } from "./services/contracts.js";
 import {
   disconnectMetaConnection,
@@ -403,7 +404,68 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
       }),
     );
 
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: "Leegality",
+      actor: booking.bookingId,
+      message: `Contract create request sent to Leegality for booking ${booking.bookingId}`,
+      aiSummary: `Leegality create sent${contract.documentId ? ` (documentId ${contract.documentId})` : ""}`,
+    });
+
     res.json({ ok: true, booking: updatedBooking, contract });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings/:bookingId/contract/sync", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      booking.leadId,
+    );
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found for booking" });
+    }
+
+    const details = await checkLeegalityDocumentDetails(booking.bookingId);
+    const updatedBooking = await updateBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      (current) => ({
+        ...current,
+        contractUrl: details.contractUrl || current.contractUrl,
+        contractStatus: details.contractStatus || current.contractStatus,
+        contractSentAt: current.contractSentAt || new Date().toISOString(),
+      }),
+    );
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      direction: "Inbound",
+      channel: "Leegality",
+      actor: booking.bookingId,
+      message: `Manual contract sync completed for booking ${booking.bookingId}`,
+      aiSummary: `Details API status: ${updatedBooking.contractStatus}`,
+    });
+
+    res.json({ ok: true, booking: updatedBooking, details });
   } catch (error) {
     next(error);
   }
@@ -963,7 +1025,7 @@ app.post("/compliance/meta/data-deletion", async (req, res, next) => {
 
 app.post("/webhooks/leegality", async (req, res, next) => {
   try {
-    const secretOk = verifyLeegalityWebhookSecret([
+    const secretOk = verifyLeegalityWebhookRequest(req.body, [
       typeof req.headers["x-leegality-secret"] === "string" ? req.headers["x-leegality-secret"] : undefined,
       typeof req.headers["x-webhook-secret"] === "string" ? req.headers["x-webhook-secret"] : undefined,
       typeof req.query.secret === "string" ? req.query.secret : undefined,
@@ -992,6 +1054,15 @@ app.post("/webhooks/leegality", async (req, res, next) => {
         contractSentAt: current.contractSentAt || new Date().toISOString(),
       }),
     );
+
+    await logInteractionForWorkspace(resolved.workspace.email, resolved.tokens, {
+      leadId: resolved.booking.leadId,
+      direction: "Inbound",
+      channel: "Leegality",
+      actor: updatedBooking.bookingId,
+      message: `Leegality webhook received for booking ${updatedBooking.bookingId}`,
+      aiSummary: `Webhook status: ${updatedBooking.contractStatus}${event.documentId ? ` (documentId ${event.documentId})` : ""}`,
+    });
 
     res.json({
       ok: true,

@@ -50,6 +50,7 @@ Private-code booking infrastructure for luxury makeup artists. The app keeps pla
    - `WA_BUSINESS_ACCOUNT_ID`
    - `WA_ACCESS_TOKEN`
    - `LEEGALITY_CREATE_URL`
+   - optional `LEEGALITY_DETAILS_URL`
    - `LEEGALITY_API_KEY`
    - optional `LEEGALITY_API_KEY_HEADER`
    - optional `LEEGALITY_WEBHOOK_SECRET`
@@ -78,6 +79,11 @@ Authenticated routes use the signed-in owner's Google session and operate on tha
 - `POST /api/leads`
 - `POST /api/leads/:leadId/decision`
 - `POST /api/leads/:leadId/confirm`
+- `POST /api/leads/:leadId/reply`
+- `POST /api/leads/:leadId/quote`
+- `POST /api/bookings/:bookingId/invoice`
+- `POST /api/bookings/:bookingId/contract`
+- `POST /api/bookings/:bookingId/contract/sync`
 - `POST /api/leads/:leadId/payment`
 - `POST /api/leads/:leadId/quote`
 - `POST /api/leads/:leadId/reply`
