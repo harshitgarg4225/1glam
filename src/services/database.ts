@@ -1,11 +1,98 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { Pool } from "pg";
 import { appConfig } from "../config.js";
 import type { MetaChannel, WorkspaceRecord } from "../types.js";
 
 type WorkspaceDb = {
   workspaces: WorkspaceRecord[];
 };
+
+let pool: Pool | null = null;
+let postgresReady: Promise<void> | null = null;
+
+function hasPostgres() {
+  return Boolean(appConfig.databaseUrl);
+}
+
+function getPool() {
+  if (!appConfig.databaseUrl) {
+    throw new Error("DATABASE_URL is not configured");
+  }
+
+  if (!pool) {
+    pool = new Pool({
+      connectionString: appConfig.databaseUrl,
+      ssl: appConfig.databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+    });
+  }
+
+  return pool;
+}
+
+async function ensurePostgres() {
+  if (!hasPostgres()) return;
+  if (postgresReady) return postgresReady;
+
+  postgresReady = (async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS workspace_records (
+          email TEXT PRIMARY KEY,
+          workspace_id TEXT UNIQUE NOT NULL,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+    } finally {
+      client.release();
+    }
+
+    await backfillPostgresFromFileIfNeeded();
+  })();
+
+  return postgresReady;
+}
+
+async function backfillPostgresFromFileIfNeeded() {
+  if (!hasPostgres()) return;
+
+  const fileDb = await readWorkspaceDbFromFileSafe();
+  if (!fileDb.workspaces.length) return;
+
+  const existing = await listWorkspacesFromPostgres();
+  if (existing.length > 0) return;
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    for (const workspace of fileDb.workspaces) {
+      await client.query(
+        `
+          INSERT INTO workspace_records (email, workspace_id, data, updated_at)
+          VALUES ($1, $2, $3::jsonb, NOW())
+          ON CONFLICT (email)
+          DO UPDATE SET
+            workspace_id = EXCLUDED.workspace_id,
+            data = EXCLUDED.data,
+            updated_at = NOW()
+        `,
+        [
+          normalizeEmail(workspace.email),
+          workspace.workspaceId,
+          JSON.stringify(workspace),
+        ],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 async function ensureDbFile() {
   await fs.mkdir(path.dirname(appConfig.workspaceDbPath), { recursive: true });
@@ -17,29 +104,137 @@ async function ensureDbFile() {
   }
 }
 
-export async function readWorkspaceDb(): Promise<WorkspaceDb> {
+async function readWorkspaceDbFromFileSafe(): Promise<WorkspaceDb> {
+  try {
+    await ensureDbFile();
+    const content = await fs.readFile(appConfig.workspaceDbPath, "utf8");
+    return JSON.parse(content) as WorkspaceDb;
+  } catch {
+    return { workspaces: [] };
+  }
+}
+
+async function readWorkspaceDbFromFile(): Promise<WorkspaceDb> {
   await ensureDbFile();
   const content = await fs.readFile(appConfig.workspaceDbPath, "utf8");
   return JSON.parse(content) as WorkspaceDb;
 }
 
-export async function writeWorkspaceDb(db: WorkspaceDb) {
+async function writeWorkspaceDbToFile(db: WorkspaceDb) {
   await ensureDbFile();
   await fs.writeFile(appConfig.workspaceDbPath, JSON.stringify(db, null, 2), "utf8");
 }
 
+async function listWorkspacesFromPostgres() {
+  await ensurePostgres();
+  const result = await getPool().query<{ data: WorkspaceRecord }>(
+    `SELECT data FROM workspace_records ORDER BY updated_at DESC`,
+  );
+  return result.rows.map((row: { data: WorkspaceRecord }) => row.data);
+}
+
+async function findWorkspaceByEmailFromPostgres(email: string) {
+  await ensurePostgres();
+  const result = await getPool().query<{ data: WorkspaceRecord }>(
+    `SELECT data FROM workspace_records WHERE email = $1 LIMIT 1`,
+    [normalizeEmail(email)],
+  );
+  return result.rows[0]?.data ?? null;
+}
+
+async function saveWorkspaceToPostgres(record: WorkspaceRecord) {
+  await ensurePostgres();
+  await getPool().query(
+    `
+      INSERT INTO workspace_records (email, workspace_id, data, updated_at)
+      VALUES ($1, $2, $3::jsonb, NOW())
+      ON CONFLICT (email)
+      DO UPDATE SET
+        workspace_id = EXCLUDED.workspace_id,
+        data = EXCLUDED.data,
+        updated_at = NOW()
+    `,
+    [normalizeEmail(record.email), record.workspaceId, JSON.stringify(record)],
+  );
+}
+
+async function updateWorkspaceByEmailInPostgres(
+  email: string,
+  updater: (workspace: WorkspaceRecord) => WorkspaceRecord,
+) {
+  const current = await findWorkspaceByEmailFromPostgres(email);
+  if (!current) return null;
+  const updated = updater(current);
+  await saveWorkspaceToPostgres(updated);
+  return updated;
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+export async function readWorkspaceDb(): Promise<WorkspaceDb> {
+  if (hasPostgres()) {
+    return { workspaces: await listWorkspacesFromPostgres() };
+  }
+
+  return readWorkspaceDbFromFile();
+}
+
+export async function writeWorkspaceDb(db: WorkspaceDb) {
+  if (hasPostgres()) {
+    await ensurePostgres();
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM workspace_records");
+      for (const workspace of db.workspaces) {
+        await client.query(
+          `
+            INSERT INTO workspace_records (email, workspace_id, data, updated_at)
+            VALUES ($1, $2, $3::jsonb, NOW())
+          `,
+          [normalizeEmail(workspace.email), workspace.workspaceId, JSON.stringify(workspace)],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+    return;
+  }
+
+  await writeWorkspaceDbToFile(db);
+}
+
 export async function listWorkspaces() {
-  const db = await readWorkspaceDb();
+  if (hasPostgres()) {
+    return listWorkspacesFromPostgres();
+  }
+
+  const db = await readWorkspaceDbFromFile();
   return db.workspaces;
 }
 
 export async function findWorkspaceByEmail(email: string) {
-  const db = await readWorkspaceDb();
-  return db.workspaces.find((workspace) => workspace.email.toLowerCase() === email.toLowerCase()) ?? null;
+  if (hasPostgres()) {
+    return findWorkspaceByEmailFromPostgres(email);
+  }
+
+  const db = await readWorkspaceDbFromFile();
+  return db.workspaces.find((workspace) => normalizeEmail(workspace.email) === normalizeEmail(email)) ?? null;
 }
 
 export async function saveWorkspace(record: WorkspaceRecord) {
-  const db = await readWorkspaceDb();
+  if (hasPostgres()) {
+    await saveWorkspaceToPostgres(record);
+    return;
+  }
+
+  const db = await readWorkspaceDbFromFile();
   const index = db.workspaces.findIndex((workspace) => workspace.workspaceId === record.workspaceId);
 
   if (index >= 0) {
@@ -48,19 +243,23 @@ export async function saveWorkspace(record: WorkspaceRecord) {
     db.workspaces.push(record);
   }
 
-  await writeWorkspaceDb(db);
+  await writeWorkspaceDbToFile(db);
 }
 
 export async function updateWorkspaceByEmail(
   email: string,
   updater: (workspace: WorkspaceRecord) => WorkspaceRecord,
 ) {
-  const db = await readWorkspaceDb();
-  const index = db.workspaces.findIndex((workspace) => workspace.email.toLowerCase() === email.toLowerCase());
+  if (hasPostgres()) {
+    return updateWorkspaceByEmailInPostgres(email, updater);
+  }
+
+  const db = await readWorkspaceDbFromFile();
+  const index = db.workspaces.findIndex((workspace) => normalizeEmail(workspace.email) === normalizeEmail(email));
   if (index === -1) return null;
 
   db.workspaces[index] = updater(db.workspaces[index]);
-  await writeWorkspaceDb(db);
+  await writeWorkspaceDbToFile(db);
   return db.workspaces[index];
 }
 
@@ -71,9 +270,11 @@ export async function findWorkspaceByMetaAsset(input: {
   wabaId?: string;
   phoneNumberId?: string;
 }) {
-  const db = await readWorkspaceDb();
+  const workspaces: WorkspaceRecord[] = hasPostgres()
+    ? await listWorkspacesFromPostgres()
+    : (await readWorkspaceDbFromFile()).workspaces;
   return (
-    db.workspaces.find((workspace) => {
+    workspaces.find((workspace: WorkspaceRecord) => {
       const connection = workspace.metaConnections?.[input.channel];
       if (!connection) return false;
 
@@ -94,9 +295,11 @@ export async function findWorkspaceByMetaAsset(input: {
 }
 
 export async function findWorkspaceByMetaUserId(metaUserId: string) {
-  const db = await readWorkspaceDb();
+  const workspaces: WorkspaceRecord[] = hasPostgres()
+    ? await listWorkspacesFromPostgres()
+    : (await readWorkspaceDbFromFile()).workspaces;
   return (
-    db.workspaces.find((workspace) =>
+    workspaces.find((workspace: WorkspaceRecord) =>
       Object.values(workspace.metaConnections ?? {}).some(
         (connection) => connection?.metaUserId === metaUserId,
       ),

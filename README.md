@@ -19,6 +19,7 @@ Private-code booking infrastructure for luxury makeup artists. The app keeps pla
 - Grok enrichment for client profiling, owner insight, and suggested luxury replies
 - Meta-native connection scaffolding for Instagram and WhatsApp
 - Local workspace metadata store in `data/workspaces.json`
+- If `DATABASE_URL` is set, workspace metadata is stored in Postgres instead of local JSON. This is the recommended production setup on Railway so the same email reliably reuses the same sheet and calendars.
 
 ## Stack
 
@@ -35,6 +36,7 @@ Private-code booking infrastructure for luxury makeup artists. The app keeps pla
    - `http://127.0.0.1:3001/auth/google/callback`
 4. Fill these env vars:
    - `SESSION_SECRET`
+   - optional `DATABASE_URL` for durable Railway/Postgres storage
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_CLIENT_SECRET`
    - `GOOGLE_MAPS_API_KEY` for automatic travel intelligence

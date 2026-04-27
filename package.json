@@ -16,6 +16,7 @@
     "googleapis": "^144.0.0",
     "nanoid": "^5.1.5",
     "pdf-lib": "^1.17.1",
+    "pg": "^8.20.0",
     "qrcode": "^1.5.4",
     "zod": "^3.24.2"
   },
@@ -23,6 +24,7 @@
     "@types/express": "^5.0.1",
     "@types/express-session": "^1.18.1",
     "@types/node": "^22.13.10",
+    "@types/pg": "^8.20.0",
     "@types/qrcode": "^1.5.6",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
