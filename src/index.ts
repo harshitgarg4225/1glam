@@ -1,6 +1,7 @@
 import express from "express";
 import session from "express-session";
 import path from "node:path";
+import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
 import { appConfig } from "./config.js";
 import { createLeadSchema, ownerDecisionSchema, paymentStatusSchema } from "./api-schema.js";
@@ -14,6 +15,7 @@ import {
   getLeadRecord,
   getDashboardData,
   updateBookingRecord,
+  type BookingRecord,
   type LeadRecord,
   updateLeadRecord,
   updatePaymentStatus,
@@ -21,7 +23,7 @@ import {
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
 import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces } from "./services/database.js";
-import { exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
+import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
   ingestNormalizedLead,
@@ -49,6 +51,7 @@ import {
   parseLeegalityWebhook,
   verifyLeegalityWebhookRequest,
 } from "./services/contracts.js";
+import { sheetNames } from "./services/sheet-definitions.js";
 import {
   disconnectMetaConnection,
   getWorkspaceByEmail,
@@ -332,6 +335,91 @@ app.post("/api/leads/:leadId/quote", async (req, res, next) => {
   }
 });
 
+app.post("/api/leads/:leadId/send-quote", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+    );
+    if (!workspace || !lead) {
+      return res.status(404).json({ error: "Lead not found" });
+    }
+
+    if (!["YES", "EDIT"].includes(lead.ownerDecision)) {
+      return res.status(400).json({ error: "Approve the lead before sending a quote." });
+    }
+
+    const channelContext = resolveLeadMessagingContext(workspace, lead);
+    if (!channelContext) {
+      return res.status(400).json({ error: "Lead does not have a connected messaging channel." });
+    }
+
+    let currentLead = lead;
+    if (!currentLead.quoteUrl) {
+      const quote = await generateQuoteDocument(workspace, req.session.googleTokens, currentLead);
+      currentLead = await updateLeadRecord(
+        req.session.profile.email,
+        req.session.googleTokens,
+        req.params.leadId,
+        (existing) => ({
+          ...existing,
+          quoteUrl: quote.fileUrl,
+          quoteGeneratedAt: new Date().toISOString(),
+          lastContactedAt: new Date().toISOString(),
+        }),
+      );
+    }
+
+    const message = buildQuoteShareMessage(workspace, currentLead);
+    await sendChannelMessage({
+      workspace,
+      connection: channelContext.connection,
+      channel: channelContext.channel,
+      actorId: channelContext.actorId,
+      message,
+    });
+
+    currentLead = await updateLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+      (existing) => ({
+        ...existing,
+        suggestedReply: message,
+        status: existing.status === "New" ? "Awaiting Client" : existing.status,
+        lastContactedAt: new Date().toISOString(),
+      }),
+    );
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: currentLead.leadId,
+      direction: "Outbound",
+      channel: channelContext.channel,
+      actor: channelContext.actorId,
+      message,
+      aiSummary: "Quote shared with client",
+    });
+
+    await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+      leadId: currentLead.leadId,
+      type: "Quote Shared",
+      channel: channelContext.channel,
+      messagePreview: message,
+      status: "Sent",
+    });
+
+    res.json({ ok: true, lead: currentLead });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
@@ -361,6 +449,83 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
     );
 
     res.json({ ok: true, booking: updatedBooking, invoice });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      booking.leadId,
+    );
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found for booking" });
+    }
+
+    const channelContext = resolveLeadMessagingContext(workspace, lead);
+    if (!channelContext) {
+      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
+    }
+
+    let currentBooking = booking;
+    if (!currentBooking.invoiceUrl) {
+      const invoice = await generateInvoiceDocument(workspace, req.session.googleTokens, currentBooking);
+      currentBooking = await updateBookingRecord(
+        req.session.profile.email,
+        req.session.googleTokens,
+        req.params.bookingId,
+        (existing) => ({
+          ...existing,
+          invoiceUrl: invoice.fileUrl,
+          invoiceGeneratedAt: new Date().toISOString(),
+        }),
+      );
+    }
+
+    const message = buildInvoiceShareMessage(workspace, currentBooking);
+    await sendChannelMessage({
+      workspace,
+      connection: channelContext.connection,
+      channel: channelContext.channel,
+      actorId: channelContext.actorId,
+      message,
+    });
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: channelContext.channel,
+      actor: channelContext.actorId,
+      message,
+      aiSummary: "Invoice shared with client",
+    });
+
+    await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      type: "Invoice Shared",
+      channel: channelContext.channel,
+      messagePreview: message,
+      status: "Sent",
+    });
+
+    res.json({ ok: true, booking: currentBooking });
   } catch (error) {
     next(error);
   }
@@ -419,6 +584,84 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
   }
 });
 
+app.post("/api/bookings/:bookingId/send-contract", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      booking.leadId,
+    );
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found for booking" });
+    }
+
+    const channelContext = resolveLeadMessagingContext(workspace, lead);
+    if (!channelContext) {
+      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
+    }
+
+    let currentBooking = booking;
+    if (!currentBooking.contractUrl && currentBooking.contractStatus !== "Signed") {
+      const contract = await createLeegalityContract(workspace, lead, currentBooking);
+      currentBooking = await updateBookingRecord(
+        req.session.profile.email,
+        req.session.googleTokens,
+        req.params.bookingId,
+        (existing) => ({
+          ...existing,
+          contractUrl: contract.contractUrl || existing.contractUrl,
+          contractStatus: contract.contractStatus || "Sent",
+          contractSentAt: existing.contractSentAt || new Date().toISOString(),
+        }),
+      );
+    }
+
+    const message = buildContractShareMessage(workspace, currentBooking);
+    await sendChannelMessage({
+      workspace,
+      connection: channelContext.connection,
+      channel: channelContext.channel,
+      actorId: channelContext.actorId,
+      message,
+    });
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: channelContext.channel,
+      actor: channelContext.actorId,
+      message,
+      aiSummary: "Contract shared with client",
+    });
+
+    await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      type: "Contract Shared",
+      channel: channelContext.channel,
+      messagePreview: message,
+      status: "Sent",
+    });
+
+    res.json({ ok: true, booking: currentBooking });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/bookings/:bookingId/contract/sync", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
@@ -466,6 +709,131 @@ app.post("/api/bookings/:bookingId/contract/sync", async (req, res, next) => {
     });
 
     res.json({ ok: true, booking: updatedBooking, details });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings/:bookingId/send-review", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+    if (!workspace.config.googleReviewLink) {
+      return res.status(400).json({ error: "Add a Google review link in Owner Configuration first." });
+    }
+
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      booking.leadId,
+    );
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found for booking" });
+    }
+    const channelContext = resolveLeadMessagingContext(workspace, lead);
+    if (!channelContext) {
+      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
+    }
+
+    const message = buildReviewRequestMessage(workspace, booking);
+    await sendChannelMessage({
+      workspace,
+      connection: channelContext.connection,
+      channel: channelContext.channel,
+      actorId: channelContext.actorId,
+      message,
+    });
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: channelContext.channel,
+      actor: channelContext.actorId,
+      message,
+      aiSummary: "Review request sent",
+    });
+
+    await upsertReviewRequest(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      clientName: booking.clientName,
+      eventDate: booking.eventDate,
+      type: "request",
+    });
+
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      booking.leadId,
+    );
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found for booking" });
+    }
+    const channelContext = resolveLeadMessagingContext(workspace, lead);
+    if (!channelContext) {
+      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
+    }
+
+    const kind = req.body?.kind === "balance" ? "balance" : "advance";
+    const message = buildCollectionReminderMessage(workspace, booking, kind);
+    await sendChannelMessage({
+      workspace,
+      connection: channelContext.connection,
+      channel: channelContext.channel,
+      actorId: channelContext.actorId,
+      message,
+    });
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: channelContext.channel,
+      actor: channelContext.actorId,
+      message,
+      aiSummary: `${kind === "balance" ? "Balance" : "Advance"} reminder sent`,
+    });
+
+    await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      type: kind === "balance" ? "Balance Reminder" : "Advance Reminder",
+      channel: channelContext.channel,
+      messagePreview: message,
+      status: "Sent",
+    });
+
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -849,6 +1217,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
               clientName: current.clientName || (actorId ? `Instagram ${actorId}` : "Instagram Lead"),
               eventType: current.eventType === "Other" ? parsedLead.eventType : current.eventType,
               eventDate: current.eventDate || parsedLead.eventDate,
+              eventTime: current.eventTime || parsedLead.eventTime,
               locationText:
                 current.locationText === "Unknown" ? parsedLead.locationText : current.locationText,
               clientTags: mergeTags(current.clientTags, parsedLead.clientTags),
@@ -873,6 +1242,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             clientInstagram: actorId || undefined,
             eventType: parsedLead.eventType,
             eventDate: parsedLead.eventDate,
+            eventTime: parsedLead.eventTime,
             locationText: parsedLead.locationText,
             clientTags: parsedLead.clientTags,
             inboundMessage: inboundText,
@@ -908,6 +1278,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
               clientName: current.clientName || senderName,
               eventType: current.eventType === "Other" ? parsedLead.eventType : current.eventType,
               eventDate: current.eventDate || parsedLead.eventDate,
+              eventTime: current.eventTime || parsedLead.eventTime,
               locationText:
                 current.locationText === "Unknown" ? parsedLead.locationText : current.locationText,
               clientTags: mergeTags(current.clientTags, parsedLead.clientTags),
@@ -931,6 +1302,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             clientWhatsApp: actorId || "",
             eventType: parsedLead.eventType,
             eventDate: parsedLead.eventDate,
+            eventTime: parsedLead.eventTime,
             locationText: parsedLead.locationText,
             clientTags: parsedLead.clientTags,
             inboundMessage: inboundText,
@@ -958,6 +1330,10 @@ app.post("/webhooks/meta", async (req, res, next) => {
             locationText: lead.locationText,
             suggestedReply: lead.suggestedReply,
             currentPrice: lead.finalApprovedPrice || lead.initialAiPrice,
+            ownerDecision: lead.ownerDecision,
+            paymentStatus: lead.paymentStatus,
+            quoteUrl: lead.quoteUrl,
+            holdExpiresAt: lead.holdExpiresAt,
             latestMessage: inboundText,
             memorySummary: extractSummaryFromMemory(memory),
           });
@@ -1132,6 +1508,216 @@ function extractLastInboundFromMemory(memory: string) {
 
 function buildLeadSummary(lead: LeadRecord) {
   return `Client ${lead.clientName} is discussing a ${lead.eventType} booking for ${lead.eventDate} in ${lead.locationText}. Current status: ${lead.status}.`;
+}
+
+function resolveLeadMessagingContext(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, lead: LeadRecord) {
+  if (lead.source === "WhatsApp" && lead.clientWhatsApp && workspace.metaConnections?.whatsapp?.status === "connected") {
+    return {
+      channel: "WhatsApp" as const,
+      connection: workspace.metaConnections.whatsapp,
+      actorId: lead.clientWhatsApp,
+    };
+  }
+
+  if (lead.clientInstagram && workspace.metaConnections?.instagram?.status === "connected") {
+    return {
+      channel: "Instagram" as const,
+      connection: workspace.metaConnections.instagram,
+      actorId: lead.clientInstagram,
+    };
+  }
+
+  if (lead.clientWhatsApp && workspace.metaConnections?.whatsapp?.status === "connected") {
+    return {
+      channel: "WhatsApp" as const,
+      connection: workspace.metaConnections.whatsapp,
+      actorId: lead.clientWhatsApp,
+    };
+  }
+
+  return null;
+}
+
+async function appendFollowUpLog(
+  workspaceEmail: string,
+  tokens: Credentials,
+  input: {
+    leadId: string;
+    type: string;
+    channel: "WhatsApp" | "Instagram";
+    messagePreview: string;
+    status: string;
+  },
+) {
+  const workspace = await getWorkspaceByEmail(workspaceEmail);
+  if (!workspace) {
+    throw new Error("Workspace not found");
+  }
+
+  const { sheets } = createGoogleClients(tokens);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.followUps}!A:H`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        `FU_${nanoid(10)}`,
+        input.leadId,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        input.type,
+        input.channel,
+        input.messagePreview.slice(0, 250),
+        input.status,
+      ]],
+    },
+  });
+}
+
+async function upsertReviewRequest(
+  workspaceEmail: string,
+  tokens: Credentials,
+  input: {
+    leadId: string;
+    clientName: string;
+    eventDate: string;
+    type: "request" | "reminder";
+  },
+) {
+  const workspace = await getWorkspaceByEmail(workspaceEmail);
+  if (!workspace) {
+    throw new Error("Workspace not found");
+  }
+
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.reviews}!A2:I`,
+  });
+  const rows = response.data.values ?? [];
+  const existingIndex = rows.findIndex((row) => row[1] === input.leadId);
+  const now = new Date().toISOString();
+
+  if (existingIndex >= 0) {
+    const row = [...rows[existingIndex]];
+    row[4] = input.type === "request" ? now : row[4] || "";
+    row[5] = input.type === "reminder" ? now : row[5] || "";
+    row[8] = row[8] || "Sent from 1Glam";
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A${existingIndex + 2}:I${existingIndex + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[...row]] },
+    });
+    return;
+  }
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.reviews}!A:I`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        `REV_${nanoid(10)}`,
+        input.leadId,
+        input.clientName,
+        input.eventDate,
+        input.type === "request" ? now : "",
+        input.type === "reminder" ? now : "",
+        "No",
+        "No",
+        "Sent from 1Glam",
+      ]],
+    },
+  });
+}
+
+function buildQuoteShareMessage(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, lead: LeadRecord) {
+  const quotedAmount = lead.finalApprovedPrice || lead.initialAiPrice;
+  const holdLine = lead.holdExpiresAt
+    ? `I can tentatively hold the date until ${formatFriendlyDateTime(lead.holdExpiresAt)}. `
+    : "";
+  return [
+    `Hi ${lead.clientName || "love"}, your quote for the ${lead.eventType.toLowerCase()} booking is ready.`,
+    holdLine.trim(),
+    `Amount: ${formatMoney(quotedAmount)}.`,
+    lead.quoteUrl ? `Quote link: ${lead.quoteUrl}` : "",
+    workspace.config.paymentTerms ? `Payment terms: ${workspace.config.paymentTerms}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+function buildInvoiceShareMessage(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {
+  const label = booking.paymentStatus === "Advance Due" ? "advance invoice" : "invoice";
+  const amount =
+    booking.paymentStatus === "Advance Due"
+      ? booking.advanceAmount
+      : booking.balanceDue > 0
+        ? booking.balanceDue
+        : booking.finalPrice;
+  return [
+    `Hi ${booking.clientName || "love"}, your ${label} is ready.`,
+    `Amount due: ${formatMoney(amount)}.`,
+    booking.invoiceUrl ? `Invoice link: ${booking.invoiceUrl}` : "",
+    workspace.config.paymentTerms ? `Payment terms: ${workspace.config.paymentTerms}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+function buildContractShareMessage(_workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {
+  if (booking.contractUrl) {
+    return `Hi ${booking.clientName || "love"}, your booking agreement is ready here: ${booking.contractUrl}. Please review and sign it when convenient.`;
+  }
+
+  return `Hi ${booking.clientName || "love"}, your booking agreement has been initiated through Leegality. Please check the contract link shared with you there and sign it when convenient.`;
+}
+
+function buildReviewRequestMessage(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {
+  return [
+    `Hi ${booking.clientName || "love"}, it was lovely being part of your ${booking.eventType.toLowerCase()} booking.`,
+    "If you have a minute, I’d be so grateful for a short review.",
+    workspace.config.googleReviewLink,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+function buildCollectionReminderMessage(
+  workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>,
+  booking: BookingRecord,
+  kind: "advance" | "balance",
+) {
+  const amount = kind === "balance" ? booking.balanceDue : booking.advanceAmount;
+  const label = kind === "balance" ? "balance" : "advance";
+  return [
+    `Hi ${booking.clientName || "love"}, sharing a gentle reminder for the ${label} payment for your ${booking.eventType.toLowerCase()} booking.`,
+    `Amount due: ${formatMoney(amount)}.`,
+    booking.invoiceUrl ? `Invoice link: ${booking.invoiceUrl}` : "",
+    workspace.config.upiId ? `UPI: ${workspace.config.upiId}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+function formatFriendlyDateTime(value: string) {
+  try {
+    return new Date(value).toLocaleString("en-IN", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return value;
+  }
+}
+
+function formatMoney(value: number) {
+  return `₹${Number(value || 0).toLocaleString("en-IN")}`;
 }
 
 async function findBookingAcrossWorkspaces(referenceId: string) {

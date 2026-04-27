@@ -578,6 +578,7 @@
                 </div>
                 <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
                   <button class="button small secondary" data-action="quote" data-lead-id="${lead.leadId}">Generate Quote</button>
+                  <button class="button small secondary" data-action="send-quote" data-lead-id="${lead.leadId}">Send Quote</button>
                   ${lead.quoteUrl ? `<a href="${lead.quoteUrl}" target="_blank" rel="noreferrer">Open Quote</a>` : `<span class="muted">No quote yet</span>`}
                 </div>
               </td>
@@ -602,12 +603,19 @@
             <td>
               <div class="action-row" style="align-items:center;flex-wrap:wrap;">
                 <button class="button small secondary" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Generate Invoice</button>
+                <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send Invoice</button>
                 ${booking.invoiceUrl ? `<a href="${booking.invoiceUrl}" target="_blank" rel="noreferrer">Open Invoice</a>` : ""}
               </div>
               <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
                 <button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create Contract</button>
+                <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send Contract</button>
                 <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync Contract</button>
                 ${booking.contractUrl ? `<a href="${booking.contractUrl}" target="_blank" rel="noreferrer">Open Contract</a>` : `<span class="muted">${booking.contractStatus || "Draft"}</span>`}
+              </div>
+              <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
+                <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Send Review Request</button>
+                <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Advance Reminder</button>
+                <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance Reminder</button>
               </div>
             </td>
           </tr>
@@ -778,6 +786,9 @@
             documentStatus.textContent = result.quote?.fileUrl
               ? "Quote generated."
               : "Quote generated.";
+          } else if (action === "send-quote") {
+            await postJson(`/api/leads/${leadId}/send-quote`, {});
+            documentStatus.textContent = "Quote sent to client.";
           }
 
           leadStatus.textContent = "Lead updated.";
@@ -801,12 +812,27 @@
           if (action === "invoice") {
             await postJson(`/api/bookings/${bookingId}/invoice`, {});
             documentStatus.textContent = "Invoice generated.";
+          } else if (action === "send-invoice") {
+            await postJson(`/api/bookings/${bookingId}/send-invoice`, {});
+            documentStatus.textContent = "Invoice sent to client.";
           } else if (action === "contract") {
             await postJson(`/api/bookings/${bookingId}/contract`, {});
             documentStatus.textContent = "Contract sent to Leegality.";
+          } else if (action === "send-contract") {
+            await postJson(`/api/bookings/${bookingId}/send-contract`, {});
+            documentStatus.textContent = "Contract message sent to client.";
           } else if (action === "sync-contract") {
             const result = await postJson(`/api/bookings/${bookingId}/contract/sync`, {});
             documentStatus.textContent = `Contract status synced: ${result.booking?.contractStatus || "Updated"}.`;
+          } else if (action === "review") {
+            await postJson(`/api/bookings/${bookingId}/send-review`, {});
+            documentStatus.textContent = "Review request sent.";
+          } else if (action === "advance-reminder") {
+            await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" });
+            documentStatus.textContent = "Advance reminder sent.";
+          } else if (action === "balance-reminder") {
+            await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" });
+            documentStatus.textContent = "Balance reminder sent.";
           }
 
           await refreshSession();

@@ -27,6 +27,7 @@ export type NormalizedInboundLead = {
 type ParsedInstagramSignals = {
   eventType: string;
   eventDate: string;
+  eventTime: string;
   locationText: string;
   clientTags: string;
 };
@@ -124,15 +125,18 @@ function parseServiceLeadSignalsFromMessage(message: string): ParsedInstagramSig
   const locationText = locationMatch?.[1]?.trim() || "Unknown";
 
   const eventDate = extractDate(text) || new Date().toISOString().slice(0, 10);
+  const eventTime = extractTime(text);
 
   const tags = [];
   if (eventType !== "Other") tags.push(eventType.toUpperCase());
   if (locationText !== "Unknown") tags.push("LOCATION_CAPTURED");
   if (eventDate !== new Date().toISOString().slice(0, 10)) tags.push("DATE_CAPTURED");
+  if (eventTime) tags.push("TIME_CAPTURED");
 
   return {
     eventType,
     eventDate,
+    eventTime,
     locationText,
     clientTags: tags.join(", "),
   };
@@ -218,6 +222,25 @@ function normalizeYear(rawYear: string | undefined, month: number, day: number) 
   const candidate = new Date(Date.UTC(now.getUTCFullYear(), month - 1, day));
   const current = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   return candidate < current ? now.getUTCFullYear() + 1 : now.getUTCFullYear();
+}
+
+function extractTime(text: string) {
+  const twelveHourMatch = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  if (twelveHourMatch) {
+    let hours = Number(twelveHourMatch[1]);
+    const minutes = Number(twelveHourMatch[2] || "00");
+    const meridiem = twelveHourMatch[3].toLowerCase();
+    if (meridiem === "pm" && hours < 12) hours += 12;
+    if (meridiem === "am" && hours === 12) hours = 0;
+    return `${pad(hours)}:${pad(minutes)}`;
+  }
+
+  const twentyFourHourMatch = text.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+  if (twentyFourHourMatch) {
+    return `${pad(Number(twentyFourHourMatch[1]))}:${twentyFourHourMatch[2]}`;
+  }
+
+  return "";
 }
 
 function monthNameToNumber(month: string) {

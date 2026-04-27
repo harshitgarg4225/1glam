@@ -91,6 +91,12 @@ export async function generateConversationReply(input: {
   locationText: string;
   suggestedReply?: string;
   currentPrice?: number;
+  ownerDecision?: string;
+  paymentStatus?: string;
+  quoteUrl?: string;
+  invoiceUrl?: string;
+  contractUrl?: string;
+  holdExpiresAt?: string;
   latestMessage: string;
   memorySummary?: string;
 }): Promise<GrokConversationReply> {
@@ -104,7 +110,11 @@ export async function generateConversationReply(input: {
     "reply should be warm, polished, concise, and client-facing. " +
     "ownerSummary should be brief internal context. " +
     "memorySummary should be a compact rolling summary for future turns. " +
-    "openQuestions must be an array of concise strings for missing information.";
+    "openQuestions must be an array of concise strings for missing information. " +
+    "If ownerDecision is empty, do not promise a final quote, payment request, or booking confirmation. " +
+    "If a quoteUrl exists after owner approval, you may guide the client to review it. " +
+    "If an invoiceUrl exists for a confirmed booking, you may guide the client to payment. " +
+    "If a contractUrl exists, you may guide the client to sign it.";
 
   const response = await fetch("https://api.x.ai/v1/responses", {
     method: "POST",
@@ -182,25 +192,64 @@ function fallbackConversationReply(input: {
   locationText: string;
   suggestedReply?: string;
   currentPrice?: number;
+  ownerDecision?: string;
+  paymentStatus?: string;
+  quoteUrl?: string;
+  invoiceUrl?: string;
+  contractUrl?: string;
+  holdExpiresAt?: string;
   latestMessage: string;
   memorySummary?: string;
 }): GrokConversationReply {
   const missing = [];
   if (!input.eventTime) missing.push("event time");
   if (!input.locationText || input.locationText === "Unknown") missing.push("venue");
-  const replyBase =
+
+  const greeting =
     input.suggestedReply?.trim() ||
     `Hi ${input.clientName || "love"}, thank you for reaching out to ${input.brandName}.`;
-  const questionLine = missing.length
-    ? ` Could you please share your ${missing.join(" and ")} so we can guide you properly?`
-    : " We’d love to help you with the next steps.";
+  const approved =
+    input.ownerDecision === "YES" || input.ownerDecision === "EDIT";
+  const holdLine = input.holdExpiresAt
+    ? ` We can tentatively hold the date until ${formatHoldExpiry(input.holdExpiresAt)}.`
+    : "";
+
+  let reply = greeting;
+  if (missing.length) {
+    reply = `${greeting} Could you please share your ${missing.join(
+      " and ",
+    )} so we can guide you properly?`.trim();
+  } else if (!approved && input.leadStatus !== "Confirmed") {
+    reply = `${greeting} I’ve noted the details and I’m checking availability for you now. I’ll share the next step shortly once everything is aligned.`.trim();
+  } else if (input.quoteUrl && input.leadStatus === "Awaiting Client") {
+    reply = `${greeting} Your quote is ready here: ${input.quoteUrl}.${holdLine} Once you’re happy, we can move ahead with confirmation.`.trim();
+  } else if (input.contractUrl && input.leadStatus === "Confirmed") {
+    reply = `${greeting} Your booking agreement is ready here: ${input.contractUrl}. Please review and sign it when convenient, and I’ll take care of the rest.`.trim();
+  } else if (input.invoiceUrl && input.leadStatus === "Confirmed") {
+    const paymentLabel =
+      input.paymentStatus === "Advance Due" ? "advance invoice" : "invoice";
+    reply = `${greeting} Your ${paymentLabel} is ready here: ${input.invoiceUrl}. Once payment is done, just send me a quick confirmation and I’ll update everything on my end.`.trim();
+  } else {
+    reply = `${greeting} We’d love to help you with the next steps.`.trim();
+  }
 
   return {
-    reply: `${replyBase}${questionLine}`.trim(),
-    ownerSummary: `Latest ${input.channel} message reviewed. Lead is in ${input.leadStatus}.`,
+    reply,
+    ownerSummary: `Latest ${input.channel} message reviewed. Lead is in ${input.leadStatus}. Owner decision: ${input.ownerDecision || "Pending"}.`,
     memorySummary:
       input.memorySummary ||
-      `Client asked about ${input.eventType} on ${input.eventDate} in ${input.locationText}.`,
+      `Client asked about ${input.eventType} on ${input.eventDate} in ${input.locationText}. Owner decision: ${input.ownerDecision || "Pending"}.`,
     openQuestions: missing,
   };
+}
+
+function formatHoldExpiry(value: string) {
+  try {
+    return new Date(value).toLocaleString("en-IN", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return value;
+  }
 }
