@@ -1,7 +1,9 @@
+import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
 import { countActiveLeadsForDate, createLeadForWorkspace } from "./booking.js";
 import { findWorkspaceByWorkspaceId } from "./database.js";
 import { logInteractionForWorkspace } from "./integrations.js";
+import { sendWhatsAppTemplate } from "./messaging.js";
 import type { WorkspaceConfig, WorkspaceRecord } from "../types.js";
 
 export type PublicEventType = {
@@ -23,6 +25,7 @@ export type PublicBusinessProfile = {
   businessName: string;
   city: string;
   instagramHandle: string;
+  ownerWhatsApp: string;
   advancePercentage: number;
   eventTypes: PublicEventType[];
   availability: PublicAvailability;
@@ -60,6 +63,10 @@ function parseBlockedDates(raw: string): string[] {
         .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)),
     ),
   ];
+}
+
+function sanitizePhone(raw: string) {
+  return String(raw || "").replace(/[^\d]/g, "");
 }
 
 function todayIso() {
@@ -124,6 +131,7 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
     businessName: config.businessName || workspace.name || "1Glam Artist",
     city: config.city || "",
     instagramHandle: config.instagramHandle || "",
+    ownerWhatsApp: sanitizePhone(config.ownerWhatsApp),
     advancePercentage: Number(config.advancePercentage) || 0,
     eventTypes,
     availability: buildAvailability(config),
@@ -194,6 +202,8 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     aiSummary: `Lead ${result.lead.leadId} created from public booking page`,
   });
 
+  await sendBookingConfirmationTemplate(workspace, result.lead.leadId, input, tokens);
+
   return {
     leadId: result.lead.leadId,
     businessName: workspace.config.businessName || workspace.name,
@@ -201,6 +211,48 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     eventDate: result.lead.eventDate,
     eventTime: result.lead.eventTime,
   };
+}
+
+// Best-effort WhatsApp template confirmation. A booking-page client has no open
+// 24h session, so only an approved template can be delivered business-initiated.
+// Failures are swallowed so a template/config issue never blocks the booking.
+async function sendBookingConfirmationTemplate(
+  workspace: WorkspaceRecord,
+  leadId: string,
+  input: PublicBookingInput,
+  tokens: Awaited<ReturnType<typeof getWorkspaceCredentials>>,
+) {
+  const templateName = String(workspace.config.bookingConfirmTemplate || "").trim();
+  if (!templateName) return;
+
+  const whatsapp = workspace.metaConnections?.whatsapp;
+  const connectionCanSend = whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+  const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+  if (!connectionCanSend && !envCanSend) return;
+
+  try {
+    await sendWhatsAppTemplate(
+      {
+        accessToken: whatsapp?.accessToken,
+        phoneNumberId: whatsapp?.phoneNumberId,
+      },
+      sanitizePhone(input.clientWhatsApp),
+      templateName,
+      String(workspace.config.bookingConfirmTemplateLang || "en"),
+      [input.clientName, input.eventType, input.eventDate],
+    );
+
+    await logInteractionForWorkspace(workspace.email, tokens, {
+      leadId,
+      direction: "Outbound",
+      channel: "WhatsApp",
+      actor: sanitizePhone(input.clientWhatsApp),
+      message: `Booking confirmation template "${templateName}" sent`,
+      aiSummary: "Automated booking-page confirmation",
+    });
+  } catch (error) {
+    console.error("Booking confirmation template send failed", error);
+  }
 }
 
 function buildInboundMessage(input: PublicBookingInput) {

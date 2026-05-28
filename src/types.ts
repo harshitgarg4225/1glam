@@ -53,6 +53,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   bookingWeeklyOffDays: string;
   bookingBlockedDates: string;
   bookingMaxPerDay: number;
+  bookingConfirmTemplate: string;
+  bookingConfirmTemplateLang: string;
 };
 
 export type StoredGoogleTokens = {

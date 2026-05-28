@@ -71,6 +71,54 @@ async function sendInstagramMessage(
   return response.json();
 }
 
+export async function sendWhatsAppTemplate(
+  connection: { accessToken?: string; phoneNumberId?: string },
+  recipientPhone: string,
+  templateName: string,
+  languageCode: string,
+  bodyParams: string[],
+) {
+  const accessToken = connection.accessToken || appConfig.waAccessToken;
+  const phoneNumberId = connection.phoneNumberId || appConfig.waPhoneNumberId;
+  if (!accessToken || !phoneNumberId) {
+    throw new Error("WhatsApp sender is not configured");
+  }
+
+  const url = new URL(`https://graph.facebook.com/v23.0/${phoneNumberId}/messages`);
+  const proof = buildAppSecretProof(accessToken);
+  if (proof) {
+    url.searchParams.set("appsecret_proof", proof);
+  }
+
+  const components = bodyParams.length
+    ? [{ type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) }]
+    : [];
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: recipientPhone,
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: languageCode || "en" },
+        components,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`WhatsApp template send failed: ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
 async function sendWhatsAppMessage(
   connection: MetaChannelConnection,
   recipientPhone: string,

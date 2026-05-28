@@ -267,6 +267,8 @@ async function seedSpreadsheet(
     ["booking_weekly_off_days", config.bookingWeeklyOffDays, "Days off, e.g. Sun, Mon"],
     ["booking_blocked_dates", config.bookingBlockedDates, "Blocked dates, comma separated YYYY-MM-DD"],
     ["booking_max_per_day", config.bookingMaxPerDay, "Max bookings per day (0 = unlimited)"],
+    ["booking_confirm_template", config.bookingConfirmTemplate, "Approved WhatsApp template name for booking confirmation"],
+    ["booking_confirm_template_lang", config.bookingConfirmTemplateLang, "WhatsApp template language code (e.g. en)"],
   ];
 
   const artistsRows = [[
@@ -476,6 +478,8 @@ async function loadConfigFromSpreadsheet(
       bookingWeeklyOffDays: String(values.booking_weekly_off_days ?? base.bookingWeeklyOffDays),
       bookingBlockedDates: String(values.booking_blocked_dates ?? base.bookingBlockedDates),
       bookingMaxPerDay: values.booking_max_per_day ?? base.bookingMaxPerDay,
+      bookingConfirmTemplate: String(values.booking_confirm_template ?? base.bookingConfirmTemplate),
+      bookingConfirmTemplateLang: String(values.booking_confirm_template_lang ?? base.bookingConfirmTemplateLang),
     });
 
     return parsed.success ? parsed.data : base;

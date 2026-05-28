@@ -144,7 +144,8 @@
         <div class="success-icon">&#10003;</div>
         <h1>Request received</h1>
         <p id="success-text" class="muted"></p>
-        <p class="muted">We'll review your request and reach out on WhatsApp shortly to confirm availability and pricing.</p>
+        <p class="muted">To confirm faster, send us a quick message on WhatsApp so we can lock in your date and share pricing.</p>
+        <a id="wa-confirm" class="button hidden" target="_blank" rel="noreferrer">Confirm on WhatsApp</a>
       </div>
 
       <div class="footer">Powered by 1Glam Booking OS</div>
@@ -154,6 +155,7 @@
       const workspaceId = window.location.pathname.split("/").filter(Boolean)[1] || "";
       let selectedEventType = "";
       let availability = null;
+      let ownerWhatsApp = "";
       const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
       const el = (id) => document.getElementById(id);
@@ -185,6 +187,7 @@
       function renderProfile(profile) {
         document.title = "Book — " + profile.businessName;
         availability = profile.availability || null;
+        ownerWhatsApp = profile.ownerWhatsApp || "";
 
         if (availability && availability.enabled === false) {
           el("closed-name").textContent = profile.businessName;
@@ -285,6 +288,16 @@
           el("success-text").textContent =
             "Thank you, " + payload.clientName + ". Your " + data.eventType +
             " request for " + data.eventDate + " has been sent to " + data.businessName + ".";
+
+          if (ownerWhatsApp) {
+            const text =
+              "Hi! I just requested a " + data.eventType + " booking for " + data.eventDate +
+              " via your booking page. My name is " + payload.clientName + ".";
+            const waBtn = el("wa-confirm");
+            waBtn.href = "https://wa.me/" + ownerWhatsApp + "?text=" + encodeURIComponent(text);
+            waBtn.classList.remove("hidden");
+          }
+
           hide("booking");
           show("success");
           window.scrollTo({ top: 0, behavior: "smooth" });

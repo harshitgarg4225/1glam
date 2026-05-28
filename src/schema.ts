@@ -54,6 +54,8 @@ export const workspaceConfigSchema = z.object({
   bookingWeeklyOffDays: z.string().optional().default(""),
   bookingBlockedDates: z.string().optional().default(""),
   bookingMaxPerDay: numberFromForm.optional().default(0),
+  bookingConfirmTemplate: z.string().optional().default(""),
+  bookingConfirmTemplateLang: z.string().optional().default("en"),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

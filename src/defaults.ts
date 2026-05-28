@@ -54,5 +54,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     bookingWeeklyOffDays: "",
     bookingBlockedDates: "",
     bookingMaxPerDay: 0,
+    bookingConfirmTemplate: "",
+    bookingConfirmTemplateLang: "en",
   };
 }
