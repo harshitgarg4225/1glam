@@ -58,6 +58,9 @@ export const workspaceConfigSchema = z.object({
   bookingConfirmTemplateLang: z.string().optional().default("en"),
   approvalTemplate: z.string().optional().default(""),
   approvalTemplateLang: z.string().optional().default("en"),
+  reminderTemplate: z.string().optional().default(""),
+  reminderTemplateLang: z.string().optional().default("en"),
+  reminderDaysBefore: z.string().optional().default("7,1"),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

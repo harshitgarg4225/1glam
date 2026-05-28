@@ -271,6 +271,9 @@ async function seedSpreadsheet(
     ["booking_confirm_template_lang", config.bookingConfirmTemplateLang, "WhatsApp template language code (e.g. en)"],
     ["approval_template", config.approvalTemplate, "Approved WhatsApp template name sent when owner approves a lead"],
     ["approval_template_lang", config.approvalTemplateLang, "Language code for the approval template (e.g. en)"],
+    ["reminder_template", config.reminderTemplate, "Approved WhatsApp template name for pre-event reminders"],
+    ["reminder_template_lang", config.reminderTemplateLang, "Language code for the reminder template (e.g. en)"],
+    ["reminder_days_before", config.reminderDaysBefore, "Days before event to send reminders, comma-separated (e.g. 7,1)"],
   ];
 
   const artistsRows = [[
@@ -484,6 +487,9 @@ async function loadConfigFromSpreadsheet(
       bookingConfirmTemplateLang: String(values.booking_confirm_template_lang ?? base.bookingConfirmTemplateLang),
       approvalTemplate: String(values.approval_template ?? base.approvalTemplate),
       approvalTemplateLang: String(values.approval_template_lang ?? base.approvalTemplateLang),
+      reminderTemplate: String(values.reminder_template ?? base.reminderTemplate),
+      reminderTemplateLang: String(values.reminder_template_lang ?? base.reminderTemplateLang),
+      reminderDaysBefore: String(values.reminder_days_before ?? base.reminderDaysBefore),
     });
 
     return parsed.success ? parsed.data : base;

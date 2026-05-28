@@ -58,5 +58,8 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     bookingConfirmTemplateLang: "en",
     approvalTemplate: "",
     approvalTemplateLang: "en",
+    reminderTemplate: "",
+    reminderTemplateLang: "en",
+    reminderDaysBefore: "7,1",
   };
 }

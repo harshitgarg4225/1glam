@@ -51,6 +51,7 @@ import {
 } from "./services/meta.js";
 import { generateConversationReply } from "./services/grok.js";
 import { sendChannelMessage } from "./services/messaging.js";
+import { startReminderScheduler } from "./services/reminders.js";
 import { generateInvoiceDocument, generateQuoteDocument } from "./services/documents.js";
 import {
   checkLeegalityDocumentDetails,
@@ -1641,6 +1642,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 app.listen(appConfig.port, () => {
   console.log(`1Glam app listening on ${appConfig.baseUrl}`);
+  startReminderScheduler();
 });
 
 function mergeTags(existing: string, incoming: string) {

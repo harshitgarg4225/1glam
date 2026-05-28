@@ -491,11 +491,15 @@
                 <div><label for="bookingConfirmTemplateLang">Request Template Language</label><input id="bookingConfirmTemplateLang" name="bookingConfirmTemplateLang" placeholder="en" /></div>
                 <div><label for="approvalTemplate">Approval Notification Template</label><input id="approvalTemplate" name="approvalTemplate" placeholder="booking_approved" /></div>
                 <div><label for="approvalTemplateLang">Approval Template Language</label><input id="approvalTemplateLang" name="approvalTemplateLang" placeholder="en" /></div>
+                <div><label for="reminderTemplate">Pre-Event Reminder Template</label><input id="reminderTemplate" name="reminderTemplate" placeholder="event_reminder" /></div>
+                <div><label for="reminderTemplateLang">Reminder Template Language</label><input id="reminderTemplateLang" name="reminderTemplateLang" placeholder="en" /></div>
+                <div><label for="reminderDaysBefore">Remind X Days Before Event</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
               </div>
               <p class="muted" style="margin-top:12px;font-size:13px;">
                 WhatsApp only allows automated business-initiated messages via an <strong>approved template</strong>. Create templates in Meta Business Manager.<br>
                 <strong>Booking Request Template</strong> — sent when client submits the booking page. Variables: {{1}} client name, {{2}} event type, {{3}} event date.<br>
                 <strong>Approval Notification Template</strong> — sent when you click Approve on a lead. Variables: {{1}} client name, {{2}} event date, {{3}} quoted price.<br>
+                <strong>Pre-Event Reminder Template</strong> — auto-sent at 8 AM UTC each day. Variables: {{1}} client name, {{2}} event date, {{3}} event time. Set "Remind X Days Before" to control when (e.g. 7,1 = one week and one day before).<br>
                 Clients also get a "Confirm on WhatsApp" button on the booking page, which works without any template.
               </p>
             </div>

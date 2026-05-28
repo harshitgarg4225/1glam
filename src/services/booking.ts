@@ -81,6 +81,7 @@ export type BookingRecord = {
   contractStatus: string;
   contractSentAt: string;
   invoiceGeneratedAt: string;
+  remindersSent: string;
 };
 
 export type DashboardData = {
@@ -351,6 +352,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     contractStatus: "Draft",
     contractSentAt: "",
     invoiceGeneratedAt: "",
+    remindersSent: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -479,6 +481,27 @@ export async function getBookingRecord(email: string, tokens: Credentials, booki
   const workspace = await getRequiredWorkspace(email);
   const booking = await findBookingById(workspace, tokens, bookingId);
   return booking?.record ?? null;
+}
+
+export async function listActiveBookings(email: string, tokens: Credentials): Promise<BookingRecord[]> {
+  const workspace = await getRequiredWorkspace(email);
+  const bookings = await listBookingRows(workspace, tokens);
+  return bookings.filter((b) => !["Completed", "Cancelled"].includes(b.status));
+}
+
+export async function markBookingReminderSent(
+  email: string,
+  tokens: Credentials,
+  bookingId: string,
+  dayLabel: string,
+) {
+  return updateBookingRecord(email, tokens, bookingId, (booking) => {
+    const existing = booking.remindersSent ? booking.remindersSent.split(",").map((s) => s.trim()) : [];
+    if (!existing.includes(dayLabel)) {
+      existing.push(dayLabel);
+    }
+    return { ...booking, remindersSent: existing.join(",") };
+  });
 }
 
 export async function updateBookingRecord(
@@ -956,6 +979,7 @@ function bookingToRow(booking: BookingRecord) {
     booking.contractStatus,
     booking.contractSentAt,
     booking.invoiceGeneratedAt,
+    booking.remindersSent,
   ];
 }
 
@@ -983,6 +1007,7 @@ function rowToBooking(row: string[]): BookingRecord {
     contractStatus: row[19] ?? "Draft",
     contractSentAt: row[20] ?? "",
     invoiceGeneratedAt: row[21] ?? "",
+    remindersSent: row[22] ?? "",
   };
 }
 

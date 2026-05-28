@@ -69,6 +69,7 @@ export const bookingHeaders = [
   "Contract Status",
   "Contract Sent At",
   "Invoice Generated At",
+  "Reminders Sent",
 ] as const;
 
 export const artistHeaders = [

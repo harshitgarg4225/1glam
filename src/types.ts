@@ -57,6 +57,9 @@ export type WorkspaceConfig = PricingRuleConfig & {
   bookingConfirmTemplateLang: string;
   approvalTemplate: string;
   approvalTemplateLang: string;
+  reminderTemplate: string;
+  reminderTemplateLang: string;
+  reminderDaysBefore: string;
 };
 
 export type StoredGoogleTokens = {
