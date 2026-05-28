@@ -261,6 +261,12 @@ async function seedSpreadsheet(
     ["contract_template_url", config.contractTemplateUrl, "Leegality template URL"],
     ["confirmed_calendar_id", config.confirmedCalendarId, "Confirmed calendar ID"],
     ["tentative_calendar_id", config.tentativeCalendarId, "Tentative calendar ID"],
+    ["booking_page_enabled", config.bookingPageEnabled, "Accept public bookings (Yes/No)"],
+    ["booking_lead_time_days", config.bookingLeadTimeDays, "Minimum days notice for bookings"],
+    ["booking_max_advance_days", config.bookingMaxAdvanceDays, "How far ahead clients can book"],
+    ["booking_weekly_off_days", config.bookingWeeklyOffDays, "Days off, e.g. Sun, Mon"],
+    ["booking_blocked_dates", config.bookingBlockedDates, "Blocked dates, comma separated YYYY-MM-DD"],
+    ["booking_max_per_day", config.bookingMaxPerDay, "Max bookings per day (0 = unlimited)"],
   ];
 
   const artistsRows = [[
@@ -464,6 +470,12 @@ async function loadConfigFromSpreadsheet(
       contractTemplateUrl: String(values.contract_template_url ?? base.contractTemplateUrl),
       confirmedCalendarId: String(values.confirmed_calendar_id ?? base.confirmedCalendarId),
       tentativeCalendarId: String(values.tentative_calendar_id ?? (base.tentativeCalendarId || "primary")),
+      bookingPageEnabled: String(values.booking_page_enabled ?? base.bookingPageEnabled),
+      bookingLeadTimeDays: values.booking_lead_time_days ?? base.bookingLeadTimeDays,
+      bookingMaxAdvanceDays: values.booking_max_advance_days ?? base.bookingMaxAdvanceDays,
+      bookingWeeklyOffDays: String(values.booking_weekly_off_days ?? base.bookingWeeklyOffDays),
+      bookingBlockedDates: String(values.booking_blocked_dates ?? base.bookingBlockedDates),
+      bookingMaxPerDay: values.booking_max_per_day ?? base.bookingMaxPerDay,
     });
 
     return parsed.success ? parsed.data : base;

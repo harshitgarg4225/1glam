@@ -47,6 +47,12 @@ export type WorkspaceConfig = PricingRuleConfig & {
   contractTemplateUrl: string;
   confirmedCalendarId: string;
   tentativeCalendarId: string;
+  bookingPageEnabled: string;
+  bookingLeadTimeDays: number;
+  bookingMaxAdvanceDays: number;
+  bookingWeeklyOffDays: string;
+  bookingBlockedDates: string;
+  bookingMaxPerDay: number;
 };
 
 export type StoredGoogleTokens = {

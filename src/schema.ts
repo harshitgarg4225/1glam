@@ -48,6 +48,12 @@ export const workspaceConfigSchema = z.object({
   contractTemplateUrl: z.string().optional().default(""),
   confirmedCalendarId: z.string().min(1),
   tentativeCalendarId: z.string().min(1),
+  bookingPageEnabled: z.string().optional().default("Yes"),
+  bookingLeadTimeDays: numberFromForm.optional().default(1),
+  bookingMaxAdvanceDays: numberFromForm.optional().default(365),
+  bookingWeeklyOffDays: z.string().optional().default(""),
+  bookingBlockedDates: z.string().optional().default(""),
+  bookingMaxPerDay: numberFromForm.optional().default(0),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

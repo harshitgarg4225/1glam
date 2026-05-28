@@ -1,13 +1,21 @@
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { createLeadForWorkspace } from "./booking.js";
+import { countActiveLeadsForDate, createLeadForWorkspace } from "./booking.js";
 import { findWorkspaceByWorkspaceId } from "./database.js";
 import { logInteractionForWorkspace } from "./integrations.js";
-import type { WorkspaceRecord } from "../types.js";
+import type { WorkspaceConfig, WorkspaceRecord } from "../types.js";
 
 export type PublicEventType = {
   key: string;
   label: string;
   startingPrice: number;
+};
+
+export type PublicAvailability = {
+  enabled: boolean;
+  minDate: string;
+  maxDate: string;
+  offWeekdays: number[];
+  blockedDates: string[];
 };
 
 export type PublicBusinessProfile = {
@@ -17,7 +25,64 @@ export type PublicBusinessProfile = {
   instagramHandle: string;
   advancePercentage: number;
   eventTypes: PublicEventType[];
+  availability: PublicAvailability;
 };
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  sun: 0, sunday: 0,
+  mon: 1, monday: 1,
+  tue: 2, tues: 2, tuesday: 2,
+  wed: 3, weds: 3, wednesday: 3,
+  thu: 4, thur: 4, thurs: 4, thursday: 4,
+  fri: 5, friday: 5,
+  sat: 6, saturday: 6,
+};
+
+const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function parseOffWeekdays(raw: string): number[] {
+  return [
+    ...new Set(
+      String(raw || "")
+        .split(",")
+        .map((value) => WEEKDAY_INDEX[value.trim().toLowerCase()])
+        .filter((value): value is number => value !== undefined),
+    ),
+  ];
+}
+
+function parseBlockedDates(raw: string): string[] {
+  return [
+    ...new Set(
+      String(raw || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)),
+    ),
+  ];
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(days: number) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildAvailability(config: WorkspaceConfig): PublicAvailability {
+  const leadTime = Math.max(0, Number(config.bookingLeadTimeDays) || 0);
+  const maxAdvance = Number(config.bookingMaxAdvanceDays) > 0 ? Number(config.bookingMaxAdvanceDays) : 365;
+  return {
+    enabled: String(config.bookingPageEnabled || "Yes").toLowerCase() !== "no",
+    minDate: addDaysIso(leadTime),
+    maxDate: addDaysIso(maxAdvance),
+    offWeekdays: parseOffWeekdays(config.bookingWeeklyOffDays),
+    blockedDates: parseBlockedDates(config.bookingBlockedDates),
+  };
+}
 
 export type PublicBookingInput = {
   clientName: string;
@@ -61,6 +126,7 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
     instagramHandle: config.instagramHandle || "",
     advancePercentage: Number(config.advancePercentage) || 0,
     eventTypes,
+    availability: buildAvailability(config),
   };
 }
 
@@ -74,7 +140,37 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
   const workspace = await findWorkspaceByWorkspaceId(workspaceId);
   if (!workspace) throw new Error("Booking page not found");
 
+  const availability = buildAvailability(workspace.config);
+  if (!availability.enabled) {
+    throw new Error("This artist is not accepting online bookings right now.");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.eventDate)) {
+    throw new Error("Please choose a valid event date.");
+  }
+  if (input.eventDate < availability.minDate) {
+    throw new Error(`Please choose a date on or after ${availability.minDate}.`);
+  }
+  if (input.eventDate > availability.maxDate) {
+    throw new Error(`Please choose a date on or before ${availability.maxDate}.`);
+  }
+  const weekday = new Date(`${input.eventDate}T00:00:00Z`).getUTCDay();
+  if (availability.offWeekdays.includes(weekday)) {
+    throw new Error(`The artist is not available on ${WEEKDAY_LABELS[weekday]}s.`);
+  }
+  if (availability.blockedDates.includes(input.eventDate)) {
+    throw new Error("That date is unavailable. Please choose another.");
+  }
+
   const tokens = await getWorkspaceCredentials(workspace.email);
+
+  const maxPerDay = Number(workspace.config.bookingMaxPerDay) || 0;
+  if (maxPerDay > 0) {
+    const activeCount = await countActiveLeadsForDate(workspace.email, tokens, input.eventDate);
+    if (activeCount >= maxPerDay) {
+      throw new Error("That date is fully booked. Please choose another.");
+    }
+  }
+
   const inboundMessage = buildInboundMessage(input);
 
   const result = await createLeadForWorkspace(workspace.email, tokens, {

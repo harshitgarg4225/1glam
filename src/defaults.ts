@@ -48,5 +48,11 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     contractTemplateUrl: "",
     confirmedCalendarId: "primary",
     tentativeCalendarId: "",
+    bookingPageEnabled: "Yes",
+    bookingLeadTimeDays: 1,
+    bookingMaxAdvanceDays: 365,
+    bookingWeeklyOffDays: "",
+    bookingBlockedDates: "",
+    bookingMaxPerDay: 0,
   };
 }

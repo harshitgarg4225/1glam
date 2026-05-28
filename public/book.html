@@ -89,6 +89,12 @@
         <p class="muted">This booking link is invalid or no longer active.</p>
       </div>
 
+      <div class="panel hidden" id="closed">
+        <p class="kicker">Bookings closed</p>
+        <h1 id="closed-name"></h1>
+        <p class="muted">This artist is not accepting online bookings right now. Please reach out to them directly.</p>
+      </div>
+
       <div class="panel hidden" id="booking">
         <p class="kicker">Book an appointment</p>
         <h1 id="biz-name"></h1>
@@ -147,6 +153,8 @@
     <script>
       const workspaceId = window.location.pathname.split("/").filter(Boolean)[1] || "";
       let selectedEventType = "";
+      let availability = null;
+      const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
       const el = (id) => document.getElementById(id);
       const show = (id) => el(id).classList.remove("hidden");
@@ -176,6 +184,15 @@
 
       function renderProfile(profile) {
         document.title = "Book — " + profile.businessName;
+        availability = profile.availability || null;
+
+        if (availability && availability.enabled === false) {
+          el("closed-name").textContent = profile.businessName;
+          hide("loading");
+          show("closed");
+          return;
+        }
+
         el("biz-name").textContent = profile.businessName;
         const metaBits = [];
         if (profile.city) metaBits.push(profile.city);
@@ -200,8 +217,30 @@
           container.appendChild(card);
         });
 
+        if (availability) {
+          const dateInput = el("eventDate");
+          if (availability.minDate) dateInput.min = availability.minDate;
+          if (availability.maxDate) dateInput.max = availability.maxDate;
+          dateInput.addEventListener("change", () => {
+            const message = dateUnavailableReason(dateInput.value);
+            el("status").textContent = message || "";
+          });
+        }
+
         hide("loading");
         show("booking");
+      }
+
+      function dateUnavailableReason(value) {
+        if (!value || !availability) return "";
+        const weekday = new Date(value + "T00:00:00Z").getUTCDay();
+        if ((availability.offWeekdays || []).includes(weekday)) {
+          return "The artist is not available on " + WEEKDAY_LABELS[weekday] + "s.";
+        }
+        if ((availability.blockedDates || []).includes(value)) {
+          return "That date is unavailable. Please choose another.";
+        }
+        return "";
       }
 
       el("form").addEventListener("submit", async (event) => {
@@ -211,6 +250,12 @@
 
         if (!selectedEventType) {
           statusEl.textContent = "Please choose a service above.";
+          return;
+        }
+
+        const dateReason = dateUnavailableReason(el("eventDate").value);
+        if (dateReason) {
+          statusEl.textContent = dateReason;
           return;
         }
 

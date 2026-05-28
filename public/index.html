@@ -472,6 +472,26 @@
           </details>
 
           <details class="collapse">
+            <summary>Availability &amp; Booking Page</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Controls your public booking page. Clients can only request dates that fit these rules.
+              </p>
+              <div class="section-grid">
+                <div>
+                  <label for="bookingPageEnabled">Accept Online Bookings</label>
+                  <select id="bookingPageEnabled" name="bookingPageEnabled"><option>Yes</option><option>No</option></select>
+                </div>
+                <div><label for="bookingLeadTimeDays">Minimum Notice (days)</label><input id="bookingLeadTimeDays" name="bookingLeadTimeDays" type="number" min="0" /></div>
+                <div><label for="bookingMaxAdvanceDays">Booking Window (days ahead)</label><input id="bookingMaxAdvanceDays" name="bookingMaxAdvanceDays" type="number" min="1" /></div>
+                <div><label for="bookingMaxPerDay">Max Bookings / Day (0 = no limit)</label><input id="bookingMaxPerDay" name="bookingMaxPerDay" type="number" min="0" /></div>
+                <div><label for="bookingWeeklyOffDays">Weekly Days Off</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
+                <div class="wide"><label for="bookingBlockedDates">Blocked Dates</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse">
             <summary>Sheet Protection</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">

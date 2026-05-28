@@ -358,6 +358,15 @@ export async function updatePaymentStatus(
   return { lead: nextLead };
 }
 
+export async function countActiveLeadsForDate(
+  email: string,
+  tokens: Credentials,
+  eventDate: string,
+) {
+  const workspace = await getRequiredWorkspace(email);
+  return getDemandCountForDate(workspace, tokens, eventDate);
+}
+
 export async function getDashboardData(email: string, tokens: Credentials): Promise<DashboardData> {
   const workspace = await getRequiredWorkspace(email);
   const leads = await listLeadRows(workspace, tokens);
