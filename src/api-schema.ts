@@ -16,6 +16,17 @@ export const createLeadSchema = z.object({
   clientTags: z.string().optional(),
 });
 
+export const publicBookingSchema = z.object({
+  clientName: z.string().min(1).max(120),
+  clientWhatsApp: z.string().min(8).max(20),
+  clientInstagram: z.string().max(120).optional(),
+  eventType: z.string().min(1).max(40),
+  eventDate: z.string().min(1).max(20),
+  eventTime: z.string().max(20).optional(),
+  locationText: z.string().min(1).max(200),
+  notes: z.string().max(1000).optional(),
+});
+
 export const ownerDecisionSchema = z.object({
   decision: z.enum(["YES", "NO", "EDIT"]),
   approvedPrice: z.coerce.number().optional(),

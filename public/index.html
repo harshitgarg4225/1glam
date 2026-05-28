@@ -933,12 +933,37 @@
         if (payload.workspace) {
           document.body.classList.add("authenticated");
           fillConfig(payload.workspace.config);
+          const bookingUrl = `${window.location.origin}/book/${encodeURIComponent(payload.workspace.workspaceId)}`;
           workspaceSummary.innerHTML = `
             <p class="lead" style="font-size:16px;margin:0 0 10px;">Your workspace is live. Google Sheets is the source of truth, and bookings sync directly into your own calendar.</p>
             <div class="workspace-links">
               <a href="${escapeHtml(payload.workspace.spreadsheetUrl)}" target="_blank" rel="noreferrer">Open Sheet</a>
               <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noreferrer">Open Calendar</a>
+            </div>
+            <div class="mini-card" style="margin-top:14px;">
+              <div class="kicker">Your public booking page</div>
+              <p class="muted" style="margin:6px 0 10px;font-size:13px;">Share this link on Instagram, WhatsApp, or your website. Requests land straight in your Leads pipeline.</p>
+              <div class="filter-bar">
+                <input type="text" id="booking-link" class="grow" readonly value="${escapeHtml(bookingUrl)}" />
+                <button class="button secondary" type="button" id="copy-booking-link">Copy</button>
+                <a class="button secondary" href="${escapeHtml(bookingUrl)}" target="_blank" rel="noreferrer">Preview</a>
+              </div>
             </div>`;
+          const copyBtn = document.getElementById("copy-booking-link");
+          if (copyBtn) {
+            copyBtn.addEventListener("click", async () => {
+              const input = document.getElementById("booking-link");
+              try {
+                await navigator.clipboard.writeText(input.value);
+                copyBtn.textContent = "Copied!";
+              } catch {
+                input.select();
+                document.execCommand("copy");
+                copyBtn.textContent = "Copied!";
+              }
+              setTimeout(() => { copyBtn.textContent = "Copy"; }, 1800);
+            });
+          }
           renderMetaConnections(payload.workspace, payload.profile);
           renderDashboard(payload);
           syncProtectButton(payload.workspace);

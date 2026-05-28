@@ -4,7 +4,7 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
 import { appConfig } from "./config.js";
-import { createLeadSchema, ownerDecisionSchema, paymentStatusSchema } from "./api-schema.js";
+import { createLeadSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema } from "./api-schema.js";
 import { workspaceConfigSchema } from "./schema.js";
 import {
   applyOwnerDecision,
@@ -33,6 +33,7 @@ import {
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
+import { createPublicBookingRequest, getPublicBusinessProfile } from "./services/public-booking.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
   exchangeForLongLivedToken,
@@ -112,6 +113,32 @@ app.get("/api/health", (_req, res) => {
     codePrivate: true,
     oauthConfigured: Boolean(appConfig.googleClientId && appConfig.googleClientSecret),
   });
+});
+
+app.get("/book/:workspaceId", (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "public", "book.html"));
+});
+
+app.get("/api/public/:workspaceId/profile", async (req, res, next) => {
+  try {
+    const profile = await getPublicBusinessProfile(req.params.workspaceId);
+    if (!profile) {
+      return res.status(404).json({ error: "Booking page not found" });
+    }
+    res.json({ ok: true, profile });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/public/:workspaceId/book", async (req, res, next) => {
+  try {
+    const parsed = publicBookingSchema.parse(req.body);
+    const result = await createPublicBookingRequest(req.params.workspaceId, parsed);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/auth/google", (_req, res) => {

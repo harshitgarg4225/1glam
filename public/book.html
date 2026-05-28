@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Book an Appointment</title>
+    <style>
+      :root {
+        --paper: #f8f1e8;
+        --panel: rgba(255, 250, 244, 0.82);
+        --text: #201711;
+        --muted: #726257;
+        --line: rgba(79, 51, 35, 0.12);
+        --accent: #9d6948;
+        --accent-dark: #6f452b;
+        --accent-soft: #f0e1d2;
+        --success: #285844;
+        --danger: #8b3f35;
+        --shadow: 0 24px 80px rgba(74, 46, 30, 0.12);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(210, 172, 138, 0.26), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(155, 114, 86, 0.14), transparent 25%),
+          linear-gradient(145deg, #fcf8f2 0%, #f4eadf 55%, #ecdccf 100%);
+        min-height: 100vh;
+      }
+      .shell { width: min(680px, calc(100vw - 28px)); margin: 28px auto 48px; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+        padding: 30px;
+      }
+      .kicker { text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; color: var(--muted); }
+      h1 { font-size: clamp(28px, 6vw, 44px); line-height: 1.02; margin: 10px 0 6px; font-weight: 600; }
+      h2 { font-size: 20px; margin: 0 0 14px; }
+      p { margin-top: 0; line-height: 1.5; }
+      .muted { color: var(--muted); }
+      .brand-meta { color: var(--muted); margin-bottom: 4px; }
+      .services { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 18px 0 6px; }
+      .service {
+        text-align: left; cursor: pointer; padding: 16px;
+        border: 1px solid var(--line); border-radius: 18px;
+        background: rgba(255,255,255,0.5); color: var(--text); font: inherit;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .service:hover { border-color: var(--accent); }
+      .service.selected { border-color: var(--accent-dark); background: var(--accent-soft); }
+      .service .name { font-size: 16px; font-weight: 600; }
+      .service .price { font-size: 13px; color: var(--muted); margin-top: 6px; }
+      label { display: block; margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+      input, textarea {
+        width: 100%; padding: 13px 15px; font: inherit; color: var(--text);
+        background: rgba(255,255,255,0.78); border: 1px solid var(--line); border-radius: 14px;
+      }
+      textarea { resize: vertical; min-height: 70px; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .button {
+        display: inline-block; width: 100%; margin-top: 22px; padding: 15px 20px; cursor: pointer;
+        border: none; border-radius: 14px; font: inherit; font-size: 16px; color: #fff;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+      }
+      .button:disabled { opacity: 0.6; cursor: not-allowed; }
+      .status { min-height: 22px; margin-top: 12px; color: var(--danger); font-size: 14px; }
+      .hidden { display: none; }
+      .success-icon {
+        width: 56px; height: 56px; border-radius: 50%; background: var(--accent-soft);
+        display: flex; align-items: center; justify-content: center; color: var(--accent-dark);
+        font-size: 28px; margin-bottom: 16px;
+      }
+      .footer { text-align: center; margin-top: 22px; font-size: 12px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="panel" id="loading">
+        <p class="muted">Loading…</p>
+      </div>
+
+      <div class="panel hidden" id="not-found">
+        <h1>Page not available</h1>
+        <p class="muted">This booking link is invalid or no longer active.</p>
+      </div>
+
+      <div class="panel hidden" id="booking">
+        <p class="kicker">Book an appointment</p>
+        <h1 id="biz-name"></h1>
+        <p class="brand-meta" id="biz-meta"></p>
+
+        <h2>Choose a service</h2>
+        <div class="services" id="services"></div>
+
+        <form id="form">
+          <div class="row">
+            <div>
+              <label for="eventDate">Event date</label>
+              <input type="date" id="eventDate" required />
+            </div>
+            <div>
+              <label for="eventTime">Preferred time</label>
+              <input type="time" id="eventTime" />
+            </div>
+          </div>
+
+          <label for="locationText">Event location / venue</label>
+          <input type="text" id="locationText" placeholder="Venue name, area, city" required />
+
+          <div class="row">
+            <div>
+              <label for="clientName">Your name</label>
+              <input type="text" id="clientName" required />
+            </div>
+            <div>
+              <label for="clientWhatsApp">WhatsApp number</label>
+              <input type="tel" id="clientWhatsApp" placeholder="+91…" required />
+            </div>
+          </div>
+
+          <label for="clientInstagram">Instagram handle (optional)</label>
+          <input type="text" id="clientInstagram" placeholder="@yourhandle" />
+
+          <label for="notes">Anything else? (optional)</label>
+          <textarea id="notes" placeholder="Number of people, look references, timings…"></textarea>
+
+          <button type="submit" class="button" id="submit">Request booking</button>
+          <div class="status" id="status"></div>
+        </form>
+      </div>
+
+      <div class="panel hidden" id="success">
+        <div class="success-icon">&#10003;</div>
+        <h1>Request received</h1>
+        <p id="success-text" class="muted"></p>
+        <p class="muted">We'll review your request and reach out on WhatsApp shortly to confirm availability and pricing.</p>
+      </div>
+
+      <div class="footer">Powered by 1Glam Booking OS</div>
+    </div>
+
+    <script>
+      const workspaceId = window.location.pathname.split("/").filter(Boolean)[1] || "";
+      let selectedEventType = "";
+
+      const el = (id) => document.getElementById(id);
+      const show = (id) => el(id).classList.remove("hidden");
+      const hide = (id) => el(id).classList.add("hidden");
+
+      function formatPrice(value) {
+        if (!value) return "Price on request";
+        return "Starting from ₹" + Number(value).toLocaleString("en-IN");
+      }
+
+      async function loadProfile() {
+        if (!workspaceId) {
+          hide("loading");
+          show("not-found");
+          return;
+        }
+        try {
+          const res = await fetch("/api/public/" + encodeURIComponent(workspaceId) + "/profile");
+          if (!res.ok) throw new Error("not found");
+          const data = await res.json();
+          renderProfile(data.profile);
+        } catch (error) {
+          hide("loading");
+          show("not-found");
+        }
+      }
+
+      function renderProfile(profile) {
+        document.title = "Book — " + profile.businessName;
+        el("biz-name").textContent = profile.businessName;
+        const metaBits = [];
+        if (profile.city) metaBits.push(profile.city);
+        if (profile.instagramHandle) metaBits.push("@" + profile.instagramHandle.replace(/^@/, ""));
+        el("biz-meta").textContent = metaBits.join("  ·  ");
+
+        const container = el("services");
+        container.innerHTML = "";
+        profile.eventTypes.forEach((type) => {
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "service";
+          card.dataset.key = type.key;
+          card.innerHTML =
+            '<div class="name">' + type.label + "</div>" +
+            '<div class="price">' + formatPrice(type.startingPrice) + "</div>";
+          card.addEventListener("click", () => {
+            selectedEventType = type.key;
+            document.querySelectorAll(".service").forEach((s) => s.classList.remove("selected"));
+            card.classList.add("selected");
+          });
+          container.appendChild(card);
+        });
+
+        hide("loading");
+        show("booking");
+      }
+
+      el("form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const statusEl = el("status");
+        statusEl.textContent = "";
+
+        if (!selectedEventType) {
+          statusEl.textContent = "Please choose a service above.";
+          return;
+        }
+
+        const payload = {
+          eventType: selectedEventType,
+          eventDate: el("eventDate").value,
+          eventTime: el("eventTime").value || undefined,
+          locationText: el("locationText").value.trim(),
+          clientName: el("clientName").value.trim(),
+          clientWhatsApp: el("clientWhatsApp").value.trim(),
+          clientInstagram: el("clientInstagram").value.trim() || undefined,
+          notes: el("notes").value.trim() || undefined,
+        };
+
+        const submitBtn = el("submit");
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Sending…";
+        try {
+          const res = await fetch("/api/public/" + encodeURIComponent(workspaceId) + "/book", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Could not submit your request.");
+
+          el("success-text").textContent =
+            "Thank you, " + payload.clientName + ". Your " + data.eventType +
+            " request for " + data.eventDate + " has been sent to " + data.businessName + ".";
+          hide("booking");
+          show("success");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } catch (error) {
+          statusEl.textContent = error.message;
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Request booking";
+        }
+      });
+
+      loadProfile();
+    </script>
+  </body>
+</html>

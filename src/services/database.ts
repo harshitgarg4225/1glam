@@ -263,6 +263,20 @@ export async function updateWorkspaceByEmail(
   return db.workspaces[index];
 }
 
+export async function findWorkspaceByWorkspaceId(workspaceId: string) {
+  if (hasPostgres()) {
+    await ensurePostgres();
+    const result = await getPool().query<{ data: WorkspaceRecord }>(
+      `SELECT data FROM workspace_records WHERE workspace_id = $1 LIMIT 1`,
+      [workspaceId],
+    );
+    return result.rows[0]?.data ?? null;
+  }
+
+  const db = await readWorkspaceDbFromFile();
+  return db.workspaces.find((workspace) => workspace.workspaceId === workspaceId) ?? null;
+}
+
 export async function findWorkspaceByMetaAsset(input: {
   channel: MetaChannel;
   pageId?: string;
