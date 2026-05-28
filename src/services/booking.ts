@@ -1,9 +1,12 @@
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
 import type { calendar_v3 } from "googleapis";
+import { appConfig } from "../config.js";
 import { createGoogleClients } from "./google.js";
 import { enrichLeadWithGrok } from "./grok.js";
+import { logInteractionForWorkspace } from "./integrations.js";
 import { resolveTravelIntelligence } from "./maps.js";
+import { sendWhatsAppTemplate } from "./messaging.js";
 import { getWorkspaceByEmail } from "./workspace.js";
 import { bookingHeaders, leadHeaders, sheetNames } from "./sheet-definitions.js";
 import type { WorkspaceRecord } from "../types.js";
@@ -256,7 +259,48 @@ export async function applyOwnerDecision(
   };
 
   await updateLeadRow(workspace, tokens, lead.rowNumber, updated);
+
+  void sendApprovalNotification(workspace, tokens, updated);
+
   return { lead: updated };
+}
+
+async function sendApprovalNotification(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  lead: LeadRecord,
+) {
+  const templateName = String(workspace.config.approvalTemplate || "").trim();
+  if (!templateName) return;
+
+  const whatsapp = workspace.metaConnections?.whatsapp;
+  const connectionCanSend = whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+  const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+  if (!connectionCanSend && !envCanSend) return;
+
+  const recipientPhone = String(lead.clientWhatsApp || "").replace(/[^\d]/g, "");
+  if (!recipientPhone) return;
+
+  try {
+    await sendWhatsAppTemplate(
+      { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+      recipientPhone,
+      templateName,
+      String(workspace.config.approvalTemplateLang || "en"),
+      [lead.clientName, lead.eventDate, String(lead.finalApprovedPrice)],
+    );
+
+    await logInteractionForWorkspace(workspace.email, tokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: "WhatsApp",
+      actor: recipientPhone,
+      message: `Approval notification template "${templateName}" sent`,
+      aiSummary: "Automated lead-approval notification",
+    });
+  } catch (error) {
+    console.error("Approval notification send failed", error);
+  }
 }
 
 export async function confirmLeadBooking(email: string, tokens: Credentials, leadId: string) {

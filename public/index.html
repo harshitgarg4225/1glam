@@ -487,11 +487,16 @@
                 <div><label for="bookingMaxPerDay">Max Bookings / Day (0 = no limit)</label><input id="bookingMaxPerDay" name="bookingMaxPerDay" type="number" min="0" /></div>
                 <div><label for="bookingWeeklyOffDays">Weekly Days Off</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
                 <div class="wide"><label for="bookingBlockedDates">Blocked Dates</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
-                <div><label for="bookingConfirmTemplate">WhatsApp Confirm Template</label><input id="bookingConfirmTemplate" name="bookingConfirmTemplate" placeholder="booking_confirmation" /></div>
-                <div><label for="bookingConfirmTemplateLang">Template Language</label><input id="bookingConfirmTemplateLang" name="bookingConfirmTemplateLang" placeholder="en" /></div>
+                <div><label for="bookingConfirmTemplate">Booking Request Template</label><input id="bookingConfirmTemplate" name="bookingConfirmTemplate" placeholder="booking_confirmation" /></div>
+                <div><label for="bookingConfirmTemplateLang">Request Template Language</label><input id="bookingConfirmTemplateLang" name="bookingConfirmTemplateLang" placeholder="en" /></div>
+                <div><label for="approvalTemplate">Approval Notification Template</label><input id="approvalTemplate" name="approvalTemplate" placeholder="booking_approved" /></div>
+                <div><label for="approvalTemplateLang">Approval Template Language</label><input id="approvalTemplateLang" name="approvalTemplateLang" placeholder="en" /></div>
               </div>
               <p class="muted" style="margin-top:12px;font-size:13px;">
-                WhatsApp only allows automated business-initiated messages via an <strong>approved template</strong>. Create one in Meta Business Manager with <strong>3 body variables in this order</strong>: {{1}} client name, {{2}} event type, {{3}} event date — then enter its name above. Clients also get a "Confirm on WhatsApp" button on the booking page, which works without a template.
+                WhatsApp only allows automated business-initiated messages via an <strong>approved template</strong>. Create templates in Meta Business Manager.<br>
+                <strong>Booking Request Template</strong> — sent when client submits the booking page. Variables: {{1}} client name, {{2}} event type, {{3}} event date.<br>
+                <strong>Approval Notification Template</strong> — sent when you click Approve on a lead. Variables: {{1}} client name, {{2}} event date, {{3}} quoted price.<br>
+                Clients also get a "Confirm on WhatsApp" button on the booking page, which works without any template.
               </p>
             </div>
           </details>

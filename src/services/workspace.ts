@@ -269,6 +269,8 @@ async function seedSpreadsheet(
     ["booking_max_per_day", config.bookingMaxPerDay, "Max bookings per day (0 = unlimited)"],
     ["booking_confirm_template", config.bookingConfirmTemplate, "Approved WhatsApp template name for booking confirmation"],
     ["booking_confirm_template_lang", config.bookingConfirmTemplateLang, "WhatsApp template language code (e.g. en)"],
+    ["approval_template", config.approvalTemplate, "Approved WhatsApp template name sent when owner approves a lead"],
+    ["approval_template_lang", config.approvalTemplateLang, "Language code for the approval template (e.g. en)"],
   ];
 
   const artistsRows = [[
@@ -480,6 +482,8 @@ async function loadConfigFromSpreadsheet(
       bookingMaxPerDay: values.booking_max_per_day ?? base.bookingMaxPerDay,
       bookingConfirmTemplate: String(values.booking_confirm_template ?? base.bookingConfirmTemplate),
       bookingConfirmTemplateLang: String(values.booking_confirm_template_lang ?? base.bookingConfirmTemplateLang),
+      approvalTemplate: String(values.approval_template ?? base.approvalTemplate),
+      approvalTemplateLang: String(values.approval_template_lang ?? base.approvalTemplateLang),
     });
 
     return parsed.success ? parsed.data : base;

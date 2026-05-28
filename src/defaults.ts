@@ -56,5 +56,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     bookingMaxPerDay: 0,
     bookingConfirmTemplate: "",
     bookingConfirmTemplateLang: "en",
+    approvalTemplate: "",
+    approvalTemplateLang: "en",
   };
 }
