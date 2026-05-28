@@ -33,14 +33,18 @@ import {
 } from "./services/integrations.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
+  exchangeForLongLivedToken,
   exchangeMetaCode,
   fetchInstagramLoginConnectionProfile,
   fetchMetaConnectionProfile,
   fetchWhatsAppCloudConnectionProfile,
   getMetaConnectUrl,
   parseMetaState,
+  subscribePageToWebhooks,
+  subscribeWabaToWebhooks,
   verifyAndParseMetaSignedRequest,
   verifyMetaWebhook,
+  verifyMetaWebhookSignature,
 } from "./services/meta.js";
 import { generateConversationReply } from "./services/grok.js";
 import { sendChannelMessage } from "./services/messaging.js";
@@ -74,7 +78,13 @@ declare module "express-session" {
 
 const app = express();
 
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(
   session({
@@ -156,19 +166,34 @@ app.get("/auth/meta/callback", async (req, res, next) => {
     }
 
     const parsedState = parseMetaState(state);
-    const tokenResponse = await exchangeMetaCode(code);
+    const shortLived = await exchangeMetaCode(code);
+    const longLived = await exchangeForLongLivedToken(shortLived.access_token).catch(
+      () => shortLived,
+    );
     const connection = await fetchMetaConnectionProfile({
-      accessToken: tokenResponse.access_token,
+      accessToken: longLived.access_token,
       channel: parsedState.channel,
     });
 
     await upsertMetaConnection(parsedState.workspaceEmail, parsedState.channel, {
       ...connection,
-      accessToken: tokenResponse.access_token,
-      tokenExpiresAt: tokenResponse.expires_in
-        ? Date.now() + tokenResponse.expires_in * 1000
+      accessToken: longLived.access_token,
+      tokenExpiresAt: longLived.expires_in
+        ? Date.now() + longLived.expires_in * 1000
         : null,
     });
+
+    if (parsedState.channel === "instagram" && connection.pageId) {
+      await subscribePageToWebhooks(
+        connection.pageId,
+        connection.pageAccessToken ?? longLived.access_token,
+      ).catch((error) => console.error("Page webhook subscription failed", error));
+    }
+    if (parsedState.channel === "whatsapp" && connection.wabaId) {
+      await subscribeWabaToWebhooks(connection.wabaId, longLived.access_token).catch((error) =>
+        console.error("WABA webhook subscription failed", error),
+      );
+    }
 
     res.redirect(`/?meta_connected=${parsedState.channel}`);
   } catch (error) {
@@ -1140,6 +1165,16 @@ app.get("/webhooks/meta", (req, res) => {
 
 app.post("/webhooks/meta", async (req, res, next) => {
   try {
+    const signatureValid = verifyMetaWebhookSignature(
+      (req as express.Request & { rawBody?: Buffer }).rawBody,
+      typeof req.headers["x-hub-signature-256"] === "string"
+        ? req.headers["x-hub-signature-256"]
+        : undefined,
+    );
+    if (!signatureValid) {
+      return res.status(401).json({ error: "Invalid webhook signature" });
+    }
+
     const body = req.body as Record<string, unknown>;
     const object = typeof body.object === "string" ? body.object : "";
     const field = typeof body.field === "string" ? body.field : "";

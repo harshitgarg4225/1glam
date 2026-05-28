@@ -71,17 +71,104 @@ export async function exchangeMetaCode(code: string) {
   };
 }
 
+// Short-lived user tokens (~1h) must be swapped for long-lived ones (~60d)
+// before we store them, otherwise outbound sends start failing within the hour.
+export async function exchangeForLongLivedToken(shortLivedToken: string) {
+  if (!appConfig.metaAppId || !appConfig.metaAppSecret) {
+    throw new Error("Meta app credentials are not configured");
+  }
+
+  const url = new URL("https://graph.facebook.com/v23.0/oauth/access_token");
+  url.searchParams.set("grant_type", "fb_exchange_token");
+  url.searchParams.set("client_id", appConfig.metaAppId);
+  url.searchParams.set("client_secret", appConfig.metaAppSecret);
+  url.searchParams.set("fb_exchange_token", shortLivedToken);
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error(`Long-lived token exchange failed: ${await response.text()}`);
+  }
+
+  return (await response.json()) as {
+    access_token: string;
+    token_type?: string;
+    expires_in?: number;
+  };
+}
+
+// Meta validates X-Hub-Signature-256 against the raw request body. Without this,
+// anyone who learns the webhook URL can inject fabricated leads and messages.
+export function verifyMetaWebhookSignature(rawBody: Buffer | undefined, signatureHeader?: string) {
+  if (!appConfig.metaAppSecret) {
+    return false;
+  }
+  if (!rawBody || !signatureHeader || !signatureHeader.startsWith("sha256=")) {
+    return false;
+  }
+
+  const provided = Buffer.from(signatureHeader.slice("sha256=".length), "hex");
+  const expected = crypto
+    .createHmac("sha256", appConfig.metaAppSecret)
+    .update(rawBody)
+    .digest();
+
+  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+}
+
+// Inbound webhooks only flow once the app is explicitly subscribed to the asset.
+export async function subscribePageToWebhooks(pageId: string, pageAccessToken: string) {
+  const url = new URL(`https://graph.facebook.com/v23.0/${pageId}/subscribed_apps`);
+  url.searchParams.set("subscribed_fields", "messages,messaging_postbacks,message_reactions");
+  url.searchParams.set("access_token", pageAccessToken);
+  url.searchParams.set("appsecret_proof", buildAppSecretProof(pageAccessToken));
+
+  const response = await fetch(url.toString(), { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`Page webhook subscription failed: ${await response.text()}`);
+  }
+  return (await response.json()) as { success?: boolean };
+}
+
+export async function subscribeWabaToWebhooks(wabaId: string, accessToken: string) {
+  const url = new URL(`https://graph.facebook.com/v23.0/${wabaId}/subscribed_apps`);
+  url.searchParams.set("access_token", accessToken);
+  url.searchParams.set("appsecret_proof", buildAppSecretProof(accessToken));
+
+  const response = await fetch(url.toString(), { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`WABA webhook subscription failed: ${await response.text()}`);
+  }
+  return (await response.json()) as { success?: boolean };
+}
+
+export function buildAppSecretProof(accessToken: string) {
+  if (!appConfig.metaAppSecret) {
+    return "";
+  }
+  return crypto
+    .createHmac("sha256", appConfig.metaAppSecret)
+    .update(accessToken)
+    .digest("hex");
+}
+
 export async function fetchMetaConnectionProfile(input: {
   accessToken: string;
   channel: MetaChannel;
 }): Promise<MetaChannelConnection> {
   const [me, pages] = await Promise.all([
     graphGet("me?fields=id,name", input.accessToken),
-    graphGet("me/accounts?fields=id,name,instagram_business_account{id,username}", input.accessToken),
+    graphGet(
+      "me/accounts?fields=id,name,access_token,instagram_business_account{id,username}",
+      input.accessToken,
+    ),
   ]);
 
-  const firstPage = Array.isArray(pages?.data) ? pages.data[0] : undefined;
-  const firstInstagram = firstPage?.instagram_business_account;
+  const firstPage = Array.isArray(pages?.data)
+    ? (pages.data[0] as Record<string, unknown> | undefined)
+    : undefined;
+  const firstInstagram = firstPage?.instagram_business_account as
+    | Record<string, unknown>
+    | undefined;
 
   return {
     channel: input.channel,
@@ -90,6 +177,8 @@ export async function fetchMetaConnectionProfile(input: {
     metaUserId: String(me?.id ?? ""),
     metaUserName: String(me?.name ?? ""),
     accessToken: input.accessToken,
+    pageAccessToken:
+      typeof firstPage?.access_token === "string" ? firstPage.access_token : undefined,
     tokenExpiresAt: null,
     scopes: getMetaScopes(input.channel),
     pageId: typeof firstPage?.id === "string" ? firstPage.id : undefined,
@@ -240,6 +329,10 @@ function getMetaScopes(channel: MetaChannel) {
 async function graphGet(path: string, accessToken: string) {
   const url = new URL(`https://graph.facebook.com/v23.0/${path}`);
   url.searchParams.set("access_token", accessToken);
+  const proof = buildAppSecretProof(accessToken);
+  if (proof) {
+    url.searchParams.set("appsecret_proof", proof);
+  }
   const response = await fetch(url.toString());
   if (!response.ok) {
     return null;

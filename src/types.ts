@@ -67,6 +67,7 @@ export type MetaChannelConnection = {
   metaUserId?: string;
   metaUserName?: string;
   accessToken?: string;
+  pageAccessToken?: string;
   tokenExpiresAt?: number | null;
   scopes?: string[];
   pageId?: string;

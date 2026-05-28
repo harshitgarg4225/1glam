@@ -194,6 +194,18 @@ CREATE TABLE workspace_records (
 ### `auth-store.ts`
 - Per-workspace credential resolution; refreshes expired Google tokens transparently
 
+### `meta.ts` (direct Meta — hardened)
+- `getMetaConnectUrl({workspaceEmail, channel})` — Business Login (`config_id`) or raw-scope fallback
+- `exchangeMetaCode(code)` → short-lived token
+- `exchangeForLongLivedToken(shortToken)` → long-lived (~60d) token (`fb_exchange_token`)
+- `fetchMetaConnectionProfile()` — captures `pageAccessToken` (for IG sending) + IG business account
+- `verifyMetaWebhookSignature(rawBody, header)` — validates `X-Hub-Signature-256`; **POST /webhooks/meta returns 401 without it**
+- `subscribePageToWebhooks(pageId, pageToken)` / `subscribeWabaToWebhooks(wabaId, token)` — auto-subscribe on connect
+- `buildAppSecretProof(token)` — `appsecret_proof` added to all Graph GETs and sends
+- IG sending routes by credentials: page token via `graph.facebook.com/{ig-id}/messages` (Business Login) else `graph.instagram.com` (IG Login token)
+- **Note:** raw request body is captured via `express.json({ verify })` in index.ts — required for signature checks
+- **Deferred:** WhatsApp Embedded Signup (needs Meta app review); WA still uses env-based `/test-connect`
+
 ---
 
 ## Environment Variables (from `config.ts`)

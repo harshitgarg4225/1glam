@@ -1,4 +1,5 @@
 import { appConfig } from "../config.js";
+import { buildAppSecretProof } from "./meta.js";
 import type { MetaChannelConnection, WorkspaceRecord } from "../types.js";
 
 export async function sendChannelMessage(input: {
@@ -20,6 +21,33 @@ async function sendInstagramMessage(
   recipientId: string,
   message: string,
 ) {
+  // Business Login (Facebook) connections send through the Graph API using the
+  // page token; direct Instagram Login connections use the Instagram Graph host.
+  if (connection.pageAccessToken && connection.instagramBusinessAccountId) {
+    const url = new URL(
+      `https://graph.facebook.com/v23.0/${connection.instagramBusinessAccountId}/messages`,
+    );
+    url.searchParams.set("access_token", connection.pageAccessToken);
+    const proof = buildAppSecretProof(connection.pageAccessToken);
+    if (proof) {
+      url.searchParams.set("appsecret_proof", proof);
+    }
+
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recipient: { id: recipientId },
+        message: { text: message },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Instagram send failed: ${await response.text()}`);
+    }
+    return response.json();
+  }
+
   if (!connection.accessToken) {
     throw new Error("Instagram access token is missing");
   }
@@ -54,7 +82,13 @@ async function sendWhatsAppMessage(
     throw new Error("WhatsApp sender is not configured");
   }
 
-  const response = await fetch(`https://graph.facebook.com/v23.0/${phoneNumberId}/messages`, {
+  const url = new URL(`https://graph.facebook.com/v23.0/${phoneNumberId}/messages`);
+  const proof = buildAppSecretProof(accessToken);
+  if (proof) {
+    url.searchParams.set("appsecret_proof", proof);
+  }
+
+  const response = await fetch(url.toString(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
