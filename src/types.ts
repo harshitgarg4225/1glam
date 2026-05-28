@@ -92,6 +92,7 @@ export type WorkspaceRecord = {
   tentativeCalendarName: string;
   createdAt: string;
   updatedAt: string;
+  sheetProtected?: boolean;
   googleTokens?: StoredGoogleTokens;
   metaConnections?: Partial<Record<MetaChannel, MetaChannelConnection>>;
   config: WorkspaceConfig;

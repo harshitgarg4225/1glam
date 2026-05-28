@@ -176,6 +176,32 @@ export async function upsertMetaConnection(
   }));
 }
 
+export async function setSheetProtection(email: string, protect: boolean, tokens: Credentials) {
+  const workspace = await findWorkspaceByEmail(email);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const { drive } = createGoogleClients(tokens);
+  await drive.files.update({
+    fileId: workspace.spreadsheetId,
+    requestBody: {
+      contentRestrictions: protect
+        ? [{ readOnly: true, reason: "Protected by 1Glam Booking OS" }]
+        : [],
+    },
+  });
+
+  return updateWorkspaceByEmail(email, (ws) => ({
+    ...ws,
+    sheetProtected: protect,
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
+export async function recoverSheet(profile: { email: string; name: string }, tokens: Credentials) {
+  const existing = await findWorkspaceByEmail(profile.email);
+  return provisionWorkspace(profile, tokens);
+}
+
 export async function disconnectMetaConnection(email: string, channel: MetaChannel) {
   return updateWorkspaceByEmail(email, (workspace) => ({
     ...workspace,

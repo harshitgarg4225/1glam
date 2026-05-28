@@ -61,6 +61,8 @@ import {
   getWorkspaceByEmail,
   persistWorkspaceTokens,
   provisionWorkspace,
+  recoverSheet,
+  setSheetProtection,
   upsertMetaConnection,
   updateWorkspaceConfig,
 } from "./services/workspace.js";
@@ -240,6 +242,31 @@ app.post("/api/workspace/config", async (req, res, next) => {
       req.session.googleTokens,
     );
 
+    res.json({ ok: true, workspace });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/workspace/protect-sheet", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const protect = req.body?.protect === true || req.body?.protect === "true";
+    const workspace = await setSheetProtection(req.session.profile.email, protect, req.session.googleTokens);
+    res.json({ ok: true, workspace });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/workspace/recover-sheet", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await recoverSheet(req.session.profile, req.session.googleTokens);
     res.json({ ok: true, workspace });
   } catch (error) {
     next(error);
