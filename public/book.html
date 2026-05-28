@@ -55,6 +55,12 @@
       .service.selected { border-color: var(--accent-dark); background: var(--accent-soft); }
       .service .name { font-size: 16px; font-weight: 600; }
       .service .price { font-size: 13px; color: var(--muted); margin-top: 6px; }
+      .service-desc { font-size: 14px; color: var(--muted); line-height: 1.5; margin: 4px 0 16px; }
+      .addons-wrap { margin-bottom: 18px; }
+      .addons-heading { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+      .addon-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; cursor: pointer; font-size: 15px; }
+      .addon-item input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent-dark); flex-shrink: 0; cursor: pointer; }
+      .addon-price { color: var(--muted); font-size: 13px; }
       label { display: block; margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
       input, textarea {
         width: 100%; padding: 13px 15px; font: inherit; color: var(--text);
@@ -102,6 +108,13 @@
 
         <h2>Choose a service</h2>
         <div class="services" id="services"></div>
+        <div id="service-detail" class="hidden">
+          <p id="service-desc" class="service-desc hidden"></p>
+          <div id="addons-wrap" class="addons-wrap hidden">
+            <p class="addons-heading">Optional add-ons</p>
+            <div id="addons-list"></div>
+          </div>
+        </div>
 
         <form id="form">
           <div class="row">
@@ -156,6 +169,7 @@
       let selectedEventType = "";
       let availability = null;
       let ownerWhatsApp = "";
+      let eventTypesData = [];
       const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
       const el = (id) => document.getElementById(id);
@@ -202,6 +216,7 @@
         if (profile.instagramHandle) metaBits.push("@" + profile.instagramHandle.replace(/^@/, ""));
         el("biz-meta").textContent = metaBits.join("  ·  ");
 
+        eventTypesData = profile.eventTypes || [];
         const container = el("services");
         container.innerHTML = "";
         profile.eventTypes.forEach((type) => {
@@ -216,6 +231,7 @@
             selectedEventType = type.key;
             document.querySelectorAll(".service").forEach((s) => s.classList.remove("selected"));
             card.classList.add("selected");
+            renderServiceDetail(type);
           });
           container.appendChild(card);
         });
@@ -232,6 +248,44 @@
 
         hide("loading");
         show("booking");
+      }
+
+      function renderServiceDetail(type) {
+        const detail = el("service-detail");
+        const descEl = el("service-desc");
+        const addonsWrap = el("addons-wrap");
+        const addonsList = el("addons-list");
+
+        if (type.description) {
+          descEl.textContent = type.description;
+          descEl.classList.remove("hidden");
+        } else {
+          descEl.classList.add("hidden");
+        }
+
+        addonsList.innerHTML = "";
+        if (type.addons && type.addons.length > 0) {
+          type.addons.forEach((addon) => {
+            const safeId = "addon-" + addon.name.replace(/[^a-z0-9]/gi, "_");
+            const label = document.createElement("label");
+            label.className = "addon-item";
+            label.innerHTML =
+              '<input type="checkbox" id="' + safeId + '" value="' + addon.name.replace(/"/g, "&quot;") + '" />' +
+              '<span>' + addon.name +
+              (addon.price > 0 ? ' <span class="addon-price">+₹' + Number(addon.price).toLocaleString("en-IN") + '</span>' : '') +
+              '</span>';
+            addonsList.appendChild(label);
+          });
+          addonsWrap.classList.remove("hidden");
+        } else {
+          addonsWrap.classList.add("hidden");
+        }
+
+        if (type.description || (type.addons && type.addons.length > 0)) {
+          detail.classList.remove("hidden");
+        } else {
+          detail.classList.add("hidden");
+        }
       }
 
       function dateUnavailableReason(value) {
@@ -262,11 +316,14 @@
           return;
         }
 
+        const checkedAddons = [...document.querySelectorAll("#addons-list input:checked")]
+          .map((cb) => cb.value).join(", ");
         const payload = {
           eventType: selectedEventType,
           eventDate: el("eventDate").value,
           eventTime: el("eventTime").value || undefined,
           locationText: el("locationText").value.trim(),
+          addons: checkedAddons || undefined,
           clientName: el("clientName").value.trim(),
           clientWhatsApp: el("clientWhatsApp").value.trim(),
           clientInstagram: el("clientInstagram").value.trim() || undefined,

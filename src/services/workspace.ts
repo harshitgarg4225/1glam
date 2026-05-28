@@ -274,6 +274,18 @@ async function seedSpreadsheet(
     ["reminder_template", config.reminderTemplate, "Approved WhatsApp template name for pre-event reminders"],
     ["reminder_template_lang", config.reminderTemplateLang, "Language code for the reminder template (e.g. en)"],
     ["reminder_days_before", config.reminderDaysBefore, "Days before event to send reminders, comma-separated (e.g. 7,1)"],
+    ["service_bridal_desc", config.serviceBridalDesc, "Description shown on booking page for Bridal"],
+    ["service_engagement_desc", config.serviceEngagementDesc, "Description shown on booking page for Engagement"],
+    ["service_reception_desc", config.serviceReceptionDesc, "Description shown on booking page for Reception"],
+    ["service_party_desc", config.servicePartyDesc, "Description shown on booking page for Party"],
+    ["service_shoot_desc", config.serviceShootDesc, "Description shown on booking page for Shoot"],
+    ["service_other_desc", config.serviceOtherDesc, "Description shown on booking page for Other"],
+    ["service_bridal_addons", config.serviceBridalAddons, "Addons for Bridal, format: name:price, e.g. Hair Styling:2000"],
+    ["service_engagement_addons", config.serviceEngagementAddons, "Addons for Engagement"],
+    ["service_reception_addons", config.serviceReceptionAddons, "Addons for Reception"],
+    ["service_party_addons", config.servicePartyAddons, "Addons for Party"],
+    ["service_shoot_addons", config.serviceShootAddons, "Addons for Shoot"],
+    ["service_other_addons", config.serviceOtherAddons, "Addons for Other"],
   ];
 
   const artistsRows = [[
@@ -490,6 +502,18 @@ async function loadConfigFromSpreadsheet(
       reminderTemplate: String(values.reminder_template ?? base.reminderTemplate),
       reminderTemplateLang: String(values.reminder_template_lang ?? base.reminderTemplateLang),
       reminderDaysBefore: String(values.reminder_days_before ?? base.reminderDaysBefore),
+      serviceBridalDesc: String(values.service_bridal_desc ?? base.serviceBridalDesc),
+      serviceEngagementDesc: String(values.service_engagement_desc ?? base.serviceEngagementDesc),
+      serviceReceptionDesc: String(values.service_reception_desc ?? base.serviceReceptionDesc),
+      servicePartyDesc: String(values.service_party_desc ?? base.servicePartyDesc),
+      serviceShootDesc: String(values.service_shoot_desc ?? base.serviceShootDesc),
+      serviceOtherDesc: String(values.service_other_desc ?? base.serviceOtherDesc),
+      serviceBridalAddons: String(values.service_bridal_addons ?? base.serviceBridalAddons),
+      serviceEngagementAddons: String(values.service_engagement_addons ?? base.serviceEngagementAddons),
+      serviceReceptionAddons: String(values.service_reception_addons ?? base.serviceReceptionAddons),
+      servicePartyAddons: String(values.service_party_addons ?? base.servicePartyAddons),
+      serviceShootAddons: String(values.service_shoot_addons ?? base.serviceShootAddons),
+      serviceOtherAddons: String(values.service_other_addons ?? base.serviceOtherAddons),
     });
 
     return parsed.success ? parsed.data : base;

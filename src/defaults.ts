@@ -61,5 +61,17 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     reminderTemplate: "",
     reminderTemplateLang: "en",
     reminderDaysBefore: "7,1",
+    serviceBridalDesc: "",
+    serviceEngagementDesc: "",
+    serviceReceptionDesc: "",
+    servicePartyDesc: "",
+    serviceShootDesc: "",
+    serviceOtherDesc: "",
+    serviceBridalAddons: "",
+    serviceEngagementAddons: "",
+    serviceReceptionAddons: "",
+    servicePartyAddons: "",
+    serviceShootAddons: "",
+    serviceOtherAddons: "",
   };
 }

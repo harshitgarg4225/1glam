@@ -6,10 +6,17 @@ import { logInteractionForWorkspace } from "./integrations.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
 import type { WorkspaceConfig, WorkspaceRecord } from "../types.js";
 
+export type PublicAddon = {
+  name: string;
+  price: number;
+};
+
 export type PublicEventType = {
   key: string;
   label: string;
   startingPrice: number;
+  description: string;
+  addons: PublicAddon[];
 };
 
 export type PublicAvailability = {
@@ -69,6 +76,20 @@ function sanitizePhone(raw: string) {
   return String(raw || "").replace(/[^\d]/g, "");
 }
 
+function parseAddons(raw: string): PublicAddon[] {
+  return String(raw || "")
+    .split(",")
+    .map((entry) => {
+      const colonIndex = entry.lastIndexOf(":");
+      if (colonIndex < 1) return null;
+      const name = entry.slice(0, colonIndex).trim();
+      const price = parseInt(entry.slice(colonIndex + 1).trim(), 10);
+      if (!name) return null;
+      return { name, price: isNaN(price) ? 0 : price };
+    })
+    .filter((a): a is PublicAddon => a !== null);
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -99,6 +120,7 @@ export type PublicBookingInput = {
   eventDate: string;
   eventTime?: string;
   locationText: string;
+  addons?: string;
   notes?: string;
 };
 
@@ -114,16 +136,18 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
   const { config } = workspace;
   const eventTypes: PublicEventType[] = [
-    { key: "Bridal", startingPrice: config.basePriceBridal },
-    { key: "Engagement", startingPrice: config.basePriceEngagement },
-    { key: "Reception", startingPrice: config.basePriceReception },
-    { key: "Party", startingPrice: config.basePriceParty },
-    { key: "Shoot", startingPrice: config.basePriceShoot },
-    { key: "Other", startingPrice: config.basePriceOther },
+    { key: "Bridal", startingPrice: config.basePriceBridal, descKey: "serviceBridalDesc" as const, addonsKey: "serviceBridalAddons" as const },
+    { key: "Engagement", startingPrice: config.basePriceEngagement, descKey: "serviceEngagementDesc" as const, addonsKey: "serviceEngagementAddons" as const },
+    { key: "Reception", startingPrice: config.basePriceReception, descKey: "serviceReceptionDesc" as const, addonsKey: "serviceReceptionAddons" as const },
+    { key: "Party", startingPrice: config.basePriceParty, descKey: "servicePartyDesc" as const, addonsKey: "servicePartyAddons" as const },
+    { key: "Shoot", startingPrice: config.basePriceShoot, descKey: "serviceShootDesc" as const, addonsKey: "serviceShootAddons" as const },
+    { key: "Other", startingPrice: config.basePriceOther, descKey: "serviceOtherDesc" as const, addonsKey: "serviceOtherAddons" as const },
   ].map((entry) => ({
     key: entry.key,
     label: EVENT_TYPE_LABELS[entry.key] ?? entry.key,
     startingPrice: Number(entry.startingPrice) || 0,
+    description: String(config[entry.descKey] || ""),
+    addons: parseAddons(String(config[entry.addonsKey] || "")),
   }));
 
   return {
@@ -260,6 +284,7 @@ function buildInboundMessage(input: PublicBookingInput) {
     `Booking request via website for ${input.eventType}.`,
     `Date: ${input.eventDate}${input.eventTime ? ` at ${input.eventTime}` : ""}.`,
     `Location: ${input.locationText}.`,
+    input.addons ? `Addons: ${input.addons}.` : "",
     input.clientInstagram ? `Instagram: ${input.clientInstagram}.` : "",
     input.notes ? `Notes: ${input.notes}` : "",
   ]

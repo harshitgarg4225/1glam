@@ -24,6 +24,7 @@ export const publicBookingSchema = z.object({
   eventDate: z.string().min(1).max(20),
   eventTime: z.string().max(20).optional(),
   locationText: z.string().min(1).max(200),
+  addons: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
 });
 

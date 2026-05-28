@@ -61,6 +61,18 @@ export const workspaceConfigSchema = z.object({
   reminderTemplate: z.string().optional().default(""),
   reminderTemplateLang: z.string().optional().default("en"),
   reminderDaysBefore: z.string().optional().default("7,1"),
+  serviceBridalDesc: z.string().optional().default(""),
+  serviceEngagementDesc: z.string().optional().default(""),
+  serviceReceptionDesc: z.string().optional().default(""),
+  servicePartyDesc: z.string().optional().default(""),
+  serviceShootDesc: z.string().optional().default(""),
+  serviceOtherDesc: z.string().optional().default(""),
+  serviceBridalAddons: z.string().optional().default(""),
+  serviceEngagementAddons: z.string().optional().default(""),
+  serviceReceptionAddons: z.string().optional().default(""),
+  servicePartyAddons: z.string().optional().default(""),
+  serviceShootAddons: z.string().optional().default(""),
+  serviceOtherAddons: z.string().optional().default(""),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

@@ -60,6 +60,18 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reminderTemplate: string;
   reminderTemplateLang: string;
   reminderDaysBefore: string;
+  serviceBridalDesc: string;
+  serviceEngagementDesc: string;
+  serviceReceptionDesc: string;
+  servicePartyDesc: string;
+  serviceShootDesc: string;
+  serviceOtherDesc: string;
+  serviceBridalAddons: string;
+  serviceEngagementAddons: string;
+  serviceReceptionAddons: string;
+  servicePartyAddons: string;
+  serviceShootAddons: string;
+  serviceOtherAddons: string;
 };
 
 export type StoredGoogleTokens = {
