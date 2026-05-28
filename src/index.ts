@@ -944,6 +944,68 @@ app.post("/api/bookings/:bookingId/send-review", async (req, res, next) => {
   }
 });
 
+app.get("/api/reviews", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A2:I`,
+    });
+    const rows = (response.data.values ?? []).filter((row) => row[0]);
+    const reviews = rows.map((row) => ({
+      reviewId: row[0] ?? "",
+      leadId: row[1] ?? "",
+      clientName: row[2] ?? "",
+      eventDate: row[3] ?? "",
+      requestSentAt: row[4] ?? "",
+      reminderSentAt: row[5] ?? "",
+      reviewLinkClicked: row[6] ?? "No",
+      reviewConfirmed: row[7] ?? "No",
+      notes: row[8] ?? "",
+    }));
+    res.json({ ok: true, reviews });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/reviews/:reviewId/confirm", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A2:I`,
+    });
+    const rows = response.data.values ?? [];
+    const index = rows.findIndex((row) => row[0] === req.params.reviewId);
+    if (index < 0) return res.status(404).json({ error: "Review not found" });
+
+    const row = [...rows[index]];
+    row[7] = "Yes";
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A${index + 2}:I${index + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [row] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {

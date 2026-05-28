@@ -222,6 +222,7 @@
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
         <button class="tab-button" type="button" data-tab="conversations">Conversations</button>
         <button class="tab-button" type="button" data-tab="team">Team</button>
+        <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
         <button class="tab-button" type="button" data-tab="channels">Channels</button>
         <button class="tab-button" type="button" data-tab="setup">Setup</button>
       </nav>
@@ -407,6 +408,31 @@
           <div class="kicker">Directory</div>
           <h2>Team</h2>
           <div id="team-list"><p class="muted">Loading team…</p></div>
+        </div>
+      </section>
+
+      <!-- Reviews -->
+      <section class="tab-panel" data-panel="reviews">
+        <div class="panel section">
+          <div class="kicker">Client Feedback</div>
+          <h2>Reviews</h2>
+          <p class="muted" style="margin-bottom:16px;font-size:14px;">
+            Reviews requested via the Bookings tab appear here. Mark reviews confirmed once the client leaves one on Google.
+          </p>
+          <div id="reviews-stats" style="display:flex;gap:20px;margin-bottom:20px;flex-wrap:wrap;"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Client</th>
+                <th>Event Date</th>
+                <th>Request Sent</th>
+                <th>Reminder Sent</th>
+                <th>Confirmed</th>
+                <th>Actions</th>
+              </tr></thead>
+              <tbody id="reviews-table-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -610,6 +636,7 @@
         if (name === "calendar") renderCalendar();
         if (name === "conversations") loadConversations();
         if (name === "team") loadTeam();
+        if (name === "reviews") loadReviews();
       }
       tabNav.addEventListener("click", (e) => {
         const b = e.target.closest(".tab-button");
@@ -886,6 +913,60 @@
         if (deId) {
           try { await postJson(`/api/team/${deId}/deactivate`, {}); await loadTeam(); }
           catch (error) { teamStatus.textContent = error.message; }
+        }
+      });
+
+      // ---- Reviews ----
+      async function loadReviews() {
+        const tbody = document.getElementById("reviews-table-body");
+        const statsEl = document.getElementById("reviews-stats");
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>`;
+        try {
+          const res = await fetch("/api/reviews");
+          const payload = await res.json();
+          if (!payload.ok) throw new Error(payload.error || "Failed");
+          renderReviews(payload.reviews || []);
+        } catch (error) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">${escapeHtml(error.message)}</td></tr>`;
+        }
+      }
+      function renderReviews(reviews) {
+        const tbody = document.getElementById("reviews-table-body");
+        const statsEl = document.getElementById("reviews-stats");
+        const total = reviews.length;
+        const confirmed = reviews.filter((r) => r.reviewConfirmed === "Yes").length;
+        const pending = reviews.filter((r) => r.reviewConfirmed !== "Yes").length;
+        statsEl.innerHTML = [
+          `<span class="pill success">${confirmed} received</span>`,
+          `<span class="pill warning">${pending} pending</span>`,
+          `<span class="pill">${total} total</span>`,
+        ].join(" ");
+        if (!reviews.length) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">No review requests yet. Send one from the Bookings tab.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = reviews.map((r) => `
+          <tr>
+            <td>${escapeHtml(r.clientName)}</td>
+            <td>${escapeHtml(r.eventDate)}</td>
+            <td>${r.requestSentAt ? formatDate(r.requestSentAt) : "—"}</td>
+            <td>${r.reminderSentAt ? formatDate(r.reminderSentAt) : "—"}</td>
+            <td><span class="pill ${r.reviewConfirmed === "Yes" ? "success" : "warning"}">${r.reviewConfirmed === "Yes" ? "✓ Yes" : "Pending"}</span></td>
+            <td>
+              ${r.reviewConfirmed !== "Yes" ? `<button class="button tiny" data-review-confirm="${escapeHtml(r.reviewId)}">Mark Confirmed</button>` : ""}
+            </td>
+          </tr>`).join("");
+      }
+      document.getElementById("reviews-table-body").addEventListener("click", async (e) => {
+        const reviewId = e.target.closest("[data-review-confirm]")?.getAttribute("data-review-confirm");
+        if (!reviewId) return;
+        e.target.disabled = true;
+        try {
+          await postJson(`/api/reviews/${reviewId}/confirm`, {});
+          loadReviews();
+        } catch (error) {
+          alert(error.message);
+          e.target.disabled = false;
         }
       });
 
