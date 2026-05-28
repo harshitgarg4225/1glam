@@ -27,10 +27,12 @@ import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuth
 import {
   extractInboundTextFromMetaWebhook,
   ingestNormalizedLead,
+  listInteractions,
   logInteractionForWorkspace,
   parseInstagramLeadSignalsFromMessage,
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
+import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
   exchangeForLongLivedToken,
@@ -268,6 +270,91 @@ app.post("/api/workspace/recover-sheet", async (req, res, next) => {
     }
     const workspace = await recoverSheet(req.session.profile, req.session.googleTokens);
     res.json({ ok: true, workspace });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/team", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const artists = await listArtists(req.session.profile.email, req.session.googleTokens);
+    res.json({ ok: true, artists });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/team", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      return res.status(400).json({ error: "Artist name is required" });
+    }
+    const artist = await upsertArtist(req.session.profile.email, req.session.googleTokens, {
+      artistId: typeof req.body.artistId === "string" ? req.body.artistId : undefined,
+      name,
+      whatsApp: req.body.whatsApp,
+      email: req.body.email,
+      city: req.body.city,
+      skillLevel: req.body.skillLevel,
+      priceMultiplier: req.body.priceMultiplier !== undefined ? Number(req.body.priceMultiplier) : undefined,
+      luxuryEligible: req.body.luxuryEligible,
+      primaryCalendarId: req.body.primaryCalendarId,
+      active: req.body.active,
+    });
+    res.json({ ok: true, artist });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/team/:artistId/deactivate", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const artist = await deactivateArtist(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.artistId,
+    );
+    res.json({ ok: true, artist });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/conversations", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const interactions = await listInteractions(req.session.profile.email, req.session.googleTokens);
+    res.json({ ok: true, interactions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/leads/:leadId/assign", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const assignedArtist = typeof req.body?.assignedArtist === "string" ? req.body.assignedArtist : "";
+    const updated = await updateLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+      (current) => ({ ...current, assignedArtist }),
+    );
+    res.json({ ok: true, lead: updated });
   } catch (error) {
     next(error);
   }

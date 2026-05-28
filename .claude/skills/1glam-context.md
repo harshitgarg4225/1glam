@@ -191,8 +191,30 @@ CREATE TABLE workspace_records (
 - `generateInvoiceDocument(workspace, booking)` → Drive URL
 - `generateContractPdfBytes(workspace, booking)` → Buffer
 
+### `team.ts` (team/artists CRUD)
+- `listArtists(email, tokens)` → `ArtistRecord[]` from Artists sheet
+- `upsertArtist(email, tokens, input)` — append or update by Artist ID
+- `deactivateArtist(email, tokens, artistId)` — soft delete (sets Active="No", keeps the row)
+
+### `integrations.ts` (added)
+- `listInteractions(email, tokens)` → `InteractionEntry[]` from InteractionLog sheet (powers Conversations tab)
+
 ### `auth-store.ts`
 - Per-workspace credential resolution; refreshes expired Google tokens transparently
+
+### UI tabs (public/index.html, vanilla JS, no build step)
+- 8 tabs: Dashboard / Leads / Bookings / Calendar / Conversations / Team / Channels / Setup
+- **Leads** = Kanban pipeline (columns by status) with filter/search bar + drag-and-drop. Drag maps to existing endpoints: →Awaiting=YES, →Lost=NO, →Confirmed=confirm, →Paid=Paid in Full. Each card has an assign-artist dropdown.
+- **Bookings** = filterable table (search + event/payment filters)
+- **Calendar** = embedded Google Calendar iframe (primary + tentative calendars, color-coded; Month/Week/Agenda toggle). Only renders for the signed-in Google account's browser session.
+- **Conversations** = InteractionLog grouped into threads by leadId, chat-bubble timeline, searchable
+- **Team** = artist add/edit form + directory cards with deactivate
+
+### Added API routes (index.ts)
+- `GET/POST /api/team`, `POST /api/team/:artistId/deactivate`
+- `GET /api/conversations`
+- `POST /api/leads/:leadId/assign` (set assignedArtist)
+- `POST /api/workspace/protect-sheet`, `POST /api/workspace/recover-sheet`
 
 ### `meta.ts` (direct Meta — hardened)
 - `getMetaConnectUrl({workspaceEmail, channel})` — Business Login (`config_id`) or raw-scope fallback

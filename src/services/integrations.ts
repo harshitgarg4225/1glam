@@ -32,6 +32,44 @@ type ParsedInstagramSignals = {
   clientTags: string;
 };
 
+export type InteractionEntry = {
+  logId: string;
+  leadId: string;
+  direction: string;
+  channel: string;
+  actor: string;
+  message: string;
+  aiSummary: string;
+  createdAt: string;
+};
+
+export async function listInteractions(
+  workspaceEmail: string,
+  tokens: Credentials,
+): Promise<InteractionEntry[]> {
+  const workspace = await getWorkspaceByEmail(workspaceEmail);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.interactionLog}!A2:H`,
+  });
+
+  return (response.data.values ?? [])
+    .filter((row) => row[0])
+    .map((row) => ({
+      logId: row[0] ?? "",
+      leadId: row[1] ?? "",
+      direction: row[2] ?? "",
+      channel: row[3] ?? "",
+      actor: row[4] ?? "",
+      message: row[5] ?? "",
+      aiSummary: row[6] ?? "",
+      createdAt: row[7] ?? "",
+    }));
+}
+
 export async function logInteractionForWorkspace(
   workspaceEmail: string,
   tokens: Credentials,

@@ -34,7 +34,7 @@
       }
 
       .shell {
-        width: min(1240px, calc(100vw - 32px));
+        width: min(1320px, calc(100vw - 32px));
         margin: 24px auto 40px;
       }
 
@@ -46,9 +46,7 @@
         backdrop-filter: blur(18px);
       }
 
-      .intro, .cta-card, .section {
-        padding: 30px;
-      }
+      .intro, .cta-card, .section { padding: 30px; }
 
       .kicker {
         text-transform: uppercase;
@@ -58,291 +56,145 @@
       }
 
       h1, h2, h3, p { margin-top: 0; }
+      h1 { font-size: clamp(30px, 5vw, 54px); line-height: 0.98; margin: 12px 0 16px; font-weight: 600; }
+      h2 { font-size: 26px; margin-bottom: 18px; }
+      h3 { font-size: 18px; margin-bottom: 10px; }
 
-      h1 {
-        font-size: clamp(30px, 5vw, 54px);
-        line-height: 0.98;
-        margin: 12px 0 16px;
-        font-weight: 600;
-      }
+      .lead { font-size: 18px; line-height: 1.65; color: #47382f; }
 
-      h2 {
-        font-size: 26px;
-        margin-bottom: 18px;
-      }
-
-      .lead {
-        font-size: 18px;
-        line-height: 1.65;
-        color: #47382f;
-      }
-
-      /* Top bar */
       .topbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 18px;
-        padding: 20px 26px;
-        flex-wrap: wrap;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 18px; padding: 20px 26px; flex-wrap: wrap;
       }
-
-      .brand {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      .brand-title {
-        font-size: 24px;
-        font-weight: 600;
-        line-height: 1;
-      }
-
-      .topbar-account {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        flex-wrap: wrap;
-        text-align: right;
-      }
-
+      .brand { display: flex; flex-direction: column; gap: 4px; }
+      .brand-title { font-size: 24px; font-weight: 600; line-height: 1; }
+      .topbar-account { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; text-align: right; }
       .account-id { font-size: 14px; line-height: 1.4; }
 
-      /* Tabs */
-      .tabs {
-        display: flex;
-        gap: 8px;
-        margin: 18px 0 0;
-        padding: 8px;
-        flex-wrap: wrap;
-      }
-
+      .tabs { display: flex; gap: 8px; margin: 18px 0 0; padding: 8px; flex-wrap: wrap; }
       .tab-button {
-        appearance: none;
-        border: 1px solid transparent;
-        background: transparent;
-        color: var(--muted);
-        cursor: pointer;
-        border-radius: 999px;
-        padding: 11px 20px;
-        font: inherit;
-        font-size: 15px;
-        letter-spacing: 0.02em;
+        appearance: none; border: 1px solid transparent; background: transparent;
+        color: var(--muted); cursor: pointer; border-radius: 999px;
+        padding: 11px 20px; font: inherit; font-size: 15px; letter-spacing: 0.02em;
       }
-
       .tab-button:hover { color: var(--accent-dark); }
-
       .tab-button.active {
         background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
-        color: #fff;
-        box-shadow: 0 12px 26px rgba(109, 69, 42, 0.22);
+        color: #fff; box-shadow: 0 12px 26px rgba(109, 69, 42, 0.22);
       }
 
-      .tab-panel { display: none; margin-top: 22px; }
+      .tab-panel { display: none; }
       .tab-panel.active { display: block; }
 
-      .stat-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 14px;
-      }
-
-      .stat {
-        padding: 18px;
-        border-radius: 18px;
-        background: rgba(255,255,255,0.46);
-        border: 1px solid var(--line);
-      }
-
-      .stat strong {
-        display: block;
-        font-size: 32px;
-        margin-bottom: 6px;
-      }
+      .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+      .stat { padding: 18px; border-radius: 18px; background: rgba(255,255,255,0.46); border: 1px solid var(--line); }
+      .stat strong { display: block; font-size: 32px; margin-bottom: 6px; }
 
       .button {
-        appearance: none;
-        border: 0;
-        cursor: pointer;
-        border-radius: 999px;
-        padding: 13px 20px;
-        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
-        color: #fff;
-        font-size: 14px;
-        letter-spacing: 0.02em;
+        appearance: none; border: 0; cursor: pointer; border-radius: 999px;
+        padding: 13px 20px; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+        color: #fff; font-size: 14px; letter-spacing: 0.02em;
         box-shadow: 0 14px 30px rgba(109, 69, 42, 0.24);
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
+        text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
       }
-
-      .button.secondary {
-        background: transparent;
-        color: var(--accent-dark);
-        border: 1px solid rgba(109, 69, 42, 0.18);
-        box-shadow: none;
-      }
-
-      .button.small {
-        padding: 9px 14px;
-        font-size: 12px;
-      }
-
+      .button.secondary { background: transparent; color: var(--accent-dark); border: 1px solid rgba(109, 69, 42, 0.18); box-shadow: none; }
+      .button.small { padding: 9px 14px; font-size: 12px; }
+      .button.tiny { padding: 6px 10px; font-size: 11px; }
       .button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-      .login-state, .workspace, .status {
-        margin-top: 16px;
-      }
+      .login-state, .workspace, .status { margin-top: 16px; }
 
-      .dashboard-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-      }
-
-      .section-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
-      }
-
+      .section-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
       .wide { grid-column: 1 / -1; }
 
-      label {
-        display: block;
-        margin-bottom: 8px;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-      }
-
+      label { display: block; margin-bottom: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
       input, textarea, select {
-        width: 100%;
-        border: 1px solid rgba(75, 51, 36, 0.12);
-        border-radius: 16px;
-        padding: 13px 15px;
-        background: rgba(255,255,255,0.74);
-        color: var(--text);
-        font: inherit;
+        width: 100%; border: 1px solid rgba(75, 51, 36, 0.12); border-radius: 16px;
+        padding: 13px 15px; background: rgba(255,255,255,0.74); color: var(--text); font: inherit;
       }
-
       textarea { min-height: 96px; resize: vertical; }
-
-      .status {
-        min-height: 24px;
-        color: var(--success);
-      }
-
-      .workspace-links, .action-row {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      .mini-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
-        margin-top: 14px;
-      }
-
-      .mini-card {
-        border: 1px solid var(--line);
-        border-radius: 20px;
-        padding: 16px;
-        background: rgba(255,255,255,0.42);
-      }
-
+      .status { min-height: 24px; color: var(--success); }
+      .workspace-links, .action-row { display: flex; gap: 10px; flex-wrap: wrap; }
+      .mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+      .mini-card { border: 1px solid var(--line); border-radius: 20px; padding: 16px; background: rgba(255,255,255,0.42); }
       .workspace-links a { color: var(--accent-dark); }
 
-      .table-wrap {
-        overflow: auto;
-        border-radius: 20px;
-        border: 1px solid var(--line);
-        background: rgba(255,255,255,0.45);
-      }
+      .table-wrap { overflow: auto; border-radius: 20px; border: 1px solid var(--line); background: rgba(255,255,255,0.45); }
+      table { width: 100%; border-collapse: collapse; min-width: 860px; }
+      th, td { padding: 14px 14px; text-align: left; border-bottom: 1px solid rgba(79, 51, 35, 0.08); vertical-align: top; }
+      th { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        min-width: 860px;
-      }
-
-      th, td {
-        padding: 14px 14px;
-        text-align: left;
-        border-bottom: 1px solid rgba(79, 51, 35, 0.08);
-        vertical-align: top;
-      }
-
-      th {
-        font-size: 12px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: 6px 10px;
-        font-size: 12px;
-        background: var(--accent-soft);
-        color: var(--accent-dark);
-      }
-
+      .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 6px 10px; font-size: 12px; background: var(--accent-soft); color: var(--accent-dark); }
       .pill.success { background: rgba(40,88,68,0.12); color: var(--success); }
       .pill.warning { background: rgba(143,98,50,0.14); color: var(--warning); }
       .pill.danger { background: rgba(139,63,53,0.12); color: var(--danger); }
-
-      .mono {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 12px;
-      }
-
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
       .muted { color: var(--muted); }
-
       .stack { margin-top: 20px; }
 
-      /* Collapsible setup sections */
-      details.collapse {
-        border: 1px solid var(--line);
-        border-radius: 20px;
-        background: rgba(255,255,255,0.42);
-        padding: 4px 20px;
-        margin-bottom: 16px;
-      }
+      /* Filter bar */
+      .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+      .filter-bar input, .filter-bar select { width: auto; min-width: 150px; padding: 10px 13px; border-radius: 14px; }
+      .filter-bar .grow { flex: 1; min-width: 200px; }
 
-      details.collapse > summary {
-        cursor: pointer;
-        list-style: none;
-        padding: 16px 0;
-        font-size: 18px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+      /* Kanban */
+      .board { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 12px; }
+      .board-col { flex: 0 0 280px; display: flex; flex-direction: column; }
+      .board-col-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 14px; border-radius: 14px 14px 0 0;
+        background: rgba(255,255,255,0.55); border: 1px solid var(--line); border-bottom: none;
       }
+      .board-col-head .count { font-size: 12px; color: var(--muted); }
+      .board-col-body {
+        flex: 1; min-height: 120px; padding: 12px; display: flex; flex-direction: column; gap: 12px;
+        background: rgba(255,255,255,0.28); border: 1px solid var(--line); border-radius: 0 0 14px 14px;
+      }
+      .board-col-body.drag-over { background: var(--accent-soft); }
+      .card {
+        border: 1px solid var(--line); border-radius: 16px; padding: 14px;
+        background: rgba(255,255,255,0.85); cursor: grab;
+      }
+      .card:active { cursor: grabbing; }
+      .card .card-name { font-weight: 600; font-size: 15px; }
+      .card .card-meta { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+      .card .card-price { font-weight: 600; margin-top: 8px; }
+      .card details { margin-top: 10px; }
+      .card details summary { cursor: pointer; font-size: 12px; color: var(--accent-dark); list-style: none; }
+      .card details summary::-webkit-details-marker { display: none; }
+      .card details[open] summary { margin-bottom: 8px; }
+      .card .assign-row { margin-top: 10px; }
+      .card .assign-row select { padding: 8px 10px; font-size: 12px; border-radius: 12px; }
 
-      details.collapse > summary::-webkit-details-marker { display: none; }
-      details.collapse > summary::after { content: "+"; color: var(--muted); font-size: 22px; }
-      details.collapse[open] > summary::after { content: "−"; }
-      details.collapse > .collapse-body { padding-bottom: 20px; }
+      /* Calendar */
+      .cal-toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+      .cal-frame { width: 100%; height: 680px; border: 1px solid var(--line); border-radius: 20px; background: #fff; }
+
+      /* Conversations */
+      .thread { border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,0.5); margin-bottom: 14px; }
+      .thread > summary { cursor: pointer; padding: 16px 20px; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+      .thread > summary::-webkit-details-marker { display: none; }
+      .thread-body { padding: 0 20px 18px; }
+      .msg { padding: 10px 14px; border-radius: 14px; margin-top: 10px; max-width: 80%; font-size: 14px; line-height: 1.5; }
+      .msg .msg-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+      .msg.inbound { background: rgba(255,255,255,0.9); border: 1px solid var(--line); margin-right: auto; }
+      .msg.outbound { background: var(--accent-soft); margin-left: auto; }
 
       /* Auth gating */
       .requires-auth { display: none; }
       body.authenticated .requires-auth { display: block; }
       body.authenticated #landing { display: none; }
-      /* Tabs are controlled ONLY by .active — do NOT put requires-auth on tab panels */
-      .tab-panel { display: none; }
-      .tab-panel.active { display: block; }
+
+      details.collapse { border: 1px solid var(--line); border-radius: 20px; background: rgba(255,255,255,0.42); padding: 4px 20px; margin-bottom: 16px; }
+      details.collapse > summary { cursor: pointer; list-style: none; padding: 16px 0; font-size: 18px; display: flex; align-items: center; justify-content: space-between; }
+      details.collapse > summary::-webkit-details-marker { display: none; }
+      details.collapse > summary::after { content: "+"; color: var(--muted); font-size: 22px; }
+      details.collapse[open] > summary::after { content: "−"; }
+      details.collapse > .collapse-body { padding-bottom: 20px; }
 
       @media (max-width: 980px) {
-        .dashboard-grid, .section-grid, .mini-grid, .stat-grid { grid-template-columns: 1fr; }
-        .shell { width: min(100vw - 20px, 1240px); margin: 10px auto 28px; }
+        .section-grid, .mini-grid, .stat-grid { grid-template-columns: 1fr; }
+        .shell { width: min(100vw - 20px, 1320px); margin: 10px auto 28px; }
         .intro, .cta-card, .section { padding: 22px; }
         .topbar { flex-direction: column; align-items: flex-start; }
         .topbar-account { text-align: left; }
@@ -367,24 +219,27 @@
         <button class="tab-button active" type="button" data-tab="dashboard">Dashboard</button>
         <button class="tab-button" type="button" data-tab="leads">Leads</button>
         <button class="tab-button" type="button" data-tab="bookings">Bookings</button>
+        <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
+        <button class="tab-button" type="button" data-tab="conversations">Conversations</button>
+        <button class="tab-button" type="button" data-tab="team">Team</button>
         <button class="tab-button" type="button" data-tab="channels">Channels</button>
         <button class="tab-button" type="button" data-tab="setup">Setup</button>
       </nav>
 
-      <!-- Landing (unauthenticated) -->
+      <!-- Landing -->
       <section id="landing" class="panel section">
         <div class="kicker">Owner Onboarding</div>
         <h1>A booking OS that lives in your own Google account.</h1>
         <p class="lead">
           Sign in with Google. We provision your private booking sheet, a tentative calendar, and a premium
-          control surface — leads, approvals, quotes, contracts, and Instagram/WhatsApp messaging — without
-          exposing platform code.
+          control surface — a visual lead pipeline, calendar, team management, and Instagram/WhatsApp
+          conversations — without exposing platform code.
         </p>
       </section>
 
       <div class="requires-auth" id="tab-panels">
 
-      <!-- Dashboard tab -->
+      <!-- Dashboard -->
       <section class="tab-panel active" data-panel="dashboard">
         <div class="panel section">
           <div class="kicker">Operator View</div>
@@ -401,9 +256,9 @@
         </div>
       </section>
 
-      <!-- Leads tab -->
+      <!-- Leads (pipeline) -->
       <section class="tab-panel" data-panel="leads">
-        <div class="panel section">
+        <div class="panel section" style="margin-bottom:20px;">
           <div class="kicker">New Enquiry</div>
           <h2>Create Lead</h2>
           <form id="lead-form">
@@ -413,22 +268,11 @@
               <div><label for="clientInstagram">Client Instagram</label><input id="clientInstagram" name="clientInstagram" /></div>
               <div>
                 <label for="source">Source</label>
-                <select id="source" name="source">
-                  <option>Instagram</option>
-                  <option>WhatsApp</option>
-                  <option>Manual</option>
-                </select>
+                <select id="source" name="source"><option>Instagram</option><option>WhatsApp</option><option>Manual</option></select>
               </div>
               <div>
                 <label for="eventType">Event Type</label>
-                <select id="eventType" name="eventType">
-                  <option>Bridal</option>
-                  <option>Engagement</option>
-                  <option>Reception</option>
-                  <option>Party</option>
-                  <option>Shoot</option>
-                  <option>Other</option>
-                </select>
+                <select id="eventType" name="eventType"><option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option></select>
               </div>
               <div><label for="eventDate">Event Date</label><input id="eventDate" name="eventDate" type="date" required /></div>
               <div><label for="eventTime">Event Time</label><input id="eventTime" name="eventTime" type="time" /></div>
@@ -437,73 +281,136 @@
               <div><label for="travelTimeMin">Travel Time (min)</label><input id="travelTimeMin" name="travelTimeMin" type="number" placeholder="Auto from Google Maps" /></div>
               <div>
                 <label for="profileTier">Profile Tier</label>
-                <select id="profileTier" name="profileTier">
-                  <option>Low</option>
-                  <option selected>Mid</option>
-                  <option>High</option>
-                </select>
+                <select id="profileTier" name="profileTier"><option>Low</option><option selected>Mid</option><option>High</option></select>
               </div>
               <div><label for="followers">Followers</label><input id="followers" name="followers" type="number" value="0" /></div>
               <div class="wide"><label for="clientTags">Client Tags</label><input id="clientTags" name="clientTags" placeholder="LUXURY_BRIDE,HIGH_INTENT" /></div>
             </div>
-            <div class="action-row" style="margin-top:14px;">
-              <button class="button" type="submit">Create Lead</button>
-            </div>
+            <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Create Lead</button></div>
             <div class="status" id="lead-status"></div>
           </form>
         </div>
 
-        <div class="panel section stack">
-          <div class="kicker">Approval Queue</div>
+        <div class="panel section">
+          <div class="kicker">Pipeline</div>
           <h2>Leads</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Event</th>
-                  <th>Price</th>
-                  <th>Travel</th>
-                  <th>Status</th>
-                  <th>Hold</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="leads-body">
-                <tr><td colspan="7" class="muted">No leads yet.</td></tr>
-              </tbody>
-            </table>
+          <div class="filter-bar">
+            <input type="search" id="lead-search" class="grow" placeholder="Search client, location, tag..." />
+            <select id="lead-filter-event">
+              <option value="">All event types</option>
+              <option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option>
+            </select>
+            <select id="lead-filter-source">
+              <option value="">All sources</option>
+              <option>Instagram</option><option>WhatsApp</option><option>Manual</option>
+            </select>
+            <span class="muted" id="lead-count"></span>
           </div>
+          <div class="board" id="leads-board"></div>
+          <p class="muted" style="margin-top:12px;font-size:13px;">Drag a card to a new column to move it through the pipeline, or use the actions inside each card.</p>
         </div>
       </section>
 
-      <!-- Bookings tab -->
+      <!-- Bookings (filterable table) -->
       <section class="tab-panel" data-panel="bookings">
         <div class="panel section">
           <div class="kicker">Confirmed Work</div>
           <h2>Bookings</h2>
+          <div class="filter-bar">
+            <input type="search" id="booking-search" class="grow" placeholder="Search client, venue, booking id..." />
+            <select id="booking-filter-event">
+              <option value="">All event types</option>
+              <option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option>
+            </select>
+            <select id="booking-filter-payment">
+              <option value="">All payment states</option>
+              <option>Advance Due</option><option>Advance Paid</option><option>Paid in Full</option>
+            </select>
+            <span class="muted" id="booking-count"></span>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
-                <tr>
-                  <th>Booking</th>
-                  <th>Client</th>
-                  <th>Event</th>
-                  <th>Financials</th>
-                  <th>Status</th>
-                  <th>Docs</th>
-                </tr>
+                <tr><th>Booking</th><th>Client</th><th>Event</th><th>Financials</th><th>Status</th><th>Docs</th></tr>
               </thead>
-              <tbody id="bookings-body">
-                <tr><td colspan="6" class="muted">No bookings yet.</td></tr>
-              </tbody>
+              <tbody id="bookings-body"><tr><td colspan="6" class="muted">No bookings yet.</td></tr></tbody>
             </table>
           </div>
           <div class="status" id="document-status" style="margin-top:12px;"></div>
         </div>
       </section>
 
-      <!-- Channels tab -->
+      <!-- Calendar -->
+      <section class="tab-panel" data-panel="calendar">
+        <div class="panel section">
+          <div class="kicker">Schedule</div>
+          <h2>Calendar</h2>
+          <div class="cal-toolbar">
+            <button class="button small secondary" type="button" data-cal-mode="MONTH">Month</button>
+            <button class="button small secondary" type="button" data-cal-mode="WEEK">Week</button>
+            <button class="button small secondary" type="button" data-cal-mode="AGENDA">Agenda</button>
+          </div>
+          <iframe id="cal-frame" class="cal-frame" frameborder="0" scrolling="no"></iframe>
+          <p class="muted" style="margin-top:12px;font-size:13px;">
+            Confirmed bookings and tentative holds appear here from your Google Calendars. If the calendar looks empty,
+            make sure you are signed into this Google account in your browser.
+          </p>
+        </div>
+      </section>
+
+      <!-- Conversations -->
+      <section class="tab-panel" data-panel="conversations">
+        <div class="panel section">
+          <div class="kicker">Client History</div>
+          <h2>Conversations</h2>
+          <div class="filter-bar">
+            <input type="search" id="convo-search" class="grow" placeholder="Search by client or message..." />
+            <button class="button small secondary" type="button" id="convo-refresh">Refresh</button>
+            <span class="muted" id="convo-count"></span>
+          </div>
+          <div id="conversations-list"><p class="muted">Loading conversations…</p></div>
+        </div>
+      </section>
+
+      <!-- Team -->
+      <section class="tab-panel" data-panel="team">
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">Your Artists</div>
+          <h2 id="team-form-title">Add Team Member</h2>
+          <form id="team-form">
+            <input type="hidden" name="artistId" id="team-artist-id" />
+            <div class="section-grid">
+              <div><label for="team-name">Name</label><input id="team-name" name="name" required /></div>
+              <div><label for="team-whatsApp">WhatsApp</label><input id="team-whatsApp" name="whatsApp" /></div>
+              <div><label for="team-email">Email</label><input id="team-email" name="email" type="email" /></div>
+              <div><label for="team-city">City</label><input id="team-city" name="city" /></div>
+              <div>
+                <label for="team-skillLevel">Skill Level</label>
+                <select id="team-skillLevel" name="skillLevel"><option>Junior</option><option selected>Senior</option><option>Lead</option></select>
+              </div>
+              <div><label for="team-priceMultiplier">Price Multiplier</label><input id="team-priceMultiplier" name="priceMultiplier" type="number" step="0.05" value="1" /></div>
+              <div>
+                <label for="team-luxuryEligible">Luxury Eligible</label>
+                <select id="team-luxuryEligible" name="luxuryEligible"><option>Yes</option><option>No</option></select>
+              </div>
+              <div><label for="team-primaryCalendarId">Primary Calendar ID</label><input id="team-primaryCalendarId" name="primaryCalendarId" placeholder="optional" /></div>
+            </div>
+            <div class="action-row" style="margin-top:14px;">
+              <button class="button" type="submit" id="team-save-btn">Add Artist</button>
+              <button class="button secondary" type="button" id="team-reset-btn">Clear</button>
+            </div>
+            <div class="status" id="team-status"></div>
+          </form>
+        </div>
+
+        <div class="panel section">
+          <div class="kicker">Directory</div>
+          <h2>Team</h2>
+          <div id="team-list"><p class="muted">Loading team…</p></div>
+        </div>
+      </section>
+
+      <!-- Channels -->
       <section class="tab-panel" data-panel="channels">
         <div class="panel section">
           <div class="kicker">Meta Integrations</div>
@@ -512,7 +419,7 @@
         </div>
       </section>
 
-      <!-- Setup tab -->
+      <!-- Setup -->
       <section class="tab-panel" data-panel="setup">
         <form id="config-form" class="panel section">
           <div class="kicker">Luxury Owner Setup</div>
@@ -602,9 +509,7 @@
           <input type="hidden" name="profileHighMultiplier" value="1.25" />
           <input type="hidden" name="profileHighMinFollowers" value="10000" />
           <input type="hidden" name="qrImageUrl" value="" />
-          <div class="action-row" style="margin-top:14px;">
-            <button class="button" type="submit">Save Owner Configuration</button>
-          </div>
+          <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save Owner Configuration</button></div>
           <div class="status" id="form-status"></div>
         </form>
       </section>
@@ -623,51 +528,46 @@
       const leadStatus = document.getElementById("lead-status");
       const logoutButton = document.getElementById("logout-button");
       const snapshotContent = document.getElementById("snapshot-content");
-      const leadsBody = document.getElementById("leads-body");
+      const leadsBoard = document.getElementById("leads-board");
       const bookingsBody = document.getElementById("bookings-body");
       const documentStatus = document.getElementById("document-status");
       const tabNav = document.getElementById("tab-nav");
 
       let sessionState = null;
+      let teamArtists = [];
+      let interactionsCache = null;
+
+      const LEAD_COLUMNS = [
+        { key: "New", label: "New" },
+        { key: "Awaiting Client", label: "Awaiting Client" },
+        { key: "Confirmed", label: "Confirmed" },
+        { key: "Payment Received", label: "Paid" },
+        { key: "Completed", label: "Completed" },
+        { key: "Lost", label: "Lost" },
+      ];
 
       function activateTab(name) {
-        tabNav.querySelectorAll(".tab-button").forEach((button) => {
-          button.classList.toggle("active", button.getAttribute("data-tab") === name);
-        });
-        document.querySelectorAll(".tab-panel").forEach((panel) => {
-          panel.classList.toggle("active", panel.getAttribute("data-panel") === name);
-        });
+        tabNav.querySelectorAll(".tab-button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
+        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.getAttribute("data-panel") === name));
+        if (name === "calendar") renderCalendar();
+        if (name === "conversations") loadConversations();
+        if (name === "team") loadTeam();
       }
-
-      tabNav.addEventListener("click", (event) => {
-        const button = event.target.closest(".tab-button");
-        if (!button) return;
-        activateTab(button.getAttribute("data-tab"));
+      tabNav.addEventListener("click", (e) => {
+        const b = e.target.closest(".tab-button");
+        if (b) activateTab(b.getAttribute("data-tab"));
       });
 
-      function setValue(form, name, value) {
-        const field = form.elements.namedItem(name);
-        if (field) field.value = value ?? "";
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
-
-      function fillConfig(config) {
-        Object.entries(config).forEach(([key, value]) => setValue(configForm, key, value));
-      }
-
+      function setValue(form, name, value) { const f = form.elements.namedItem(name); if (f) f.value = value ?? ""; }
+      function fillConfig(config) { Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v)); }
       function formatDate(value) {
         if (!value) return "—";
-        try {
-          return new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
-        } catch {
-          return value;
-        }
+        try { return new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }); } catch { return value; }
       }
-
-      function formatMoney(value) {
-        const amount = Number(value || 0);
-        return `₹${amount.toLocaleString("en-IN")}`;
-      }
-
+      function formatMoney(value) { return `₹${Number(value || 0).toLocaleString("en-IN")}`; }
       function pillClass(status) {
         if (["Confirmed", "Payment Received", "Advance Paid", "Paid in Full", "Paid"].includes(status)) return "pill success";
         if (["Awaiting Client", "Advance Due", "Payment Pending", "New"].includes(status)) return "pill warning";
@@ -676,110 +576,140 @@
       }
 
       function updateStats(leads, bookings) {
-        document.getElementById("stat-leads").textContent = String(leads.filter((lead) => !["Lost", "Completed"].includes(lead.status)).length);
+        document.getElementById("stat-leads").textContent = String(leads.filter((l) => !["Lost", "Completed"].includes(l.status)).length);
         document.getElementById("stat-bookings").textContent = String(bookings.length);
-        document.getElementById("stat-awaiting").textContent = String(leads.filter((lead) => lead.status === "Awaiting Client").length);
+        document.getElementById("stat-awaiting").textContent = String(leads.filter((l) => l.status === "Awaiting Client").length);
       }
-
       function renderSnapshot(leads, bookings) {
-        const awaiting = leads.filter((lead) => lead.status === "Awaiting Client").length;
-        const confirmedRevenue = bookings.reduce((sum, booking) => sum + Number(booking.finalPrice || 0), 0);
+        const awaiting = leads.filter((l) => l.status === "Awaiting Client").length;
+        const revenue = bookings.reduce((s, b) => s + Number(b.finalPrice || 0), 0);
         snapshotContent.innerHTML = `
-          <p class="lead" style="font-size:16px;">
-            ${awaiting} leads are waiting on clients. ${bookings.length} confirmed bookings are already reflected in Google Calendar.
-          </p>
-          <p class="lead" style="font-size:16px;">
-            Confirmed revenue in the sheet: <strong>${formatMoney(confirmedRevenue)}</strong>
-          </p>
-        `;
+          <p class="lead" style="font-size:16px;">${awaiting} leads are waiting on clients. ${bookings.length} confirmed bookings are already reflected in Google Calendar.</p>
+          <p class="lead" style="font-size:16px;">Confirmed revenue in the sheet: <strong>${formatMoney(revenue)}</strong></p>`;
       }
 
-      function renderLeads(leads) {
-        if (!leads.length) {
-          leadsBody.innerHTML = `<tr><td colspan="7" class="muted">No leads yet.</td></tr>`;
-          return;
-        }
+      function assignOptions(current) {
+        const names = new Set();
+        const owner = sessionState?.workspace?.config?.ownerName;
+        if (owner) names.add(owner);
+        teamArtists.filter((a) => a.active !== "No").forEach((a) => names.add(a.name));
+        if (current) names.add(current);
+        const opts = ['<option value="">Unassigned</option>'];
+        for (const n of names) opts.push(`<option ${n === current ? "selected" : ""}>${escapeHtml(n)}</option>`);
+        return opts.join("");
+      }
 
-        leadsBody.innerHTML = leads.map((lead) => {
-          const editValue = lead.finalApprovedPrice || lead.initialAiPrice || 0;
+      function leadCard(lead) {
+        const editValue = lead.finalApprovedPrice || lead.initialAiPrice || 0;
+        const reply = escapeHtml(lead.suggestedReply || "");
+        return `
+          <div class="card" draggable="true" data-card-lead-id="${lead.leadId}">
+            <div class="card-name">${escapeHtml(lead.clientName)}</div>
+            <div class="card-meta">
+              ${escapeHtml(lead.eventType)} · ${escapeHtml(lead.eventDate)}${lead.eventTime ? " " + escapeHtml(lead.eventTime) : ""}<br>
+              ${escapeHtml(lead.locationText)} · ${escapeHtml(lead.source)}<br>
+              <span class="pill ${pillClass(lead.scarcityTag)}" style="margin-top:6px;">${escapeHtml(lead.scarcityTag || "Open")} demand</span>
+            </div>
+            <div class="card-price">${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)} <span class="muted" style="font-weight:400;">(AI ${formatMoney(lead.initialAiPrice)})</span></div>
+            <div class="assign-row">
+              <select data-assign-lead-id="${lead.leadId}">${assignOptions(lead.assignedArtist)}</select>
+            </div>
+            <details>
+              <summary>Actions &amp; details</summary>
+              <p class="card-meta">${escapeHtml(lead.aiInsight || "AI insight pending")}</p>
+              <div class="action-row" style="margin-top:8px;">
+                <button class="button tiny" data-action="yes" data-lead-id="${lead.leadId}">YES</button>
+                <button class="button tiny secondary" data-action="confirm" data-lead-id="${lead.leadId}" ${lead.status !== "Awaiting Client" ? "disabled" : ""}>Confirm</button>
+                <button class="button tiny secondary" data-action="advance" data-lead-id="${lead.leadId}" ${lead.status !== "Confirmed" ? "disabled" : ""}>Advance Paid</button>
+                <button class="button tiny secondary" data-action="full" data-lead-id="${lead.leadId}" ${lead.status !== "Confirmed" && lead.status !== "Payment Received" ? "disabled" : ""}>Paid Full</button>
+              </div>
+              <div class="action-row" style="margin-top:8px;">
+                <input data-edit-input="${lead.leadId}" type="number" value="${editValue}" style="max-width:120px;" />
+                <button class="button tiny secondary" data-action="edit" data-lead-id="${lead.leadId}">Edit Price</button>
+                <button class="button tiny secondary" data-action="no" data-lead-id="${lead.leadId}">No</button>
+              </div>
+              <div class="action-row" style="margin-top:8px;flex-direction:column;align-items:stretch;">
+                <input data-reply-input="${lead.leadId}" type="text" value="${reply}" />
+                <button class="button tiny secondary" style="margin-top:6px;" data-action="reply" data-lead-id="${lead.leadId}">Send Reply</button>
+              </div>
+              <div class="action-row" style="margin-top:8px;align-items:center;">
+                <button class="button tiny secondary" data-action="quote" data-lead-id="${lead.leadId}">Quote</button>
+                <button class="button tiny secondary" data-action="send-quote" data-lead-id="${lead.leadId}">Send Quote</button>
+                ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer">Open</a>` : ""}
+              </div>
+            </details>
+          </div>`;
+      }
+
+      function filteredLeads() {
+        const leads = sessionState?.dashboard?.leads || [];
+        const q = (document.getElementById("lead-search").value || "").toLowerCase();
+        const ev = document.getElementById("lead-filter-event").value;
+        const src = document.getElementById("lead-filter-source").value;
+        return leads.filter((l) => {
+          if (ev && l.eventType !== ev) return false;
+          if (src && l.source !== src) return false;
+          if (q) {
+            const hay = `${l.clientName} ${l.locationText} ${l.clientTags} ${l.leadId}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        });
+      }
+
+      function renderLeads() {
+        const leads = filteredLeads();
+        document.getElementById("lead-count").textContent = `${leads.length} shown`;
+        leadsBoard.innerHTML = LEAD_COLUMNS.map((col) => {
+          const items = leads.filter((l) => (l.status || "New") === col.key);
           return `
-            <tr>
-              <td>
-                <strong>${lead.clientName}</strong><br>
-                <span class="mono">${lead.leadId}</span><br>
-                <span class="muted">${lead.source}</span>
-              </td>
-              <td>
-                ${lead.eventType}<br>
-                <span class="muted">${lead.eventDate}${lead.eventTime ? ` at ${lead.eventTime}` : ""}</span><br>
-                <span class="muted">${lead.locationText}</span>
-              </td>
-              <td>
-                <strong>${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)}</strong><br>
-                <span class="muted">AI: ${formatMoney(lead.initialAiPrice)}</span><br>
-                <span class="muted">${lead.scarcityTag} demand</span><br>
-                <span class="muted">${lead.aiInsight || "AI insight pending"}</span>
-              </td>
-              <td>
-                ${lead.distanceKm ? `${lead.distanceKm} km` : "—"}<br>
-                <span class="muted">${lead.travelTimeMin ? `${lead.travelTimeMin} min` : "Travel pending"}</span><br>
-                <span class="muted">${lead.outstationFlag === "Yes" ? "Outstation" : "Local / nearby"}</span>
-              </td>
-              <td><span class="${pillClass(lead.status)}">${lead.status}</span></td>
-              <td>
-                ${lead.holdExpiresAt ? formatDate(lead.holdExpiresAt) : "Not placed"}
-              </td>
-              <td>
-                <div class="action-row">
-                  <button class="button small" data-action="yes" data-lead-id="${lead.leadId}">YES</button>
-                  <button class="button small secondary" data-action="confirm" data-lead-id="${lead.leadId}" ${lead.status !== "Awaiting Client" ? "disabled" : ""}>Confirm</button>
-                  <button class="button small secondary" data-action="advance" data-lead-id="${lead.leadId}" ${lead.status !== "Confirmed" ? "disabled" : ""}>Advance Paid</button>
-                  <button class="button small secondary" data-action="full" data-lead-id="${lead.leadId}" ${lead.status !== "Confirmed" && lead.status !== "Payment Received" ? "disabled" : ""}>Paid Full</button>
-                </div>
-                <div class="action-row" style="margin-top:10px;">
-                  <input data-edit-input="${lead.leadId}" type="number" value="${editValue}" style="max-width:140px;" />
-                  <button class="button small secondary" data-action="edit" data-lead-id="${lead.leadId}">Edit Price</button>
-                  <button class="button small secondary" data-action="no" data-lead-id="${lead.leadId}">No</button>
-                </div>
-                <div class="action-row" style="margin-top:10px;flex-direction:column;align-items:flex-start;">
-                  <input data-reply-input="${lead.leadId}" type="text" value="${(lead.suggestedReply || "").replace(/"/g, "&quot;")}" style="width:100%;" />
-                  <button class="button small secondary" style="margin-top:8px;" data-action="reply" data-lead-id="${lead.leadId}">Send Reply</button>
-                </div>
-                <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
-                  <button class="button small secondary" data-action="quote" data-lead-id="${lead.leadId}">Generate Quote</button>
-                  <button class="button small secondary" data-action="send-quote" data-lead-id="${lead.leadId}">Send Quote</button>
-                  ${lead.quoteUrl ? `<a href="${lead.quoteUrl}" target="_blank" rel="noreferrer">Open Quote</a>` : `<span class="muted">No quote yet</span>`}
-                </div>
-              </td>
-            </tr>
-          `;
+            <div class="board-col">
+              <div class="board-col-head"><strong>${col.label}</strong><span class="count">${items.length}</span></div>
+              <div class="board-col-body" data-col-status="${col.key}">
+                ${items.map(leadCard).join("") || '<p class="muted" style="font-size:12px;">—</p>'}
+              </div>
+            </div>`;
         }).join("");
       }
 
-      function renderBookings(bookings) {
-        if (!bookings.length) {
-          bookingsBody.innerHTML = `<tr><td colspan="6" class="muted">No bookings yet.</td></tr>`;
-          return;
-        }
+      function filteredBookings() {
+        const bookings = sessionState?.dashboard?.bookings || [];
+        const q = (document.getElementById("booking-search").value || "").toLowerCase();
+        const ev = document.getElementById("booking-filter-event").value;
+        const pay = document.getElementById("booking-filter-payment").value;
+        return bookings.filter((b) => {
+          if (ev && b.eventType !== ev) return false;
+          if (pay && (b.paymentStatus || "") !== pay) return false;
+          if (q) {
+            const hay = `${b.clientName} ${b.venue} ${b.bookingId}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        });
+      }
 
+      function renderBookings() {
+        const bookings = filteredBookings();
+        document.getElementById("booking-count").textContent = `${bookings.length} shown`;
+        if (!bookings.length) { bookingsBody.innerHTML = `<tr><td colspan="6" class="muted">No bookings match.</td></tr>`; return; }
         bookingsBody.innerHTML = bookings.map((booking) => `
           <tr>
-            <td><strong>${booking.bookingId}</strong><br><span class="muted">${formatDate(booking.bookedAt)}</span></td>
-            <td>${booking.clientName}<br><span class="muted">${booking.clientWhatsApp}</span></td>
-            <td>${booking.eventType}<br><span class="muted">${booking.eventDate}${booking.eventTime ? ` at ${booking.eventTime}` : ""}</span><br><span class="muted">${booking.venue}</span></td>
+            <td><strong>${escapeHtml(booking.bookingId)}</strong><br><span class="muted">${formatDate(booking.bookedAt)}</span></td>
+            <td>${escapeHtml(booking.clientName)}<br><span class="muted">${escapeHtml(booking.clientWhatsApp)}</span></td>
+            <td>${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(booking.eventDate)}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
             <td>${formatMoney(booking.finalPrice)}<br><span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br><span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span></td>
-            <td><span class="${pillClass(booking.paymentStatus || booking.status)}">${booking.paymentStatus || booking.status}</span></td>
+            <td><span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span></td>
             <td>
               <div class="action-row" style="align-items:center;flex-wrap:wrap;">
                 <button class="button small secondary" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Generate Invoice</button>
                 <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send Invoice</button>
-                ${booking.invoiceUrl ? `<a href="${booking.invoiceUrl}" target="_blank" rel="noreferrer">Open Invoice</a>` : ""}
+                ${booking.invoiceUrl ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer">Open Invoice</a>` : ""}
               </div>
               <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
                 <button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create Contract</button>
                 <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send Contract</button>
                 <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync Contract</button>
-                ${booking.contractUrl ? `<a href="${booking.contractUrl}" target="_blank" rel="noreferrer">Open Contract</a>` : `<span class="muted">${booking.contractStatus || "Draft"}</span>`}
+                ${booking.contractUrl ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer">Open Contract</a>` : `<span class="muted">${escapeHtml(booking.contractStatus || "Draft")}</span>`}
               </div>
               <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
                 <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Send Review Request</button>
@@ -787,8 +717,7 @@
                 <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance Reminder</button>
               </div>
             </td>
-          </tr>
-        `).join("");
+          </tr>`).join("");
       }
 
       function renderDashboard(session) {
@@ -796,70 +725,201 @@
         const bookings = session.dashboard?.bookings || [];
         updateStats(leads, bookings);
         renderSnapshot(leads, bookings);
-        renderLeads(leads);
-        renderBookings(bookings);
+        renderLeads();
+        renderBookings();
       }
 
+      // ---- Calendar ----
+      let calMode = "MONTH";
+      function renderCalendar() {
+        const frame = document.getElementById("cal-frame");
+        const ws = sessionState?.workspace;
+        const email = sessionState?.profile?.email;
+        if (!ws || !email) return;
+        const params = new URLSearchParams();
+        params.set("ctz", "Asia/Kolkata");
+        params.set("mode", calMode);
+        params.set("wkst", "2");
+        const url = new URL("https://calendar.google.com/calendar/embed");
+        url.search = params.toString();
+        // Confirmed (primary) + tentative calendars, color coded.
+        url.searchParams.append("src", email);
+        url.searchParams.append("color", "#285844");
+        if (ws.tentativeCalendarId && ws.tentativeCalendarId !== "primary") {
+          url.searchParams.append("src", ws.tentativeCalendarId);
+          url.searchParams.append("color", "#9d6948");
+        }
+        frame.src = url.toString();
+      }
+      document.querySelectorAll("[data-cal-mode]").forEach((b) =>
+        b.addEventListener("click", () => { calMode = b.getAttribute("data-cal-mode"); renderCalendar(); }));
+
+      // ---- Team ----
+      async function loadTeam() {
+        try {
+          const res = await fetch("/api/team");
+          const payload = await res.json();
+          if (payload.ok) { teamArtists = payload.artists || []; renderTeam(); renderLeads(); }
+        } catch (error) { document.getElementById("team-list").innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
+      }
+      function renderTeam() {
+        const list = document.getElementById("team-list");
+        if (!teamArtists.length) { list.innerHTML = `<p class="muted">No team members yet.</p>`; return; }
+        list.innerHTML = `<div class="mini-grid">${teamArtists.map((a) => `
+          <div class="mini-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <strong>${escapeHtml(a.name)}</strong>
+              <span class="pill ${a.active === "No" ? "danger" : "success"}">${a.active === "No" ? "inactive" : "active"}</span>
+            </div>
+            <p class="card-meta" style="margin:8px 0;">
+              ${escapeHtml(a.skillLevel || "")}${a.city ? " · " + escapeHtml(a.city) : ""}<br>
+              ${a.whatsApp ? "WA: " + escapeHtml(a.whatsApp) + "<br>" : ""}
+              ${a.email ? escapeHtml(a.email) + "<br>" : ""}
+              Multiplier ×${escapeHtml(a.priceMultiplier)} · Luxury: ${escapeHtml(a.luxuryEligible)}
+            </p>
+            <div class="action-row">
+              <button class="button tiny secondary" data-team-edit="${a.artistId}">Edit</button>
+              ${a.active === "No" ? "" : `<button class="button tiny secondary" data-team-deactivate="${a.artistId}">Deactivate</button>`}
+            </div>
+          </div>`).join("")}</div>`;
+      }
+      const teamForm = document.getElementById("team-form");
+      const teamStatus = document.getElementById("team-status");
+      teamForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        teamStatus.textContent = "Saving…";
+        try {
+          await postJson("/api/team", Object.fromEntries(new FormData(teamForm).entries()));
+          teamStatus.textContent = "Saved.";
+          teamForm.reset();
+          document.getElementById("team-artist-id").value = "";
+          document.getElementById("team-form-title").textContent = "Add Team Member";
+          document.getElementById("team-save-btn").textContent = "Add Artist";
+          await loadTeam();
+        } catch (error) { teamStatus.textContent = error.message; }
+      });
+      document.getElementById("team-reset-btn").addEventListener("click", () => {
+        teamForm.reset();
+        document.getElementById("team-artist-id").value = "";
+        document.getElementById("team-form-title").textContent = "Add Team Member";
+        document.getElementById("team-save-btn").textContent = "Add Artist";
+        teamStatus.textContent = "";
+      });
+      document.getElementById("team-list").addEventListener("click", async (e) => {
+        const editId = e.target.closest("[data-team-edit]")?.getAttribute("data-team-edit");
+        if (editId) {
+          const a = teamArtists.find((x) => x.artistId === editId);
+          if (!a) return;
+          setValue(teamForm, "artistId", a.artistId);
+          setValue(teamForm, "name", a.name);
+          setValue(teamForm, "whatsApp", a.whatsApp);
+          setValue(teamForm, "email", a.email);
+          setValue(teamForm, "city", a.city);
+          setValue(teamForm, "skillLevel", a.skillLevel);
+          setValue(teamForm, "priceMultiplier", a.priceMultiplier);
+          setValue(teamForm, "luxuryEligible", a.luxuryEligible);
+          setValue(teamForm, "primaryCalendarId", a.primaryCalendarId);
+          document.getElementById("team-form-title").textContent = "Edit Team Member";
+          document.getElementById("team-save-btn").textContent = "Save Changes";
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+        const deId = e.target.closest("[data-team-deactivate]")?.getAttribute("data-team-deactivate");
+        if (deId) {
+          try { await postJson(`/api/team/${deId}/deactivate`, {}); await loadTeam(); }
+          catch (error) { teamStatus.textContent = error.message; }
+        }
+      });
+
+      // ---- Conversations ----
+      async function loadConversations(force) {
+        const list = document.getElementById("conversations-list");
+        if (interactionsCache && !force) { renderConversations(); return; }
+        list.innerHTML = `<p class="muted">Loading conversations…</p>`;
+        try {
+          const res = await fetch("/api/conversations");
+          const payload = await res.json();
+          if (!payload.ok) throw new Error(payload.error || "Failed");
+          interactionsCache = payload.interactions || [];
+          renderConversations();
+        } catch (error) { list.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
+      }
+      function renderConversations() {
+        const list = document.getElementById("conversations-list");
+        const q = (document.getElementById("convo-search").value || "").toLowerCase();
+        const leads = sessionState?.dashboard?.leads || [];
+        const nameFor = (leadId) => leads.find((l) => l.leadId === leadId)?.clientName;
+        const groups = {};
+        for (const it of (interactionsCache || [])) {
+          const key = it.leadId || it.actor || "unknown";
+          (groups[key] = groups[key] || []).push(it);
+        }
+        let threads = Object.entries(groups).map(([key, msgs]) => {
+          msgs.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+          const title = nameFor(key) || msgs[0]?.actor || key;
+          const last = msgs[msgs.length - 1];
+          return { key, title, msgs, last };
+        });
+        threads.sort((a, b) => (b.last?.createdAt || "").localeCompare(a.last?.createdAt || ""));
+        if (q) {
+          threads = threads.filter((t) =>
+            t.title.toLowerCase().includes(q) || t.msgs.some((m) => (m.message || "").toLowerCase().includes(q)));
+        }
+        document.getElementById("convo-count").textContent = `${threads.length} threads`;
+        if (!threads.length) { list.innerHTML = `<p class="muted">No conversations yet.</p>`; return; }
+        list.innerHTML = threads.map((t) => `
+          <details class="thread">
+            <summary>
+              <span><strong>${escapeHtml(t.title)}</strong> <span class="muted">· ${t.msgs.length} messages</span></span>
+              <span class="muted" style="font-size:12px;">${formatDate(t.last?.createdAt)}</span>
+            </summary>
+            <div class="thread-body">
+              ${t.msgs.map((m) => `
+                <div class="msg ${m.direction === "Outbound" ? "outbound" : "inbound"}">
+                  <div class="msg-meta">${escapeHtml(m.channel)} · ${escapeHtml(m.direction)} · ${formatDate(m.createdAt)}</div>
+                  ${escapeHtml(m.message)}
+                  ${m.aiSummary ? `<div class="msg-meta" style="margin-top:6px;">AI: ${escapeHtml(m.aiSummary)}</div>` : ""}
+                </div>`).join("")}
+            </div>
+          </details>`).join("");
+      }
+      document.getElementById("convo-search").addEventListener("input", renderConversations);
+      document.getElementById("convo-refresh").addEventListener("click", () => loadConversations(true));
+
+      // ---- Filters ----
+      ["lead-search", "lead-filter-event", "lead-filter-source"].forEach((id) =>
+        document.getElementById(id).addEventListener("input", renderLeads));
+      ["booking-search", "booking-filter-event", "booking-filter-payment"].forEach((id) =>
+        document.getElementById(id).addEventListener("input", renderBookings));
+
+      // ---- Session ----
       function renderMetaConnections(workspace, profile) {
         const instagram = workspace?.metaConnections?.instagram;
         const whatsapp = workspace?.metaConnections?.whatsapp;
         const email = encodeURIComponent(profile?.email || "");
-
         function block(label, channel, connection) {
           const status = connection?.status || "not connected";
           const handle = channel === "instagram"
             ? (connection?.instagramUsername || connection?.pageName || "No asset selected yet")
             : (connection?.businessAccountName || connection?.phoneNumberId || "No phone number linked yet");
-
-          const oauthUrl = `/auth/meta/start?channel=${channel}&workspaceEmail=${email}`;
-          const oauthButton = `<a class="button small" href="${oauthUrl}">Connect via Facebook</a>`;
-
+          const oauthButton = `<a class="button small" href="/auth/meta/start?channel=${channel}&workspaceEmail=${email}">Connect via Facebook</a>`;
           const extraControl = channel === "instagram"
-            ? `
-              <details class="collapse" style="margin-top:12px;padding:2px 14px;">
-                <summary style="font-size:14px;padding:12px 0;">Advanced: paste token</summary>
-                <div class="collapse-body" style="padding-bottom:14px;">
-                  <input type="password" placeholder="Paste Instagram token" data-instagram-token-input style="width:100%;margin-bottom:8px;" />
-                  <button class="button small secondary" type="button" data-instagram-token-save>Save Token</button>
-                </div>
-              </details>
-            `
-            : `
-              <div style="margin-top:10px;">
-                <button class="button small secondary" type="button" data-whatsapp-test-connect>Use Test Number</button>
-              </div>
-            `;
-
-          return `
-            <div class="mini-card">
-              <div class="kicker">${label}</div>
-              <p style="margin:8px 0 6px;"><span class="${status === "connected" ? "pill success" : "pill warning"}">${status}</span></p>
-              <p class="muted" style="margin:0 0 10px;">${handle}</p>
-              <div class="action-row">
-                ${oauthButton}
-                <button class="button small secondary" type="button" data-meta-disconnect="${channel}">Disconnect</button>
-              </div>
-              ${extraControl}
-            </div>
-          `;
+            ? `<details class="collapse" style="margin-top:12px;padding:2px 14px;"><summary style="font-size:14px;padding:12px 0;">Advanced: paste token</summary><div class="collapse-body" style="padding-bottom:14px;"><input type="password" placeholder="Paste Instagram token" data-instagram-token-input style="width:100%;margin-bottom:8px;" /><button class="button small secondary" type="button" data-instagram-token-save>Save Token</button></div></details>`
+            : `<div style="margin-top:10px;"><button class="button small secondary" type="button" data-whatsapp-test-connect>Use Test Number</button></div>`;
+          return `<div class="mini-card"><div class="kicker">${label}</div>
+            <p style="margin:8px 0 6px;"><span class="${status === "connected" ? "pill success" : "pill warning"}">${status}</span></p>
+            <p class="muted" style="margin:0 0 10px;">${escapeHtml(handle)}</p>
+            <div class="action-row">${oauthButton}<button class="button small secondary" type="button" data-meta-disconnect="${channel}">Disconnect</button></div>
+            ${extraControl}</div>`;
         }
-
-        metaSummary.innerHTML = `
-          <div class="mini-grid">
-            ${block("Instagram", "instagram", instagram)}
-            ${block("WhatsApp", "whatsapp", whatsapp)}
-          </div>
-          <p class="muted" style="margin-top:14px;">
-            Each MUA connects only her own Meta assets. Data stays isolated per workspace, and disconnect/deletion flows are available for compliance.
-          </p>
-        `;
+        metaSummary.innerHTML = `<div class="mini-grid">${block("Instagram", "instagram", instagram)}${block("WhatsApp", "whatsapp", whatsapp)}</div>
+          <p class="muted" style="margin-top:14px;">Each MUA connects only her own Meta assets. Data stays isolated per workspace, and disconnect/deletion flows are available for compliance.</p>`;
       }
 
       async function refreshSession() {
         const response = await fetch("/api/session");
         const payload = await response.json();
         sessionState = payload;
-
         if (!payload.authenticated) {
           document.body.classList.remove("authenticated");
           loginState.textContent = "Not signed in";
@@ -867,56 +927,43 @@
           logoutButton.style.display = "none";
           return;
         }
-
         logoutButton.style.display = "inline-flex";
         connectLink.style.display = "none";
-        loginState.innerHTML = `<strong>${payload.profile.name}</strong><br>${payload.profile.email}`;
-
+        loginState.innerHTML = `<strong>${escapeHtml(payload.profile.name)}</strong><br>${escapeHtml(payload.profile.email)}`;
         if (payload.workspace) {
           document.body.classList.add("authenticated");
           fillConfig(payload.workspace.config);
           workspaceSummary.innerHTML = `
-            <p class="lead" style="font-size:16px;margin:0 0 10px;">
-              Your workspace is live. Google Sheets is the source of truth, and bookings sync directly into your own calendar.
-            </p>
+            <p class="lead" style="font-size:16px;margin:0 0 10px;">Your workspace is live. Google Sheets is the source of truth, and bookings sync directly into your own calendar.</p>
             <div class="workspace-links">
-              <a href="${payload.workspace.spreadsheetUrl}" target="_blank" rel="noreferrer">Open Sheet</a>
+              <a href="${escapeHtml(payload.workspace.spreadsheetUrl)}" target="_blank" rel="noreferrer">Open Sheet</a>
               <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noreferrer">Open Calendar</a>
-            </div>
-          `;
+            </div>`;
           renderMetaConnections(payload.workspace, payload.profile);
           renderDashboard(payload);
           syncProtectButton(payload.workspace);
+          loadTeam();
         } else {
           document.body.classList.remove("authenticated");
         }
       }
 
       async function postJson(url, body) {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Request failed");
         return payload;
       }
 
-      configForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
+      configForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
         formStatus.textContent = "Saving configuration...";
-        try {
-          await postJson("/api/workspace/config", Object.fromEntries(new FormData(configForm).entries()));
-          formStatus.textContent = "Configuration saved to your private Google Sheet.";
-          await refreshSession();
-        } catch (error) {
-          formStatus.textContent = error.message;
-        }
+        try { await postJson("/api/workspace/config", Object.fromEntries(new FormData(configForm).entries())); formStatus.textContent = "Configuration saved to your private Google Sheet."; await refreshSession(); }
+        catch (error) { formStatus.textContent = error.message; }
       });
 
-      leadForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
+      leadForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
         leadStatus.textContent = "Creating lead...";
         try {
           await postJson("/api/leads", Object.fromEntries(new FormData(leadForm).entries()));
@@ -926,207 +973,143 @@
           leadForm.elements.namedItem("eventType").value = "Bridal";
           leadForm.elements.namedItem("profileTier").value = "Mid";
           await refreshSession();
-        } catch (error) {
-          leadStatus.textContent = error.message;
-        }
+        } catch (error) { leadStatus.textContent = error.message; }
       });
 
-      leadsBody.addEventListener("click", async (event) => {
-        const button = event.target.closest("button[data-action]");
-        if (!button) return;
-
-        const leadId = button.getAttribute("data-lead-id");
-        const action = button.getAttribute("data-action");
-        if (!leadId || !action) return;
-
+      async function runLeadAction(action, leadId) {
         leadStatus.textContent = "Updating lead...";
-
         try {
-          if (action === "yes") {
-            await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
-          } else if (action === "no") {
-            await postJson(`/api/leads/${leadId}/decision`, { decision: "NO" });
-          } else if (action === "edit") {
-            const input = document.querySelector(`[data-edit-input="${leadId}"]`);
-            await postJson(`/api/leads/${leadId}/decision`, {
-              decision: "EDIT",
-              approvedPrice: input ? input.value : "",
-            });
-          } else if (action === "confirm") {
-            await postJson(`/api/leads/${leadId}/confirm`, {});
-          } else if (action === "advance") {
-            await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Advance Paid" });
-          } else if (action === "full") {
-            await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
-          } else if (action === "reply") {
-            const input = document.querySelector(`[data-reply-input="${leadId}"]`);
-            await postJson(`/api/leads/${leadId}/reply`, {
-              message: input?.value || "",
-            });
-          } else if (action === "quote") {
-            await postJson(`/api/leads/${leadId}/quote`, {});
-            documentStatus.textContent = "Quote generated.";
-          } else if (action === "send-quote") {
-            await postJson(`/api/leads/${leadId}/send-quote`, {});
-            documentStatus.textContent = "Quote sent to client.";
-          }
-
+          if (action === "yes") await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
+          else if (action === "no") await postJson(`/api/leads/${leadId}/decision`, { decision: "NO" });
+          else if (action === "edit") { const i = document.querySelector(`[data-edit-input="${leadId}"]`); await postJson(`/api/leads/${leadId}/decision`, { decision: "EDIT", approvedPrice: i ? i.value : "" }); }
+          else if (action === "confirm") await postJson(`/api/leads/${leadId}/confirm`, {});
+          else if (action === "advance") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Advance Paid" });
+          else if (action === "full") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
+          else if (action === "reply") { const i = document.querySelector(`[data-reply-input="${leadId}"]`); await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" }); }
+          else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); documentStatus.textContent = "Quote generated."; }
+          else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); documentStatus.textContent = "Quote sent to client."; }
           leadStatus.textContent = "Lead updated.";
           await refreshSession();
-        } catch (error) {
-          leadStatus.textContent = error.message;
-        }
+        } catch (error) { leadStatus.textContent = error.message; }
+      }
+
+      leadsBoard.addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-action]");
+        if (!b) return;
+        runLeadAction(b.getAttribute("data-action"), b.getAttribute("data-lead-id"));
+      });
+      leadsBoard.addEventListener("change", async (e) => {
+        const sel = e.target.closest("select[data-assign-lead-id]");
+        if (!sel) return;
+        const leadId = sel.getAttribute("data-assign-lead-id");
+        leadStatus.textContent = "Assigning…";
+        try { await postJson(`/api/leads/${leadId}/assign`, { assignedArtist: sel.value }); leadStatus.textContent = "Assigned."; await refreshSession(); }
+        catch (error) { leadStatus.textContent = error.message; }
       });
 
-      bookingsBody.addEventListener("click", async (event) => {
-        const button = event.target.closest("button[data-booking-action]");
-        if (!button) return;
+      // Drag-and-drop pipeline. Forward transitions map to existing endpoints.
+      let dragLeadId = null;
+      leadsBoard.addEventListener("dragstart", (e) => {
+        const card = e.target.closest("[data-card-lead-id]");
+        if (card) dragLeadId = card.getAttribute("data-card-lead-id");
+      });
+      leadsBoard.addEventListener("dragover", (e) => {
+        const body = e.target.closest(".board-col-body");
+        if (!body) return;
+        e.preventDefault();
+        body.classList.add("drag-over");
+      });
+      leadsBoard.addEventListener("dragleave", (e) => {
+        const body = e.target.closest(".board-col-body");
+        if (body) body.classList.remove("drag-over");
+      });
+      leadsBoard.addEventListener("drop", async (e) => {
+        const body = e.target.closest(".board-col-body");
+        if (!body || !dragLeadId) return;
+        e.preventDefault();
+        body.classList.remove("drag-over");
+        const target = body.getAttribute("data-col-status");
+        const leads = sessionState?.dashboard?.leads || [];
+        const lead = leads.find((l) => l.leadId === dragLeadId);
+        const id = dragLeadId; dragLeadId = null;
+        if (!lead || lead.status === target) return;
+        const map = {
+          "Awaiting Client": "yes",
+          "Lost": "no",
+          "Confirmed": "confirm",
+          "Payment Received": "full",
+        };
+        const action = map[target];
+        if (!action) { leadStatus.textContent = `Can't move to ${target} directly.`; renderLeads(); return; }
+        await runLeadAction(action, id);
+      });
 
-        const bookingId = button.getAttribute("data-booking-id");
-        const action = button.getAttribute("data-booking-action");
-        if (!bookingId || !action) return;
-
+      bookingsBody.addEventListener("click", async (e) => {
+        const b = e.target.closest("button[data-booking-action]");
+        if (!b) return;
+        const bookingId = b.getAttribute("data-booking-id");
+        const action = b.getAttribute("data-booking-action");
         documentStatus.textContent = "Processing document...";
-
         try {
-          if (action === "invoice") {
-            await postJson(`/api/bookings/${bookingId}/invoice`, {});
-            documentStatus.textContent = "Invoice generated.";
-          } else if (action === "send-invoice") {
-            await postJson(`/api/bookings/${bookingId}/send-invoice`, {});
-            documentStatus.textContent = "Invoice sent to client.";
-          } else if (action === "contract") {
-            await postJson(`/api/bookings/${bookingId}/contract`, {});
-            documentStatus.textContent = "Contract sent to Leegality.";
-          } else if (action === "send-contract") {
-            await postJson(`/api/bookings/${bookingId}/send-contract`, {});
-            documentStatus.textContent = "Contract message sent to client.";
-          } else if (action === "sync-contract") {
-            const result = await postJson(`/api/bookings/${bookingId}/contract/sync`, {});
-            documentStatus.textContent = `Contract status synced: ${result.booking?.contractStatus || "Updated"}.`;
-          } else if (action === "review") {
-            await postJson(`/api/bookings/${bookingId}/send-review`, {});
-            documentStatus.textContent = "Review request sent.";
-          } else if (action === "advance-reminder") {
-            await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" });
-            documentStatus.textContent = "Advance reminder sent.";
-          } else if (action === "balance-reminder") {
-            await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" });
-            documentStatus.textContent = "Balance reminder sent.";
-          }
-
+          if (action === "invoice") { await postJson(`/api/bookings/${bookingId}/invoice`, {}); documentStatus.textContent = "Invoice generated."; }
+          else if (action === "send-invoice") { await postJson(`/api/bookings/${bookingId}/send-invoice`, {}); documentStatus.textContent = "Invoice sent to client."; }
+          else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); documentStatus.textContent = "Contract sent to Leegality."; }
+          else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); documentStatus.textContent = "Contract message sent to client."; }
+          else if (action === "sync-contract") { const r = await postJson(`/api/bookings/${bookingId}/contract/sync`, {}); documentStatus.textContent = `Contract status synced: ${r.booking?.contractStatus || "Updated"}.`; }
+          else if (action === "review") { await postJson(`/api/bookings/${bookingId}/send-review`, {}); documentStatus.textContent = "Review request sent."; }
+          else if (action === "advance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); documentStatus.textContent = "Advance reminder sent."; }
+          else if (action === "balance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); documentStatus.textContent = "Balance reminder sent."; }
           await refreshSession();
-        } catch (error) {
-          documentStatus.textContent = error.message;
-        }
+        } catch (error) { documentStatus.textContent = error.message; }
       });
 
-      logoutButton.addEventListener("click", async () => {
-        await fetch("/api/logout", { method: "POST" });
-        window.location.reload();
-      });
+      logoutButton.addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); window.location.reload(); });
 
       const protectBtn = document.getElementById("protect-sheet-btn");
       const recoverBtn = document.getElementById("recover-sheet-btn");
       const protectStatus = document.getElementById("protect-status");
-
       function syncProtectButton(workspace) {
         if (!protectBtn) return;
-        const protected_ = workspace?.sheetProtected === true;
-        protectBtn.textContent = protected_ ? "Disable Sheet Protection" : "Enable Sheet Protection";
-        protectBtn.dataset.protected = protected_ ? "true" : "false";
+        const p = workspace?.sheetProtected === true;
+        protectBtn.textContent = p ? "Disable Sheet Protection" : "Enable Sheet Protection";
+        protectBtn.dataset.protected = p ? "true" : "false";
       }
-
       protectBtn?.addEventListener("click", async () => {
         const protect = protectBtn.dataset.protected !== "true";
         protectStatus.textContent = protect ? "Enabling protection..." : "Disabling protection...";
-        try {
-          const result = await postJson("/api/workspace/protect-sheet", { protect });
-          syncProtectButton(result.workspace);
-          protectStatus.textContent = protect
-            ? "Sheet protected — padlock is visible in Google Drive."
-            : "Protection removed.";
-        } catch (error) {
-          protectStatus.textContent = error.message;
-        }
+        try { const r = await postJson("/api/workspace/protect-sheet", { protect }); syncProtectButton(r.workspace); protectStatus.textContent = protect ? "Sheet protected — padlock is visible in Google Drive." : "Protection removed."; }
+        catch (error) { protectStatus.textContent = error.message; }
       });
-
       recoverBtn?.addEventListener("click", async () => {
         protectStatus.textContent = "Scanning Drive for your sheet...";
-        try {
-          await postJson("/api/workspace/recover-sheet", {});
-          protectStatus.textContent = "Sheet recovered. Reloading...";
-          await refreshSession();
-          protectStatus.textContent = "Sheet recovery complete.";
-        } catch (error) {
-          protectStatus.textContent = error.message;
-        }
+        try { await postJson("/api/workspace/recover-sheet", {}); protectStatus.textContent = "Sheet recovered. Reloading..."; await refreshSession(); protectStatus.textContent = "Sheet recovery complete."; }
+        catch (error) { protectStatus.textContent = error.message; }
       });
 
-      metaSummary.addEventListener("click", async (event) => {
-        const whatsappButton = event.target.closest("button[data-whatsapp-test-connect]");
-        if (whatsappButton) {
-          try {
-            loginState.textContent = "Connecting WhatsApp test number...";
-            await postJson("/api/meta/whatsapp/test-connect", {});
-            await refreshSession();
-          } catch (error) {
-            loginState.textContent = error.message;
-          }
-          return;
-        }
-
-        const tokenButton = event.target.closest("button[data-instagram-token-save]");
-        if (tokenButton) {
-          const card = tokenButton.closest(".mini-card");
+      metaSummary.addEventListener("click", async (e) => {
+        const wa = e.target.closest("button[data-whatsapp-test-connect]");
+        if (wa) { try { loginState.textContent = "Connecting WhatsApp test number..."; await postJson("/api/meta/whatsapp/test-connect", {}); await refreshSession(); } catch (error) { loginState.textContent = error.message; } return; }
+        const tokenBtn = e.target.closest("button[data-instagram-token-save]");
+        if (tokenBtn) {
+          const card = tokenBtn.closest(".mini-card");
           const input = card?.querySelector("input[data-instagram-token-input]");
           const accessToken = input?.value?.trim();
-          if (!accessToken) {
-            loginState.textContent = "Paste the Instagram token first.";
-            return;
-          }
-
-          try {
-            loginState.textContent = "Saving Instagram token...";
-            await postJson("/api/meta/instagram/token", { accessToken });
-            if (input) input.value = "";
-            await refreshSession();
-          } catch (error) {
-            loginState.textContent = error.message;
-          }
+          if (!accessToken) { loginState.textContent = "Paste the Instagram token first."; return; }
+          try { loginState.textContent = "Saving Instagram token..."; await postJson("/api/meta/instagram/token", { accessToken }); if (input) input.value = ""; await refreshSession(); } catch (error) { loginState.textContent = error.message; }
           return;
         }
-
-        const button = event.target.closest("button[data-meta-disconnect]");
-        if (!button) return;
-        const channel = button.getAttribute("data-meta-disconnect");
-        if (!channel) return;
-
-        try {
-          await postJson(`/api/meta/disconnect/${channel}`, {});
-          await refreshSession();
-        } catch (error) {
-          loginState.textContent = error.message;
-        }
+        const dis = e.target.closest("button[data-meta-disconnect]");
+        if (!dis) return;
+        const channel = dis.getAttribute("data-meta-disconnect");
+        try { await postJson(`/api/meta/disconnect/${channel}`, {}); await refreshSession(); } catch (error) { loginState.textContent = error.message; }
       });
 
-      // Surface the relevant tab after an OAuth redirect.
       const params = new URLSearchParams(window.location.search);
-      if (params.get("meta_connected") || params.get("instagram_login_ready")) {
-        sessionStorage.setItem("activeTab", "channels");
-      }
+      if (params.get("meta_connected") || params.get("instagram_login_ready")) sessionStorage.setItem("activeTab", "channels");
 
       refreshSession()
-        .then(() => {
-          const stored = sessionStorage.getItem("activeTab");
-          if (stored) {
-            activateTab(stored);
-            sessionStorage.removeItem("activeTab");
-          }
-        })
-        .catch((error) => {
-          loginState.textContent = error.message || "Unable to load session.";
-        });
+        .then(() => { const stored = sessionStorage.getItem("activeTab"); if (stored) { activateTab(stored); sessionStorage.removeItem("activeTab"); } })
+        .catch((error) => { loginState.textContent = error.message || "Unable to load session."; });
     </script>
   </body>
 </html>
