@@ -73,5 +73,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     servicePartyAddons: "",
     serviceShootAddons: "",
     serviceOtherAddons: "",
+    bookingTimeSlots: "",
+    bookingWaitlistEnabled: "No",
   };
 }

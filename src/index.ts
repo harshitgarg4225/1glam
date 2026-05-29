@@ -33,7 +33,7 @@ import {
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
-import { createPublicBookingRequest, getPublicBusinessProfile } from "./services/public-booking.js";
+import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails } from "./services/public-booking.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
   exchangeForLongLivedToken,
@@ -137,6 +137,20 @@ app.post("/api/public/:workspaceId/book", async (req, res, next) => {
     const parsed = publicBookingSchema.parse(req.body);
     const result = await createPublicBookingRequest(req.params.workspaceId, parsed);
     res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/pay/:workspaceId/:leadId", (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "public", "pay.html"));
+});
+
+app.get("/api/public/:workspaceId/payment/:leadId", async (req, res, next) => {
+  try {
+    const details = await getPublicPaymentDetails(req.params.workspaceId, req.params.leadId);
+    if (!details) return res.status(404).json({ error: "Payment details not found" });
+    res.json({ ok: true, details });
   } catch (error) {
     next(error);
   }
@@ -1001,6 +1015,74 @@ app.post("/api/reviews/:reviewId/confirm", async (req, res, next) => {
       requestBody: { values: [row] },
     });
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/analytics", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const data = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const leads = data.leads;
+    const bookings = data.bookings;
+
+    const now = new Date();
+    const months: { key: string; label: string }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        label: d.toLocaleString("en-IN", { month: "short", year: "2-digit" }),
+      });
+    }
+
+    const revenueByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
+    const bookingsByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
+    const leadsByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
+
+    for (const b of bookings) {
+      const key = (b.bookedAt || "").slice(0, 7);
+      if (key in revenueByMonth) revenueByMonth[key] += Number(b.finalPrice) || 0;
+      if (key in bookingsByMonth) bookingsByMonth[key] += 1;
+    }
+    for (const l of leads) {
+      const key = (l.createdAt || "").slice(0, 7);
+      if (key in leadsByMonth) leadsByMonth[key] += 1;
+    }
+
+    const sourceCount: Record<string, number> = {};
+    for (const l of leads) {
+      const s = l.source || "Unknown";
+      sourceCount[s] = (sourceCount[s] || 0) + 1;
+    }
+
+    const eventTypeRevenue: Record<string, number> = {};
+    for (const b of bookings) {
+      const t = b.eventType || "Unknown";
+      eventTypeRevenue[t] = (eventTypeRevenue[t] || 0) + (Number(b.finalPrice) || 0);
+    }
+
+    const totalRevenue = bookings.reduce((s, b) => s + (Number(b.finalPrice) || 0), 0);
+    const totalBookings = bookings.length;
+    const totalLeads = leads.length;
+    const conversionRate = totalLeads > 0 ? Math.round((totalBookings / totalLeads) * 100) : 0;
+    const avgBookingValue = totalBookings > 0 ? Math.round(totalRevenue / totalBookings) : 0;
+
+    res.json({
+      ok: true,
+      summary: { totalRevenue, totalBookings, totalLeads, conversionRate, avgBookingValue },
+      months: months.map((m) => ({
+        ...m,
+        revenue: revenueByMonth[m.key],
+        bookings: bookingsByMonth[m.key],
+        leads: leadsByMonth[m.key],
+      })),
+      bySource: Object.entries(sourceCount).sort((a, b) => b[1] - a[1]).map(([source, count]) => ({ source, count })),
+      byEventType: Object.entries(eventTypeRevenue).sort((a, b) => b[1] - a[1]).map(([type, revenue]) => ({ type, revenue })),
+    });
   } catch (error) {
     next(error);
   }
@@ -1934,11 +2016,12 @@ function buildCollectionReminderMessage(
 ) {
   const amount = kind === "balance" ? booking.balanceDue : booking.advanceAmount;
   const label = kind === "balance" ? "balance" : "advance";
+  const payUrl = `${appConfig.baseUrl}/pay/${workspace.workspaceId}/${booking.leadId}`;
   return [
     `Hi ${booking.clientName || "love"}, sharing a gentle reminder for the ${label} payment for your ${booking.eventType.toLowerCase()} booking.`,
     `Amount due: ${formatMoney(amount)}.`,
-    booking.invoiceUrl ? `Invoice link: ${booking.invoiceUrl}` : "",
-    workspace.config.upiId ? `UPI: ${workspace.config.upiId}` : "",
+    booking.invoiceUrl ? `Invoice: ${booking.invoiceUrl}` : "",
+    workspace.config.upiId ? `Pay here: ${payUrl}` : "",
   ]
     .filter(Boolean)
     .join(" ")

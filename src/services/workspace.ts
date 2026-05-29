@@ -286,6 +286,8 @@ async function seedSpreadsheet(
     ["service_party_addons", config.servicePartyAddons, "Addons for Party"],
     ["service_shoot_addons", config.serviceShootAddons, "Addons for Shoot"],
     ["service_other_addons", config.serviceOtherAddons, "Addons for Other"],
+    ["booking_time_slots", config.bookingTimeSlots, "Available time slots, comma-separated (e.g. 09:00,11:00,14:00,16:00)"],
+    ["booking_waitlist_enabled", config.bookingWaitlistEnabled, "Allow waitlist when date is fully booked (Yes/No)"],
   ];
 
   const artistsRows = [[
@@ -514,6 +516,8 @@ async function loadConfigFromSpreadsheet(
       servicePartyAddons: String(values.service_party_addons ?? base.servicePartyAddons),
       serviceShootAddons: String(values.service_shoot_addons ?? base.serviceShootAddons),
       serviceOtherAddons: String(values.service_other_addons ?? base.serviceOtherAddons),
+      bookingTimeSlots: String(values.booking_time_slots ?? base.bookingTimeSlots),
+      bookingWaitlistEnabled: String(values.booking_waitlist_enabled ?? base.bookingWaitlistEnabled),
     });
 
     return parsed.success ? parsed.data : base;

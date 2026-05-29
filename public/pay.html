@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pay Advance — 1Glam</title>
+  <style>
+    :root {
+      --accent: #c77dff;
+      --accent-dark: #7b2d8b;
+      --accent-soft: #f3e8ff;
+      --text: #1a1a2e;
+      --muted: #6b6b7b;
+      --line: #e8e0f0;
+      --bg: linear-gradient(135deg, #fdf6ff 0%, #f0e8ff 60%, #e8d5ff 100%);
+      --danger: #c0392b;
+      --success: #27ae60;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: rgba(255,255,255,0.85); border: 1px solid var(--line); border-radius: 28px; padding: 36px 32px; max-width: 420px; width: 100%; box-shadow: 0 8px 32px rgba(123,45,139,0.10); }
+    .kicker { text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    h1 { font-size: 26px; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }
+    .biz { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
+    .summary { background: var(--accent-soft); border-radius: 16px; padding: 18px 20px; margin-bottom: 24px; }
+    .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 15px; }
+    .row:not(:last-child) { border-bottom: 1px solid var(--line); }
+    .row .label { color: var(--muted); }
+    .row .value { font-weight: 600; }
+    .advance-row .value { font-size: 20px; color: var(--accent-dark); }
+    .terms { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 24px; }
+    .pay-btn {
+      display: block; width: 100%; padding: 16px 20px; text-align: center; cursor: pointer;
+      border: none; border-radius: 14px; font: 600 17px/1 -apple-system, sans-serif;
+      color: #fff; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+      text-decoration: none; margin-bottom: 12px;
+    }
+    .pay-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .upi-id { text-align: center; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .upi-id strong { color: var(--text); }
+    .note { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
+    .loading { text-align: center; color: var(--muted); padding: 40px 0; }
+    .error { text-align: center; color: var(--danger); padding: 40px 0; }
+    .hidden { display: none; }
+    .footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 28px; opacity: 0.7; }
+  </style>
+</head>
+<body>
+  <div>
+    <div class="card" id="loading"><p class="loading">Loading payment details…</p></div>
+    <div class="card hidden" id="error-card"><p class="error" id="error-msg">Payment page not found.</p></div>
+
+    <div class="card hidden" id="payment-card">
+      <p class="kicker">Advance Payment</p>
+      <h1 id="biz-name"></h1>
+      <p class="biz" id="event-summary"></p>
+
+      <div class="summary">
+        <div class="row">
+          <span class="label">Total quoted</span>
+          <span class="value" id="total-price"></span>
+        </div>
+        <div class="row advance-row">
+          <span class="label">Advance due now</span>
+          <span class="value" id="advance-amount"></span>
+        </div>
+        <div class="row">
+          <span class="label">Balance on event day</span>
+          <span class="value" id="balance-due"></span>
+        </div>
+      </div>
+
+      <p class="terms" id="payment-terms"></p>
+
+      <a id="upi-btn" class="pay-btn hidden" href="#">Pay ₹<span id="upi-amount"></span> via UPI →</a>
+      <p class="upi-id hidden" id="upi-id-row">UPI ID: <strong id="upi-id-text"></strong></p>
+
+      <p class="note">Once paid, please send a screenshot to the artist on WhatsApp to confirm your booking slot.</p>
+    </div>
+
+    <p class="footer">Powered by 1Glam Booking OS</p>
+  </div>
+
+  <script>
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const workspaceId = parts[1] || "";
+    const leadId = parts[2] || "";
+
+    function inr(n) {
+      return "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
+    }
+
+    async function load() {
+      if (!workspaceId || !leadId) {
+        showError("Invalid payment link.");
+        return;
+      }
+      try {
+        const res = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(leadId)}`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Not found");
+        render(data.details);
+      } catch (err) {
+        showError(err.message || "Payment details not found.");
+      }
+    }
+
+    function render(d) {
+      document.getElementById("loading").classList.add("hidden");
+      document.getElementById("biz-name").textContent = d.businessName;
+      document.getElementById("event-summary").textContent =
+        d.clientName + " · " + d.eventType + " · " + d.eventDate;
+      document.getElementById("total-price").textContent = inr(d.finalApprovedPrice);
+      document.getElementById("advance-amount").textContent = inr(d.advanceAmount);
+      document.getElementById("balance-due").textContent = inr(d.balanceDue);
+      document.getElementById("payment-terms").textContent = d.paymentTerms || "";
+
+      if (d.upiDeepLink && d.upiId) {
+        const btn = document.getElementById("upi-btn");
+        btn.href = d.upiDeepLink;
+        document.getElementById("upi-amount").textContent = Math.round(d.advanceAmount).toLocaleString("en-IN");
+        btn.classList.remove("hidden");
+        const idRow = document.getElementById("upi-id-row");
+        document.getElementById("upi-id-text").textContent = d.upiId;
+        idRow.classList.remove("hidden");
+      }
+
+      document.getElementById("payment-card").classList.remove("hidden");
+    }
+
+    function showError(msg) {
+      document.getElementById("loading").classList.add("hidden");
+      document.getElementById("error-msg").textContent = msg;
+      document.getElementById("error-card").classList.remove("hidden");
+    }
+
+    load();
+  </script>
+</body>
+</html>

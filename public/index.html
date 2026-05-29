@@ -223,6 +223,7 @@
         <button class="tab-button" type="button" data-tab="conversations">Conversations</button>
         <button class="tab-button" type="button" data-tab="team">Team</button>
         <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
+        <button class="tab-button" type="button" data-tab="analytics">Analytics</button>
         <button class="tab-button" type="button" data-tab="channels">Channels</button>
         <button class="tab-button" type="button" data-tab="setup">Setup</button>
       </nav>
@@ -436,6 +437,30 @@
         </div>
       </section>
 
+      <!-- Analytics -->
+      <section class="tab-panel" data-panel="analytics">
+        <div class="panel section">
+          <div class="kicker">Business Insights</div>
+          <h2>Analytics</h2>
+          <div id="analytics-loading" style="color:var(--muted);padding:24px 0;">Loading…</div>
+          <div id="analytics-body" class="hidden">
+            <div id="analytics-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:28px;"></div>
+            <h3 style="margin-bottom:14px;font-size:16px;">Revenue (last 12 months)</h3>
+            <div id="chart-revenue" style="margin-bottom:28px;"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;flex-wrap:wrap;">
+              <div>
+                <h3 style="margin-bottom:12px;font-size:16px;">Leads by source</h3>
+                <div id="chart-source"></div>
+              </div>
+              <div>
+                <h3 style="margin-bottom:12px;font-size:16px;">Revenue by service type</h3>
+                <div id="chart-event-type"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Channels -->
       <section class="tab-panel" data-panel="channels">
         <div class="panel section">
@@ -513,6 +538,8 @@
                 <div><label for="bookingMaxPerDay">Max Bookings / Day (0 = no limit)</label><input id="bookingMaxPerDay" name="bookingMaxPerDay" type="number" min="0" /></div>
                 <div><label for="bookingWeeklyOffDays">Weekly Days Off</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
                 <div class="wide"><label for="bookingBlockedDates">Blocked Dates</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
+                <div class="wide"><label for="bookingTimeSlots">Available Time Slots (leave empty for free text)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
+                <div><label for="bookingWaitlistEnabled">Enable Waitlist When Full</label><select id="bookingWaitlistEnabled" name="bookingWaitlistEnabled"><option value="No">No — reject when full</option><option value="Yes">Yes — add to waitlist</option></select></div>
                 <div><label for="bookingConfirmTemplate">Booking Request Template</label><input id="bookingConfirmTemplate" name="bookingConfirmTemplate" placeholder="booking_confirmation" /></div>
                 <div><label for="bookingConfirmTemplateLang">Request Template Language</label><input id="bookingConfirmTemplateLang" name="bookingConfirmTemplateLang" placeholder="en" /></div>
                 <div><label for="approvalTemplate">Approval Notification Template</label><input id="approvalTemplate" name="approvalTemplate" placeholder="booking_approved" /></div>
@@ -637,6 +664,7 @@
         if (name === "conversations") loadConversations();
         if (name === "team") loadTeam();
         if (name === "reviews") loadReviews();
+        if (name === "analytics") loadAnalytics();
       }
       tabNav.addEventListener("click", (e) => {
         const b = e.target.closest(".tab-button");
@@ -969,6 +997,67 @@
           e.target.disabled = false;
         }
       });
+
+      // ---- Analytics ----
+      async function loadAnalytics() {
+        const body = document.getElementById("analytics-body");
+        const loading = document.getElementById("analytics-loading");
+        loading.style.display = "block";
+        body.classList.add("hidden");
+        try {
+          const res = await fetch("/api/analytics");
+          const payload = await res.json();
+          if (!payload.ok) throw new Error(payload.error || "Failed");
+          renderAnalytics(payload);
+        } catch (err) {
+          loading.textContent = err.message || "Failed to load analytics.";
+        }
+      }
+
+      function renderAnalytics(payload) {
+        const { summary, months, bySource, byEventType } = payload;
+        const loading = document.getElementById("analytics-loading");
+        const body = document.getElementById("analytics-body");
+        loading.style.display = "none";
+        body.classList.remove("hidden");
+
+        // Summary cards
+        const cards = [
+          { label: "Total Revenue", value: formatMoney(summary.totalRevenue) },
+          { label: "Confirmed Bookings", value: summary.totalBookings },
+          { label: "Conversion Rate", value: summary.conversionRate + "%" },
+          { label: "Avg Booking Value", value: formatMoney(summary.avgBookingValue) },
+        ];
+        document.getElementById("analytics-summary").innerHTML = cards.map((c) =>
+          `<div style="background:rgba(255,255,255,0.7);border:1px solid var(--line);border-radius:18px;padding:18px 20px;">
+            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:8px;">${escapeHtml(c.label)}</div>
+            <div style="font-size:22px;font-weight:700;">${escapeHtml(String(c.value))}</div>
+          </div>`).join("");
+
+        // Revenue bar chart
+        const maxRev = Math.max(1, ...months.map((m) => m.revenue));
+        document.getElementById("chart-revenue").innerHTML =
+          `<div style="display:flex;align-items:flex-end;gap:4px;height:120px;border-bottom:1px solid var(--line);">` +
+          months.map((m) => {
+            const pct = Math.round((m.revenue / maxRev) * 100);
+            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;" title="${escapeHtml(m.label)}: ${formatMoney(m.revenue)}">
+              <div style="width:100%;height:${pct}%;background:var(--accent);border-radius:4px 4px 0 0;min-height:${m.revenue > 0 ? 3 : 0}px;"></div>
+              <div style="font-size:9px;color:var(--muted);text-align:center;white-space:nowrap;">${escapeHtml(m.label)}</div>
+            </div>`;
+          }).join("") + `</div>`;
+
+        // Source breakdown
+        document.getElementById("chart-source").innerHTML =
+          bySource.map((s) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;">
+            <span>${escapeHtml(s.source)}</span><span style="font-weight:600;">${s.count}</span>
+          </div>`).join("") || "<p style='color:var(--muted);font-size:14px;'>No data yet.</p>";
+
+        // Event type revenue
+        document.getElementById("chart-event-type").innerHTML =
+          byEventType.map((e) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;">
+            <span>${escapeHtml(e.type)}</span><span style="font-weight:600;">${formatMoney(e.revenue)}</span>
+          </div>`).join("") || "<p style='color:var(--muted);font-size:14px;'>No data yet.</p>";
+      }
 
       // ---- Conversations ----
       async function loadConversations(force) {

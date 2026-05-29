@@ -1,6 +1,6 @@
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { countActiveLeadsForDate, createLeadForWorkspace } from "./booking.js";
+import { countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord } from "./booking.js";
 import { findWorkspaceByWorkspaceId } from "./database.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
@@ -25,6 +25,8 @@ export type PublicAvailability = {
   maxDate: string;
   offWeekdays: number[];
   blockedDates: string[];
+  timeSlots: string[];
+  waitlistEnabled: boolean;
 };
 
 export type PublicBusinessProfile = {
@@ -34,8 +36,23 @@ export type PublicBusinessProfile = {
   instagramHandle: string;
   ownerWhatsApp: string;
   advancePercentage: number;
+  upiId: string;
   eventTypes: PublicEventType[];
   availability: PublicAvailability;
+};
+
+export type PublicPaymentDetails = {
+  businessName: string;
+  clientName: string;
+  eventType: string;
+  eventDate: string;
+  finalApprovedPrice: number;
+  advanceAmount: number;
+  balanceDue: number;
+  upiId: string;
+  upiDeepLink: string;
+  paymentTerms: string;
+  leadStatus: string;
 };
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -100,6 +117,17 @@ function addDaysIso(days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function parseTimeSlots(raw: string): string[] {
+  return [
+    ...new Set(
+      String(raw || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => /^\d{2}:\d{2}$/.test(s)),
+    ),
+  ].sort();
+}
+
 function buildAvailability(config: WorkspaceConfig): PublicAvailability {
   const leadTime = Math.max(0, Number(config.bookingLeadTimeDays) || 0);
   const maxAdvance = Number(config.bookingMaxAdvanceDays) > 0 ? Number(config.bookingMaxAdvanceDays) : 365;
@@ -109,6 +137,8 @@ function buildAvailability(config: WorkspaceConfig): PublicAvailability {
     maxDate: addDaysIso(maxAdvance),
     offWeekdays: parseOffWeekdays(config.bookingWeeklyOffDays),
     blockedDates: parseBlockedDates(config.bookingBlockedDates),
+    timeSlots: parseTimeSlots(config.bookingTimeSlots),
+    waitlistEnabled: String(config.bookingWaitlistEnabled || "No").toLowerCase() === "yes",
   };
 }
 
@@ -157,6 +187,7 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
     instagramHandle: config.instagramHandle || "",
     ownerWhatsApp: sanitizePhone(config.ownerWhatsApp),
     advancePercentage: Number(config.advancePercentage) || 0,
+    upiId: config.upiId || "",
     eventTypes,
     availability: buildAvailability(config),
   };
@@ -193,20 +224,32 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     throw new Error("That date is unavailable. Please choose another.");
   }
 
+  const timeSlots = parseTimeSlots(workspace.config.bookingTimeSlots);
+  if (timeSlots.length > 0 && input.eventTime) {
+    if (!timeSlots.includes(input.eventTime)) {
+      throw new Error("Please choose one of the available time slots.");
+    }
+  }
+
   const tokens = await getWorkspaceCredentials(workspace.email);
 
   const maxPerDay = Number(workspace.config.bookingMaxPerDay) || 0;
+  let waitlisted = false;
   if (maxPerDay > 0) {
     const activeCount = await countActiveLeadsForDate(workspace.email, tokens, input.eventDate);
     if (activeCount >= maxPerDay) {
-      throw new Error("That date is fully booked. Please choose another.");
+      const waitlistEnabled = String(workspace.config.bookingWaitlistEnabled || "No").toLowerCase() === "yes";
+      if (!waitlistEnabled) {
+        throw new Error("That date is fully booked. Please choose another.");
+      }
+      waitlisted = true;
     }
   }
 
   const inboundMessage = buildInboundMessage(input);
 
   const result = await createLeadForWorkspace(workspace.email, tokens, {
-    source: "Booking Page",
+    source: waitlisted ? "Waitlist" : "Booking Page",
     clientName: input.clientName,
     clientWhatsApp: input.clientWhatsApp,
     clientInstagram: input.clientInstagram,
@@ -226,7 +269,9 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     aiSummary: `Lead ${result.lead.leadId} created from public booking page`,
   });
 
-  await sendBookingConfirmationTemplate(workspace, result.lead.leadId, input, tokens);
+  if (!waitlisted) {
+    await sendBookingConfirmationTemplate(workspace, result.lead.leadId, input, tokens);
+  }
 
   return {
     leadId: result.lead.leadId,
@@ -234,6 +279,7 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     eventType: result.lead.eventType,
     eventDate: result.lead.eventDate,
     eventTime: result.lead.eventTime,
+    waitlisted,
   };
 }
 
@@ -277,6 +323,48 @@ async function sendBookingConfirmationTemplate(
   } catch (error) {
     console.error("Booking confirmation template send failed", error);
   }
+}
+
+export async function getPublicPaymentDetails(
+  workspaceId: string,
+  leadId: string,
+): Promise<PublicPaymentDetails | null> {
+  const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+  if (!workspace) return null;
+
+  const tokens = await getWorkspaceCredentials(workspace.email);
+  const lead = await getLeadRecord(workspace.email, tokens, leadId);
+  if (!lead) return null;
+
+  const eligibleStatuses = ["Awaiting Client", "Payment Pending", "Confirmed", "Payment Received"];
+  if (!eligibleStatuses.includes(lead.status)) return null;
+
+  const { config } = workspace;
+  const advanceAmount = Math.round(
+    (lead.finalApprovedPrice * (Number(config.advancePercentage) || 30)) / 100,
+  );
+  const balanceDue = Math.max(0, lead.finalApprovedPrice - advanceAmount);
+
+  const upiId = config.upiId || "";
+  const upiDeepLink = upiId
+    ? `upi://pay?pa=${encodeURIComponent(upiId)}` +
+      `&pn=${encodeURIComponent(config.businessName || config.ownerName)}` +
+      `&am=${advanceAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(leadId)}`
+    : "";
+
+  return {
+    businessName: config.businessName || workspace.name,
+    clientName: lead.clientName,
+    eventType: lead.eventType,
+    eventDate: lead.eventDate,
+    finalApprovedPrice: lead.finalApprovedPrice,
+    advanceAmount,
+    balanceDue,
+    upiId,
+    upiDeepLink,
+    paymentTerms: config.paymentTerms || "",
+    leadStatus: lead.status,
+  };
 }
 
 function buildInboundMessage(input: PublicBookingInput) {

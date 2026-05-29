@@ -73,6 +73,8 @@ export const workspaceConfigSchema = z.object({
   servicePartyAddons: z.string().optional().default(""),
   serviceShootAddons: z.string().optional().default(""),
   serviceOtherAddons: z.string().optional().default(""),
+  bookingTimeSlots: z.string().optional().default(""),
+  bookingWaitlistEnabled: z.string().optional().default("No"),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

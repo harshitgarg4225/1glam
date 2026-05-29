@@ -61,6 +61,10 @@
       .addon-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; cursor: pointer; font-size: 15px; }
       .addon-item input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent-dark); flex-shrink: 0; cursor: pointer; }
       .addon-price { color: var(--muted); font-size: 13px; }
+      .slots { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
+      .slot { padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.6); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
+      .slot:hover { border-color: var(--accent); }
+      .slot.selected { border-color: var(--accent-dark); background: var(--accent-soft); font-weight: 600; }
       label { display: block; margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
       input, textarea {
         width: 100%; padding: 13px 15px; font: inherit; color: var(--text);
@@ -117,15 +121,19 @@
         </div>
 
         <form id="form">
-          <div class="row">
-            <div>
-              <label for="eventDate">Event date</label>
-              <input type="date" id="eventDate" required />
-            </div>
-            <div>
-              <label for="eventTime">Preferred time</label>
-              <input type="time" id="eventTime" />
-            </div>
+          <div>
+            <label for="eventDate">Event date</label>
+            <input type="date" id="eventDate" required />
+          </div>
+
+          <div id="time-slots-wrap" class="hidden">
+            <label>Preferred time</label>
+            <div class="slots" id="time-slots"></div>
+            <input type="hidden" id="eventTime" />
+          </div>
+          <div id="time-free-wrap">
+            <label for="eventTimeFree">Preferred time (optional)</label>
+            <input type="time" id="eventTimeFree" />
           </div>
 
           <label for="locationText">Event location / venue</label>
@@ -154,10 +162,10 @@
       </div>
 
       <div class="panel hidden" id="success">
-        <div class="success-icon">&#10003;</div>
-        <h1>Request received</h1>
+        <div class="success-icon" id="success-icon">&#10003;</div>
+        <h1 id="success-title">Request received</h1>
         <p id="success-text" class="muted"></p>
-        <p class="muted">To confirm faster, send us a quick message on WhatsApp so we can lock in your date and share pricing.</p>
+        <p id="success-subtext" class="muted">To confirm faster, send us a quick message on WhatsApp so we can lock in your date and share pricing.</p>
         <a id="wa-confirm" class="button hidden" target="_blank" rel="noreferrer">Confirm on WhatsApp</a>
       </div>
 
@@ -244,10 +252,41 @@
             const message = dateUnavailableReason(dateInput.value);
             el("status").textContent = message || "";
           });
+
+          // Time slots
+          const slots = availability.timeSlots || [];
+          if (slots.length > 0) {
+            show("time-slots-wrap");
+            hide("time-free-wrap");
+            const slotsContainer = el("time-slots");
+            slotsContainer.innerHTML = "";
+            slots.forEach((slot) => {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "slot";
+              btn.textContent = formatSlotTime(slot);
+              btn.dataset.value = slot;
+              btn.addEventListener("click", () => {
+                document.querySelectorAll(".slot").forEach((s) => s.classList.remove("selected"));
+                btn.classList.add("selected");
+                el("eventTime").value = slot;
+              });
+              slotsContainer.appendChild(btn);
+            });
+          }
         }
 
         hide("loading");
         show("booking");
+      }
+
+      function formatSlotTime(t) {
+        try {
+          const [h, m] = t.split(":").map(Number);
+          const ampm = h < 12 ? "AM" : "PM";
+          const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+          return h12 + (m ? ":" + String(m).padStart(2, "0") : "") + " " + ampm;
+        } catch { return t; }
       }
 
       function renderServiceDetail(type) {
@@ -316,12 +355,23 @@
           return;
         }
 
+        // Time — use slot value if slots are configured, otherwise free-text input
+        const hasSlots = (availability && (availability.timeSlots || []).length > 0);
+        const eventTimeValue = hasSlots
+          ? el("eventTime").value || undefined
+          : el("eventTimeFree").value || undefined;
+
+        if (hasSlots && !eventTimeValue) {
+          statusEl.textContent = "Please choose a time slot above.";
+          return;
+        }
+
         const checkedAddons = [...document.querySelectorAll("#addons-list input:checked")]
           .map((cb) => cb.value).join(", ");
         const payload = {
           eventType: selectedEventType,
           eventDate: el("eventDate").value,
-          eventTime: el("eventTime").value || undefined,
+          eventTime: eventTimeValue,
           locationText: el("locationText").value.trim(),
           addons: checkedAddons || undefined,
           clientName: el("clientName").value.trim(),
@@ -342,17 +392,26 @@
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || "Could not submit your request.");
 
-          el("success-text").textContent =
-            "Thank you, " + payload.clientName + ". Your " + data.eventType +
-            " request for " + data.eventDate + " has been sent to " + data.businessName + ".";
+          if (data.waitlisted) {
+            el("success-title").textContent = "Added to waitlist";
+            el("success-icon").textContent = "⏳";
+            el("success-text").textContent =
+              "Thank you, " + payload.clientName + ". That date is fully booked, but we've added you to the waitlist for " +
+              data.eventDate + ". We'll reach out if a slot opens up.";
+            el("success-subtext").classList.add("hidden");
+          } else {
+            el("success-text").textContent =
+              "Thank you, " + payload.clientName + ". Your " + data.eventType +
+              " request for " + data.eventDate + " has been sent to " + data.businessName + ".";
 
-          if (ownerWhatsApp) {
-            const text =
-              "Hi! I just requested a " + data.eventType + " booking for " + data.eventDate +
-              " via your booking page. My name is " + payload.clientName + ".";
-            const waBtn = el("wa-confirm");
-            waBtn.href = "https://wa.me/" + ownerWhatsApp + "?text=" + encodeURIComponent(text);
-            waBtn.classList.remove("hidden");
+            if (ownerWhatsApp) {
+              const text =
+                "Hi! I just requested a " + data.eventType + " booking for " + data.eventDate +
+                " via your booking page. My name is " + payload.clientName + ".";
+              const waBtn = el("wa-confirm");
+              waBtn.href = "https://wa.me/" + ownerWhatsApp + "?text=" + encodeURIComponent(text);
+              waBtn.classList.remove("hidden");
+            }
           }
 
           hide("booking");

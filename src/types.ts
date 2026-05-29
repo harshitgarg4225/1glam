@@ -72,6 +72,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   servicePartyAddons: string;
   serviceShootAddons: string;
   serviceOtherAddons: string;
+  bookingTimeSlots: string;
+  bookingWaitlistEnabled: string;
 };
 
 export type StoredGoogleTokens = {
