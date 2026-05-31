@@ -6,84 +6,86 @@
     <title>Book an Appointment</title>
     <style>
       :root {
-        --paper: #f8f1e8;
-        --panel: rgba(255, 250, 244, 0.82);
-        --text: #201711;
-        --muted: #726257;
-        --line: rgba(79, 51, 35, 0.12);
-        --accent: #9d6948;
-        --accent-dark: #6f452b;
-        --accent-soft: #f0e1d2;
-        --success: #285844;
-        --danger: #8b3f35;
-        --shadow: 0 24px 80px rgba(74, 46, 30, 0.12);
+        --bg: #FAF8F5;
+        --surface: #F4F0EA;
+        --card: #FFFFFF;
+        --text: #1C1917;
+        --muted: #78716C;
+        --line: #E8E2DA;
+        --accent: #C26B45;
+        --accent-hover: #A85A38;
+        --accent-soft: #FBF0EA;
+        --danger: #9B1C1C;
+        --success: #166534;
+        --shadow: 0 4px 16px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
+        --radius: 12px;
+        --radius-sm: 8px;
+        --radius-lg: 16px;
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: Georgia, "Times New Roman", serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
         color: var(--text);
-        background:
-          radial-gradient(circle at top left, rgba(210, 172, 138, 0.26), transparent 28%),
-          radial-gradient(circle at bottom right, rgba(155, 114, 86, 0.14), transparent 25%),
-          linear-gradient(145deg, #fcf8f2 0%, #f4eadf 55%, #ecdccf 100%);
+        background: var(--bg);
         min-height: 100vh;
       }
       .shell { width: min(680px, calc(100vw - 28px)); margin: 28px auto 48px; }
       .panel {
-        background: var(--panel);
+        background: var(--card);
         border: 1px solid var(--line);
-        border-radius: 28px;
+        border-radius: var(--radius-lg);
         box-shadow: var(--shadow);
-        backdrop-filter: blur(18px);
         padding: 30px;
       }
-      .kicker { text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; color: var(--muted); }
-      h1 { font-size: clamp(28px, 6vw, 44px); line-height: 1.02; margin: 10px 0 6px; font-weight: 600; }
-      h2 { font-size: 20px; margin: 0 0 14px; }
-      p { margin-top: 0; line-height: 1.5; }
+      .kicker { text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--muted); font-weight: 600; }
+      h1 { font-size: clamp(24px, 5vw, 38px); line-height: 1.1; margin: 10px 0 6px; font-weight: 700; }
+      h2 { font-size: 16px; font-weight: 600; margin: 20px 0 12px; color: var(--text); }
+      p { margin-top: 0; line-height: 1.6; }
       .muted { color: var(--muted); }
-      .brand-meta { color: var(--muted); margin-bottom: 4px; }
-      .services { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 18px 0 6px; }
+      .brand-meta { color: var(--muted); margin-bottom: 4px; font-size: 14px; }
+      .services { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin: 12px 0 6px; }
       .service {
-        text-align: left; cursor: pointer; padding: 16px;
-        border: 1px solid var(--line); border-radius: 18px;
-        background: rgba(255,255,255,0.5); color: var(--text); font: inherit;
+        text-align: left; cursor: pointer; padding: 14px 16px;
+        border: 1px solid var(--line); border-radius: var(--radius);
+        background: var(--card); color: var(--text); font: inherit;
         transition: border-color 0.15s, background 0.15s;
       }
-      .service:hover { border-color: var(--accent); }
-      .service.selected { border-color: var(--accent-dark); background: var(--accent-soft); }
-      .service .name { font-size: 16px; font-weight: 600; }
-      .service .price { font-size: 13px; color: var(--muted); margin-top: 6px; }
-      .service-desc { font-size: 14px; color: var(--muted); line-height: 1.5; margin: 4px 0 16px; }
+      .service:hover { border-color: var(--accent); background: var(--accent-soft); }
+      .service.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .service .name { font-size: 15px; font-weight: 600; }
+      .service .price { font-size: 13px; color: var(--muted); margin-top: 4px; }
+      .service-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin: 8px 0 16px; }
       .addons-wrap { margin-bottom: 18px; }
-      .addons-heading { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+      .addons-heading { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; font-weight: 600; }
       .addon-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; cursor: pointer; font-size: 15px; }
-      .addon-item input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent-dark); flex-shrink: 0; cursor: pointer; }
+      .addon-item input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
       .addon-price { color: var(--muted); font-size: 13px; }
       .slots { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
-      .slot { padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.6); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
-      .slot:hover { border-color: var(--accent); }
-      .slot.selected { border-color: var(--accent-dark); background: var(--accent-soft); font-weight: 600; }
-      label { display: block; margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+      .slot { padding: 9px 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
+      .slot:hover { border-color: var(--accent); background: var(--accent-soft); }
+      .slot.selected { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; color: var(--accent); }
+      label { display: block; margin: 16px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 600; }
       input, textarea {
-        width: 100%; padding: 13px 15px; font: inherit; color: var(--text);
-        background: rgba(255,255,255,0.78); border: 1px solid var(--line); border-radius: 14px;
+        width: 100%; padding: 12px 14px; font: inherit; font-size: 15px; color: var(--text);
+        background: #FFFFFF; border: 1px solid var(--line); border-radius: var(--radius-sm);
       }
+      input:focus, textarea:focus { outline: none; border-color: var(--accent); }
       textarea { resize: vertical; min-height: 70px; }
       .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       .button {
-        display: inline-block; width: 100%; margin-top: 22px; padding: 15px 20px; cursor: pointer;
-        border: none; border-radius: 14px; font: inherit; font-size: 16px; color: #fff;
-        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+        display: inline-block; width: 100%; margin-top: 22px; padding: 14px 20px; cursor: pointer;
+        border: none; border-radius: var(--radius-sm); font: inherit; font-size: 16px; font-weight: 600; color: #fff;
+        background: var(--accent); transition: background 0.15s;
       }
+      .button:hover { background: var(--accent-hover); }
       .button:disabled { opacity: 0.6; cursor: not-allowed; }
-      .status { min-height: 22px; margin-top: 12px; color: var(--danger); font-size: 14px; }
+      .status { min-height: 22px; margin-top: 10px; color: var(--danger); font-size: 14px; }
       .hidden { display: none; }
       .success-icon {
-        width: 56px; height: 56px; border-radius: 50%; background: var(--accent-soft);
-        display: flex; align-items: center; justify-content: center; color: var(--accent-dark);
-        font-size: 28px; margin-bottom: 16px;
+        width: 52px; height: 52px; border-radius: 50%; background: #DCFCE7;
+        display: flex; align-items: center; justify-content: center; color: #166534;
+        font-size: 24px; margin-bottom: 16px;
       }
       .footer { text-align: center; margin-top: 22px; font-size: 12px; color: var(--muted); }
     </style>

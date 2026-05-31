@@ -6,43 +6,47 @@
   <title>Pay Advance — 1Glam</title>
   <style>
     :root {
-      --accent: #c77dff;
-      --accent-dark: #7b2d8b;
-      --accent-soft: #f3e8ff;
-      --text: #1a1a2e;
-      --muted: #6b6b7b;
-      --line: #e8e0f0;
-      --bg: linear-gradient(135deg, #fdf6ff 0%, #f0e8ff 60%, #e8d5ff 100%);
-      --danger: #c0392b;
-      --success: #27ae60;
+      --bg: #FAF8F5;
+      --surface: #F4F0EA;
+      --card: #FFFFFF;
+      --text: #1C1917;
+      --muted: #78716C;
+      --line: #E8E2DA;
+      --accent: #C26B45;
+      --accent-hover: #A85A38;
+      --accent-soft: #FBF0EA;
+      --danger: #9B1C1C;
+      --success: #166534;
+      --shadow: 0 4px 16px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .card { background: rgba(255,255,255,0.85); border: 1px solid var(--line); border-radius: 28px; padding: 36px 32px; max-width: 420px; width: 100%; box-shadow: 0 8px 32px rgba(123,45,139,0.10); }
-    .kicker { text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 36px 32px; max-width: 420px; width: 100%; box-shadow: var(--shadow); }
+    .kicker { text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
     h1 { font-size: 26px; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }
     .biz { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
-    .summary { background: var(--accent-soft); border-radius: 16px; padding: 18px 20px; margin-bottom: 24px; }
-    .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 15px; }
+    .summary { background: var(--surface); border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; border: 1px solid var(--line); }
+    .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 15px; }
     .row:not(:last-child) { border-bottom: 1px solid var(--line); }
     .row .label { color: var(--muted); }
     .row .value { font-weight: 600; }
-    .advance-row .value { font-size: 20px; color: var(--accent-dark); }
-    .terms { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 24px; }
+    .advance-row .value { font-size: 20px; color: var(--accent); }
+    .terms { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
     .pay-btn {
       display: block; width: 100%; padding: 16px 20px; text-align: center; cursor: pointer;
-      border: none; border-radius: 14px; font: 600 17px/1 -apple-system, sans-serif;
-      color: #fff; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
-      text-decoration: none; margin-bottom: 12px;
+      border: none; border-radius: 8px; font: 600 17px/1 -apple-system, sans-serif;
+      color: #fff; background: var(--accent);
+      text-decoration: none; margin-bottom: 12px; transition: background 0.15s;
     }
+    .pay-btn:hover { background: var(--accent-hover); }
     .pay-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .upi-id { text-align: center; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
     .upi-id strong { color: var(--text); }
-    .note { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
+    .note { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
     .loading { text-align: center; color: var(--muted); padding: 40px 0; }
     .error { text-align: center; color: var(--danger); padding: 40px 0; }
     .hidden { display: none; }
-    .footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 28px; opacity: 0.7; }
+    .footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 28px; }
   </style>
 </head>
 <body>
