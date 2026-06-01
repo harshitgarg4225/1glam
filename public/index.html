@@ -271,6 +271,28 @@
       .gallery-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-top: 12px; }
       .gallery-preview img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
       .qr-img { width: 168px; height: 168px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); }
+      .portfolio-drop { border: 2px dashed var(--line); border-radius: 12px; padding: 28px 18px; text-align: center; cursor: pointer; background: var(--surface); transition: border-color 0.15s, background 0.15s; }
+      .portfolio-drop:hover, .portfolio-drop.drag-over { border-color: var(--accent); background: #FBF0EA; }
+      .portfolio-drop-icon { font-size: 30px; margin-bottom: 6px; }
+      .portfolio-drop-label { font-size: 13px; color: var(--muted); }
+      .portfolio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 12px; }
+      .portfolio-item { position: relative; aspect-ratio: 1/1; }
+      .portfolio-item img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+      .portfolio-item .remove { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: none; background: rgba(0,0,0,0.6); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+      .portfolio-item .remove:hover { background: rgba(0,0,0,0.85); }
+      .setup-checklist { border-left: 4px solid var(--accent); }
+      .setup-steps { display: flex; flex-direction: column; gap: 8px; }
+      .setup-step { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; transition: border-color 0.15s, background 0.15s; text-align: left; }
+      .setup-step:hover { border-color: var(--accent); background: #FBF0EA; }
+      .setup-step.done { cursor: default; opacity: 0.7; }
+      .setup-step.done:hover { border-color: var(--line); background: var(--card); }
+      .setup-step .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #fff; }
+      .setup-step.done .check { background: var(--success); border-color: var(--success); }
+      .setup-step .step-text { flex: 1; }
+      .setup-step .step-text strong { display: block; font-size: 14px; }
+      .setup-step .step-text span { font-size: 12.5px; color: var(--muted); }
+      .setup-step .step-go { font-size: 12px; color: var(--accent); font-weight: 600; }
+      .setup-progress { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
       .more-summary { cursor: pointer; font-size: 13px; color: var(--accent); list-style: none; font-weight: 500; }
       .more-summary::-webkit-details-marker { display: none; }
 
@@ -327,6 +349,12 @@
 
       <!-- Dashboard -->
       <section class="tab-panel active" data-panel="dashboard">
+        <div class="panel section setup-checklist" id="setup-checklist" style="display:none;margin-bottom:20px;">
+          <div class="kicker">Get set up</div>
+          <h2 id="setup-checklist-title">Finish setting up your booking page</h2>
+          <p class="muted" style="margin-bottom:14px;font-size:14px;">A few quick steps and you’re ready to take bookings. Clients can’t book until these are done.</p>
+          <div id="setup-steps" class="setup-steps"></div>
+        </div>
         <div class="panel section">
           <div class="kicker">Overview</div>
           <h2>Today at a glance</h2>
@@ -601,10 +629,15 @@
               <textarea id="mypage-about" name="aboutText" placeholder="A warm line or two about your style and experience. Shown at the top of your booking page."></textarea>
             </div>
             <div class="wide">
-              <label for="portfolio-input">Portfolio image links (one per line)</label>
-              <textarea id="portfolio-input" name="portfolioImages" placeholder="https://your-image-1.jpg&#10;https://your-image-2.jpg" style="min-height:120px;"></textarea>
-              <p class="muted" style="margin-top:6px;font-size:13px;">Paste direct image links (e.g. from Google Drive “share”, Imgur, or your website). Up to 12 are shown as a grid on your page.</p>
-              <div id="portfolio-preview" class="gallery-preview"></div>
+              <label>Portfolio photos</label>
+              <p class="muted" style="margin:0 0 10px;font-size:13px;">Show your best work — up to 12 photos appear as a gallery on your booking page. Drag &amp; drop or tap to upload straight from your phone or computer.</p>
+              <div class="portfolio-drop" id="portfolio-drop">
+                <input type="file" id="portfolio-file" accept="image/*" multiple hidden />
+                <div class="portfolio-drop-icon">🖼️</div>
+                <div class="portfolio-drop-label">Tap to upload photos · JPG, PNG, WEBP · up to 10 MB each</div>
+              </div>
+              <div id="portfolio-grid" class="portfolio-grid"></div>
+              <div class="status" id="portfolio-upload-status"></div>
             </div>
           </div>
           <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save my page</button></div>
@@ -976,6 +1009,19 @@
       function renderLeads() {
         const leads = filteredLeads();
         document.getElementById("lead-count").textContent = `${leads.length} shown`;
+        const totalLeads = (sessionState?.dashboard?.leads || []).length;
+        if (totalLeads === 0) {
+          const wsId = sessionState?.workspace?.workspaceId;
+          const bookingUrl = wsId ? `${window.location.origin}/book/${encodeURIComponent(wsId)}` : "";
+          leadsBoard.innerHTML = `
+            <div class="empty-state" style="grid-column:1/-1;text-align:center;padding:40px 20px;">
+              <div style="font-size:34px;margin-bottom:10px;">📩</div>
+              <h3 style="margin-bottom:6px;">No requests yet</h3>
+              <p class="muted" style="max-width:420px;margin:0 auto 16px;font-size:14px;">Share your booking link so clients can request a date. New requests show up here automatically. You can also add a lead manually using the form above.</p>
+              ${bookingUrl ? `<button class="button" type="button" id="empty-share-link" data-share="${escapeHtml(bookingUrl)}">Copy booking link</button>` : ""}
+            </div>`;
+          return;
+        }
         leadsBoard.innerHTML = LEAD_COLUMNS.map((col) => {
           const items = leads.filter((l) => (l.status || "New") === col.key);
           return `
@@ -1052,7 +1098,42 @@
         renderSnapshot(leads, bookings);
         renderLeads();
         renderBookings();
+        renderSetupChecklist();
       }
+
+      // Onboarding readiness — surfaces the few things a new artist must do
+      // before their booking page is client-ready. Each step jumps to where
+      // it can be completed.
+      function renderSetupChecklist() {
+        const box = document.getElementById("setup-checklist");
+        const cfg = sessionState?.workspace?.config;
+        if (!cfg) { box.style.display = "none"; return; }
+        const portfolioCount = String(cfg.portfolioImages || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length;
+        const steps = [
+          { done: !!(cfg.businessName && cfg.businessName.trim()), title: "Add your business name", desc: "Shown at the top of your booking page.", tab: "setup" },
+          { done: !!(cfg.ownerWhatsApp && cfg.ownerWhatsApp.replace(/\D/g, "").length >= 8), title: "Add your WhatsApp number", desc: "So clients can reach you and get confirmations.", tab: "setup" },
+          { done: !!(cfg.upiId && cfg.upiId.trim()), title: "Set up payments (UPI ID)", desc: "Lets clients pay the advance to lock their date.", tab: "setup" },
+          { done: portfolioCount >= 1, title: "Upload portfolio photos", desc: "Show your work — pages with photos book far more.", tab: "mypage" },
+          { done: !!(cfg.aboutText && cfg.aboutText.trim()), title: "Write a short intro", desc: "A warm line about your style and experience.", tab: "mypage" },
+        ];
+        const doneCount = steps.filter((s) => s.done).length;
+        if (doneCount === steps.length) { box.style.display = "none"; return; }
+        box.style.display = "";
+        document.getElementById("setup-checklist-title").textContent =
+          doneCount === 0 ? "Finish setting up your booking page" : "Almost there — finish your setup";
+        document.getElementById("setup-steps").innerHTML =
+          `<div class="setup-progress">${doneCount} of ${steps.length} done</div>` +
+          steps.map((s) => `
+            <button type="button" class="setup-step ${s.done ? "done" : ""}" ${s.done ? "" : `data-setup-go="${s.tab}"`}>
+              <span class="check">${s.done ? "✓" : ""}</span>
+              <span class="step-text"><strong>${escapeHtml(s.title)}</strong><span>${escapeHtml(s.desc)}</span></span>
+              ${s.done ? "" : '<span class="step-go">Set up →</span>'}
+            </button>`).join("");
+      }
+      document.getElementById("setup-steps").addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-setup-go]");
+        if (btn) activateTab(btn.getAttribute("data-setup-go"));
+      });
 
       // ---- Calendar ----
       let calMode = "MONTH";
@@ -1280,15 +1361,77 @@
         await refreshSession();
       }
 
-      function portfolioUrls() {
-        return (document.getElementById("portfolio-input").value || "")
-          .split(/[\n,]/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s)).slice(0, 12);
+      let portfolioImages = [];
+      function parsePortfolio(raw) {
+        return String(raw || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
       }
-      function renderPortfolioPreview() {
-        const urls = portfolioUrls();
-        document.getElementById("portfolio-preview").innerHTML =
-          urls.map((u) => `<img loading="lazy" src="${escapeHtml(u)}" alt="Portfolio" />`).join("");
+      function renderPortfolioGrid() {
+        const grid = document.getElementById("portfolio-grid");
+        grid.innerHTML = portfolioImages.map((u, i) => `
+          <div class="portfolio-item">
+            <img loading="lazy" src="${escapeHtml(u)}" alt="Portfolio photo" />
+            <button type="button" class="remove" data-remove-portfolio="${i}" title="Remove">×</button>
+          </div>`).join("");
       }
+
+      const portfolioDrop = document.getElementById("portfolio-drop");
+      const portfolioFile = document.getElementById("portfolio-file");
+      const portfolioUploadStatus = document.getElementById("portfolio-upload-status");
+
+      portfolioDrop.addEventListener("click", () => portfolioFile.click());
+      portfolioDrop.addEventListener("dragover", (e) => { e.preventDefault(); portfolioDrop.classList.add("drag-over"); });
+      portfolioDrop.addEventListener("dragleave", () => portfolioDrop.classList.remove("drag-over"));
+      portfolioDrop.addEventListener("drop", (e) => {
+        e.preventDefault();
+        portfolioDrop.classList.remove("drag-over");
+        if (e.dataTransfer.files.length) uploadPortfolioFiles(e.dataTransfer.files);
+      });
+      portfolioFile.addEventListener("change", () => {
+        if (portfolioFile.files.length) uploadPortfolioFiles(portfolioFile.files);
+        portfolioFile.value = "";
+      });
+
+      async function uploadPortfolioFiles(fileList) {
+        const files = Array.from(fileList);
+        for (const file of files) {
+          if (portfolioImages.length >= 12) {
+            portfolioUploadStatus.textContent = "You can show up to 12 photos. Remove one to add more.";
+            break;
+          }
+          if (!file.type.startsWith("image/")) {
+            portfolioUploadStatus.textContent = `${file.name} is not an image — skipped.`;
+            continue;
+          }
+          portfolioUploadStatus.textContent = `Uploading ${file.name}…`;
+          try {
+            const form = new FormData();
+            form.append("image", file);
+            const res = await fetch("/api/workspace/portfolio/upload", { method: "POST", body: form });
+            if (res.status === 401) { window.location.href = "/auth/google"; return; }
+            const data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed");
+            portfolioImages = parsePortfolio(data.portfolioImages);
+            renderPortfolioGrid();
+            portfolioUploadStatus.textContent = "Photo added.";
+          } catch (err) {
+            portfolioUploadStatus.textContent = err.message || "Upload failed. Try again.";
+          }
+        }
+        await refreshSession();
+      }
+
+      document.getElementById("portfolio-grid").addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-remove-portfolio]");
+        if (!btn) return;
+        const idx = Number(btn.getAttribute("data-remove-portfolio"));
+        portfolioImages.splice(idx, 1);
+        renderPortfolioGrid();
+        portfolioUploadStatus.textContent = "Removing…";
+        try {
+          await saveConfigPatch({ portfolioImages: portfolioImages.join("\n") });
+          portfolioUploadStatus.textContent = "Photo removed.";
+        } catch (err) { portfolioUploadStatus.textContent = err.message; }
+      });
 
       function loadMyPage() {
         const ws = sessionState?.workspace;
@@ -1301,11 +1444,9 @@
         document.getElementById("mypage-qr").src =
           `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(bookingUrl)}`;
         setValue(mypageForm, "aboutText", cfg.aboutText);
-        setValue(mypageForm, "portfolioImages", cfg.portfolioImages);
-        renderPortfolioPreview();
+        portfolioImages = parsePortfolio(cfg.portfolioImages);
+        renderPortfolioGrid();
       }
-
-      document.getElementById("portfolio-input").addEventListener("input", renderPortfolioPreview);
 
       async function copyToClipboard(text, btn) {
         const original = btn.textContent;
@@ -1324,7 +1465,7 @@
         try {
           await saveConfigPatch({
             aboutText: document.getElementById("mypage-about").value,
-            portfolioImages: portfolioUrls().join("\n"),
+            portfolioImages: portfolioImages.join("\n"),
           });
           mypageStatus.textContent = "Saved. Your booking page is updated.";
         } catch (error) { mypageStatus.textContent = error.message; }
@@ -1536,6 +1677,8 @@
       }
 
       leadsBoard.addEventListener("click", (e) => {
+        const share = e.target.closest("[data-share]");
+        if (share) { copyToClipboard(share.getAttribute("data-share"), share); return; }
         const b = e.target.closest("button[data-action]");
         if (!b) return;
         runLeadAction(b.getAttribute("data-action"), b.getAttribute("data-lead-id"));

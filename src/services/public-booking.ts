@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, updateLeadRecord } from "./booking.js";
+import { countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, updateLeadRecord, updateBookingRecord } from "./booking.js";
 import { findWorkspaceByWorkspaceId } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -422,11 +422,43 @@ export async function submitPaymentScreenshot(
   const fileUrl =
     response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
 
+  // A screenshot at this stage means the client has paid the advance to lock
+  // the slot. Mark the lead "Advance Paid" / "Payment Received" and keep a
+  // note pointing at the proof so the artist can verify.
+  const noteLine = `Payment screenshot uploaded ${new Date().toISOString().slice(0, 10)}: ${fileUrl}`;
   await updateLeadRecord(workspace.email, tokens, leadId, (l) => ({
     ...l,
-    paymentStatus: "Screenshot Received",
+    paymentStatus: "Advance Paid",
     status: "Payment Received" as typeof l.status,
+    ownerNotes: l.ownerNotes ? `${l.ownerNotes}\n${noteLine}` : noteLine,
+    lastContactedAt: new Date().toISOString(),
   }));
+
+  // Keep the booking record in sync when the lead has already been confirmed.
+  if (lead.bookingId) {
+    try {
+      await updateBookingRecord(workspace.email, tokens, lead.bookingId, (b) => ({
+        ...b,
+        paymentStatus: "Advance Paid",
+      }));
+    } catch {
+      // Booking row may not exist yet — lead-level status is the source of truth.
+    }
+  }
+
+  // Audit trail so the upload is visible in the Conversations/activity view.
+  try {
+    await logInteractionForWorkspace(workspace.email, tokens, {
+      leadId,
+      direction: "Inbound",
+      channel: "Booking Page",
+      actor: lead.clientName || "Client",
+      message: `Uploaded payment screenshot. Proof: ${fileUrl}`,
+      aiSummary: "Client submitted payment proof — verify and confirm the slot.",
+    });
+  } catch {
+    // Logging is best-effort; never fail the client's upload because of it.
+  }
 
   return { ok: true, fileUrl };
 }

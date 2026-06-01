@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
 import { buildDefaultConfig } from "../defaults.js";
@@ -145,6 +146,59 @@ export async function updateWorkspaceConfig(
   await seedSpreadsheet(workspace.spreadsheetId, nextConfig, tokens, { includeSampleArtist: false });
   await saveWorkspace(workspace);
   return workspace;
+}
+
+// Uploads a portfolio image to the artist's Google Drive, makes it publicly
+// viewable, and appends a direct-render URL to config.portfolioImages so it
+// shows up immediately on the booking page. Returns the updated image list.
+export async function addPortfolioImage(
+  email: string,
+  tokens: Credentials,
+  file: { buffer: Buffer; mimeType: string; originalName: string },
+): Promise<{ imageUrl: string; portfolioImages: string }> {
+  const workspace = await findWorkspaceByEmail(email);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const existing = parsePortfolioList(workspace.config.portfolioImages);
+  if (existing.length >= 12) {
+    throw new Error("You can show up to 12 portfolio images. Remove one to add more.");
+  }
+
+  const { drive } = createGoogleClients(tokens);
+  const ext = (file.originalName.split(".").pop() || "jpg").toLowerCase();
+  const response = await drive.files.create({
+    requestBody: {
+      name: `portfolio-${nanoid(8)}.${ext}`,
+      mimeType: file.mimeType,
+      description: `Portfolio image for ${workspace.config.businessName || workspace.name}`,
+    },
+    media: { mimeType: file.mimeType, body: Readable.from(file.buffer) },
+    fields: "id",
+  });
+
+  const fileId = response.data.id;
+  if (!fileId) throw new Error("Image upload failed");
+
+  await drive.permissions.create({ fileId, requestBody: { role: "reader", type: "anyone" } });
+
+  // Direct-render URL that works inside an <img> tag for public Drive files.
+  const imageUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+  const nextList = [...existing, imageUrl];
+  const portfolioImages = nextList.join("\n");
+
+  workspace.config = { ...workspace.config, portfolioImages };
+  workspace.updatedAt = new Date().toISOString();
+  await seedSpreadsheet(workspace.spreadsheetId, workspace.config, tokens, { includeSampleArtist: false });
+  await saveWorkspace(workspace);
+
+  return { imageUrl, portfolioImages };
+}
+
+function parsePortfolioList(raw: string): string[] {
+  return String(raw || "")
+    .split(/[\n,]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
 export async function persistWorkspaceTokens(email: string, tokens: Credentials) {

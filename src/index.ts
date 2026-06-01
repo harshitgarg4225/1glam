@@ -2,6 +2,8 @@ import express from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import multer from "multer";
+import rateLimit from "express-rate-limit";
+import { ZodError } from "zod";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
@@ -64,6 +66,7 @@ import {
 } from "./services/contracts.js";
 import { sheetNames } from "./services/sheet-definitions.js";
 import {
+  addPortfolioImage,
   disconnectMetaConnection,
   getWorkspaceByEmail,
   persistWorkspaceTokens,
@@ -86,7 +89,35 @@ declare module "express-session" {
 }
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Image uploads (payment screenshots, portfolio) — images only, max 10 MB.
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_IMAGE_TYPES.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files (JPG, PNG, WEBP, HEIC) are allowed."));
+    }
+  },
+});
+
+// Throttle unauthenticated public endpoints to curb abuse / DoS.
+const publicWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please wait a minute and try again." },
+});
 
 app.use(
   express.json({
@@ -221,10 +252,10 @@ app.get("/api/public/:workspaceId/profile", async (req, res, next) => {
   }
 });
 
-app.post("/api/public/:workspaceId/book", async (req, res, next) => {
+app.post("/api/public/:workspaceId/book", publicWriteLimiter, async (req, res, next) => {
   try {
     const parsed = publicBookingSchema.parse(req.body);
-    const result = await createPublicBookingRequest(req.params.workspaceId, parsed);
+    const result = await createPublicBookingRequest(String(req.params.workspaceId), parsed);
     res.json({ ok: true, ...result });
   } catch (error) {
     next(error);
@@ -247,7 +278,13 @@ app.get("/api/public/:workspaceId/payment/:leadId", async (req, res, next) => {
 
 app.post(
   "/api/public/:workspaceId/payment/:leadId/screenshot",
-  upload.single("screenshot"),
+  publicWriteLimiter,
+  (req, res, next) => {
+    upload.single("screenshot")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
   async (req, res, next) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -402,6 +439,35 @@ app.post("/api/workspace/config", async (req, res, next) => {
   }
 });
 
+app.post(
+  "/api/workspace/portfolio/upload",
+  (req, res, next) => {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
+  async (req, res, next) => {
+    try {
+      if (!req.session.profile || !req.session.googleTokens) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      const result = await addPortfolioImage(req.session.profile.email, req.session.googleTokens, {
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 app.post("/api/workspace/protect-sheet", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
@@ -448,6 +514,16 @@ app.post("/api/team", async (req, res, next) => {
     if (!name) {
       return res.status(400).json({ error: "Artist name is required" });
     }
+    // The price multiplier feeds directly into quote math — reject anything
+    // that isn't a sane positive number so a typo can't corrupt pricing.
+    let priceMultiplier: number | undefined;
+    if (req.body.priceMultiplier !== undefined && req.body.priceMultiplier !== "") {
+      const parsedMultiplier = Number(req.body.priceMultiplier);
+      if (!Number.isFinite(parsedMultiplier) || parsedMultiplier <= 0 || parsedMultiplier > 10) {
+        return res.status(400).json({ error: "Price multiplier must be a number between 0 and 10." });
+      }
+      priceMultiplier = parsedMultiplier;
+    }
     const artist = await upsertArtist(req.session.profile.email, req.session.googleTokens, {
       artistId: typeof req.body.artistId === "string" ? req.body.artistId : undefined,
       name,
@@ -455,7 +531,7 @@ app.post("/api/team", async (req, res, next) => {
       email: req.body.email,
       city: req.body.city,
       skillLevel: req.body.skillLevel,
-      priceMultiplier: req.body.priceMultiplier !== undefined ? Number(req.body.priceMultiplier) : undefined,
+      priceMultiplier,
       luxuryEligible: req.body.luxuryEligible,
       primaryCalendarId: req.body.primaryCalendarId,
       active: req.body.active,
@@ -1889,9 +1965,24 @@ app.get("/legal/data-deletion", (_req, res) => {
   res.type("html").send(`<!doctype html><html><body><h1>1Glam Data Deletion</h1><p>Users can disconnect Meta integrations from within the app, which removes active channel access for that workspace. Meta-originated deletion callbacks are processed through the platform's data deletion endpoint, and connection records are marked disconnected per workspace.</p></body></html>`);
 });
 
-app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const message = error instanceof Error ? error.message : "Unexpected server error";
-  res.status(500).json({ error: message });
+app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // Always log the full error server-side for debugging.
+  console.error(`[error] ${req.method} ${req.path}`, error);
+
+  // Validation errors are safe to surface and help the user fix their input.
+  if (error instanceof ZodError) {
+    const first = error.issues[0];
+    const field = first?.path?.join(".");
+    return res.status(400).json({
+      error: field ? `${field}: ${first.message}` : first?.message || "Invalid request data.",
+    });
+  }
+
+  // Known, intentionally-thrown business errors carry user-safe messages.
+  // Anything else is treated as an internal fault and kept generic.
+  const message = error instanceof Error ? error.message : "";
+  const isUserSafe = Boolean(message) && message.length < 200 && !/\b(at |\/home\/|\/usr\/|node_modules|ECONN|ETIMEDOUT|ENOTFOUND)\b/.test(message);
+  res.status(500).json({ error: isUserSafe ? message : "Something went wrong on our end. Please try again." });
 });
 
 app.listen(appConfig.port, () => {

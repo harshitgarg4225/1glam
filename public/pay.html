@@ -94,6 +94,7 @@
 
       <a id="upi-btn" class="pay-btn hidden" href="#">Pay ₹<span id="upi-amount"></span> via UPI →</a>
       <p class="upi-id hidden" id="upi-id-row">UPI ID: <strong id="upi-id-text"></strong></p>
+      <p class="note hidden" id="no-upi-note" style="background:#FEF3C7;border:1px solid #FDE68A;color:#92400E;padding:12px 14px;border-radius:8px;">Please contact the artist directly to arrange your advance payment, then upload your payment screenshot below to confirm.</p>
 
       <div class="upload-section">
         <h3>Confirm your payment</h3>
@@ -155,6 +156,8 @@
         const idRow = document.getElementById("upi-id-row");
         document.getElementById("upi-id-text").textContent = d.upiId;
         idRow.classList.remove("hidden");
+      } else {
+        document.getElementById("no-upi-note").classList.remove("hidden");
       }
 
       document.getElementById("payment-card").classList.remove("hidden");
