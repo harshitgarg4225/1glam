@@ -16,6 +16,42 @@ export async function sendChannelMessage(input: {
   return sendWhatsAppMessage(input.connection, input.actorId, input.message);
 }
 
+// Sends an owner-initiated message the WhatsApp-compliant way. Business-initiated
+// WhatsApp messages outside the 24-hour customer-care window MUST use a
+// pre-approved template — so when a template is configured for this message type
+// we send through it. We fall back to free text only when no template is set
+// (still valid inside the 24h window) or on Instagram, where templates don't apply.
+export async function sendBusinessMessage(input: {
+  workspace: WorkspaceRecord;
+  connection: MetaChannelConnection;
+  channel: "Instagram" | "WhatsApp";
+  actorId: string;
+  message: string;
+  template?: { name?: string; lang?: string; params: string[] };
+}): Promise<{ via: "template" | "freetext" }> {
+  const templateName = String(input.template?.name || "").trim();
+  if (input.channel === "WhatsApp" && templateName) {
+    const phone = String(input.actorId).replace(/[^\d]/g, "");
+    await sendWhatsAppTemplate(
+      { accessToken: input.connection.accessToken, phoneNumberId: input.connection.phoneNumberId },
+      phone,
+      templateName,
+      String(input.template?.lang || "en"),
+      input.template?.params ?? [],
+    );
+    return { via: "template" };
+  }
+
+  await sendChannelMessage({
+    workspace: input.workspace,
+    connection: input.connection,
+    channel: input.channel,
+    actorId: input.actorId,
+    message: input.message,
+  });
+  return { via: "freetext" };
+}
+
 async function sendInstagramMessage(
   connection: MetaChannelConnection,
   recipientId: string,
