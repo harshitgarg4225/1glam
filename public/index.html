@@ -430,6 +430,9 @@
       .analytics-metric-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 8px; }
       .analytics-metric-value { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
 
+      .icon-btn { background: transparent; border: 1px solid transparent; border-radius: 8px; cursor: pointer; font-size: 18px; padding: 5px 8px; color: var(--text); transition: background 0.15s, border-color 0.15s; line-height: 1; }
+      .icon-btn:hover { background: var(--surface); border-color: var(--line); }
+
       @media (max-width: 640px) {
         .board:not(.list-mode) .board-col { flex: 0 0 calc(100vw - 72px); }
         .toast-shelf { bottom: 16px; right: 12px; left: 12px; }
@@ -449,6 +452,7 @@
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
           <a href="/auth/google" id="connect-link"><button class="button" type="button">Connect Google Account</button></a>
+          <button id="settings-icon-btn" class="requires-auth icon-btn" type="button" title="Settings" style="display:none;">⚙️</button>
           <button id="logout-button" class="button secondary" type="button" style="display:none;">Log out</button>
         </div>
       </header>
@@ -459,15 +463,14 @@
         <button class="tab-button" type="button" data-tab="bookings">Bookings</button>
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
         <button class="tab-button" type="button" data-tab="conversations">Messages</button>
+        <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
         <button class="tab-button" type="button" data-tab="mypage">My Page</button>
         <div class="tab-more-wrap">
           <button class="tab-button tab-more-trigger" type="button" id="tab-more-trigger">More ▾</button>
           <div class="tab-more-menu" id="tab-more-menu">
-            <button class="tab-more-item" type="button" data-tab="reviews">⭐ Reviews</button>
             <button class="tab-more-item" type="button" data-tab="analytics">📊 Insights</button>
             <button class="tab-more-item" type="button" data-tab="team">👥 Team</button>
             <button class="tab-more-item" type="button" data-tab="channels">🔗 Channels</button>
-            <button class="tab-more-item" type="button" data-tab="setup">⚙️ Settings</button>
           </div>
         </div>
       </nav>
@@ -1085,12 +1088,11 @@
 
       const tabMoreMenu = document.getElementById("tab-more-menu");
       const tabMoreTrigger = document.getElementById("tab-more-trigger");
-      const MORE_TABS = ["reviews", "analytics", "team", "channels", "setup"];
+      const MORE_TABS = ["analytics", "team", "channels"];
 
       function activateTab(name) {
         tabNav.querySelectorAll(".tab-button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
         tabMoreMenu.querySelectorAll(".tab-more-item").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
-        // Keep the "More" trigger highlighted when one of its tabs is showing.
         tabMoreTrigger.classList.toggle("active", MORE_TABS.includes(name));
         tabMoreMenu.classList.remove("open");
         document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.getAttribute("data-panel") === name));
@@ -1114,6 +1116,7 @@
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".tab-more-wrap")) tabMoreMenu.classList.remove("open");
       });
+      document.getElementById("settings-icon-btn")?.addEventListener("click", () => activateTab("setup"));
 
       function escapeHtml(value) {
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -2102,6 +2105,8 @@
         }
         logoutButton.style.display = "inline-flex";
         connectLink.style.display = "none";
+        const settingsIconBtn = document.getElementById("settings-icon-btn");
+        if (settingsIconBtn) settingsIconBtn.style.display = "inline-flex";
         const _initial = (payload.profile.name || "?")[0].toUpperCase();
         loginState.innerHTML = `
           <div style="display:flex;align-items:center;gap:10px;">
