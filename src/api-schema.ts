@@ -21,7 +21,7 @@ export const publicBookingSchema = z.object({
   clientWhatsApp: z.string().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
   clientInstagram: z.string().max(120).optional(),
   eventType: z.string().min(1).max(40),
-  eventDate: z.string().min(1).max(20),
+  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   eventTime: z.string().max(20).optional(),
   locationText: z.string().min(1).max(200),
   addons: z.string().max(500).optional(),

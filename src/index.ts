@@ -263,6 +263,9 @@ app.post("/api/public/:workspaceId/book", publicWriteLimiter, async (req, res, n
     const result = await createPublicBookingRequest(String(req.params.workspaceId), parsed);
     res.json({ ok: true, ...result });
   } catch (error) {
+    if (error instanceof Error && error.message === "Booking page not found") {
+      return res.status(404).json({ error: error.message });
+    }
     next(error);
   }
 });
@@ -533,8 +536,7 @@ app.post("/api/gmb/select", async (req, res, next) => {
 });
 
 // Lists the available document design themes for the picker.
-app.get("/api/document-templates", (req, res) => {
-  if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+app.get("/api/document-templates", (_req, res) => {
   res.json({ ok: true, templates: DOCUMENT_THEME_LIST });
 });
 
@@ -1635,10 +1637,11 @@ app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
 
 app.post("/webhooks/wati", async (req, res, next) => {
   try {
-    const parsed = normalizeWatiPayload(req.body as Record<string, unknown>);
-    if (!appConfig.watiWebhookSecret || parsed.secret !== appConfig.watiWebhookSecret) {
+    const rawSecret = String((req.body as Record<string, unknown>)?.secret ?? "");
+    if (!appConfig.watiWebhookSecret || rawSecret !== appConfig.watiWebhookSecret) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
+    const parsed = normalizeWatiPayload(req.body as Record<string, unknown>);
 
     const workspaceTokens = await getWorkspaceCredentials(parsed.workspaceEmail);
 
@@ -1677,10 +1680,11 @@ app.post("/webhooks/wati", async (req, res, next) => {
 
 app.post("/webhooks/manychat", async (req, res, next) => {
   try {
-    const parsed = normalizeManychatPayload(req.body as Record<string, unknown>);
-    if (!appConfig.manychatWebhookSecret || parsed.secret !== appConfig.manychatWebhookSecret) {
+    const rawSecret = String((req.body as Record<string, unknown>)?.secret ?? "");
+    if (!appConfig.manychatWebhookSecret || rawSecret !== appConfig.manychatWebhookSecret) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
+    const parsed = normalizeManychatPayload(req.body as Record<string, unknown>);
 
     const workspaceTokens = await getWorkspaceCredentials(parsed.workspaceEmail);
 
