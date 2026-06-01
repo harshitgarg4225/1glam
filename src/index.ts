@@ -1,6 +1,7 @@
 import express from "express";
 import session from "express-session";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
 import { appConfig } from "./config.js";
@@ -116,8 +117,68 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-app.get("/book/:workspaceId", (_req, res) => {
-  res.sendFile(path.join(process.cwd(), "public", "book.html"));
+// Booking page is served with per-artist Open Graph tags injected server-side
+// so shared links (WhatsApp, Instagram DM, Facebook) preview the artist's name,
+// intro, and first portfolio image. The template is read once at boot.
+const bookingPageTemplate = readFileSync(
+  path.join(process.cwd(), "public", "book.html"),
+  "utf8",
+);
+
+function escapeAttr(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function buildBookingMeta(
+  workspaceId: string,
+  profile: Awaited<ReturnType<typeof getPublicBusinessProfile>>,
+): string {
+  const url = `${appConfig.baseUrl}/book/${encodeURIComponent(workspaceId)}`;
+  const title = profile ? `Book with ${profile.businessName}` : "Book an Appointment";
+  const rawDesc =
+    profile && profile.aboutText
+      ? profile.aboutText
+      : "Check availability and request your booking date.";
+  const desc = rawDesc.length > 200 ? `${rawDesc.slice(0, 197)}…` : rawDesc;
+  const image = profile?.portfolioImages?.[0] || "";
+  return [
+    `<title>${escapeAttr(title)}</title>`,
+    `<meta name="description" content="${escapeAttr(desc)}" />`,
+    `<meta property="og:title" content="${escapeAttr(title)}" />`,
+    `<meta property="og:description" content="${escapeAttr(desc)}" />`,
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:url" content="${escapeAttr(url)}" />`,
+    image ? `<meta property="og:image" content="${escapeAttr(image)}" />` : "",
+    `<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}" />`,
+    `<meta name="twitter:title" content="${escapeAttr(title)}" />`,
+    `<meta name="twitter:description" content="${escapeAttr(desc)}" />`,
+    image ? `<meta name="twitter:image" content="${escapeAttr(image)}" />` : "",
+    `<meta name="theme-color" content="#C26B45" />`,
+  ]
+    .filter(Boolean)
+    .join("\n    ");
+}
+
+app.get("/book/:workspaceId", async (req, res, next) => {
+  try {
+    let profile: Awaited<ReturnType<typeof getPublicBusinessProfile>> = null;
+    try {
+      profile = await getPublicBusinessProfile(req.params.workspaceId);
+    } catch {
+      profile = null;
+    }
+    const html = bookingPageTemplate.replace(
+      "<!--OG_META-->",
+      buildBookingMeta(req.params.workspaceId, profile),
+    );
+    res.type("html").send(html);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/public/:workspaceId/profile", async (req, res, next) => {
