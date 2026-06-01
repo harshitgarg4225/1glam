@@ -267,6 +267,13 @@
       details.collapse > .collapse-body { padding-bottom: 20px; }
 
       .tab-sep { width: 1px; align-self: center; height: 20px; background: var(--line); margin: 0 8px; }
+      .tab-more-wrap { position: relative; margin-left: auto; display: flex; align-items: stretch; }
+      .tab-more-menu { position: absolute; right: 0; top: 100%; margin-top: 2px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07); min-width: 180px; padding: 6px 0; display: none; z-index: 300; }
+      .tab-more-menu.open { display: block; }
+      .tab-more-item { display: block; width: 100%; text-align: left; border: none; background: transparent; cursor: pointer; padding: 10px 16px; font: inherit; font-size: 14px; color: var(--text); transition: background 0.1s; }
+      .tab-more-item:hover { background: var(--surface); }
+      .tab-more-item.active { color: var(--accent); font-weight: 600; }
+      @media (max-width: 640px) { .tab-more-wrap { margin-left: 0; } }
       .button.primary-action { width: 100%; margin-top: 10px; }
       .gallery-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-top: 12px; }
       .gallery-preview img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
@@ -329,6 +336,18 @@
       /* ─── Button states ─── */
       .button:disabled, .button.loading { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
+      /* ─── Modal ─── */
+      .modal-overlay { position: fixed; inset: 0; background: rgba(28,25,23,0.5); display: none; align-items: center; justify-content: center; z-index: 9000; padding: 20px; }
+      .modal-overlay.open { display: flex; }
+      .modal { background: var(--card); border-radius: var(--radius-lg); box-shadow: 0 24px 64px rgba(0,0,0,0.24); width: min(440px, 100%); max-height: 85vh; overflow: auto; padding: 24px; animation: toast-in 0.2s cubic-bezier(.22,.68,0,1.2); }
+      .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+      .modal-close { width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--surface); cursor: pointer; font-size: 20px; line-height: 1; color: var(--muted); }
+      .modal-close:hover { background: var(--line); color: var(--text); }
+      .notify-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+      .notify-row-info { min-width: 0; }
+      .notify-row-info strong { font-size: 14px; display: block; }
+      .notify-row-info span { font-size: 12.5px; color: var(--muted); }
+
       /* ─── Card hover elevation ─── */
       .card { transition: box-shadow 0.15s, transform 0.12s; }
       .card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.06); transform: translateY(-1px); }
@@ -374,6 +393,26 @@
       .empty-icon { width: 58px; height: 58px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 26px; margin: 0 auto 14px; }
       .empty-state h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
       .empty-state p { color: var(--muted); font-size: 14px; max-width: 320px; margin: 0 auto 20px; line-height: 1.6; }
+
+      /* ─── Upcoming jobs (home screen) ─── */
+      .upcoming-list { display: flex; flex-direction: column; gap: 8px; }
+      .upcoming-item { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); transition: box-shadow 0.15s, border-color 0.15s; }
+      .upcoming-item:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.07); border-color: var(--accent); }
+      .upcoming-date { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 92px; padding-right: 14px; border-right: 1px solid var(--line); flex-shrink: 0; }
+      .upcoming-day { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; text-align: center; line-height: 1.2; }
+      .upcoming-rel { font-size: 11.5px; color: var(--accent); font-weight: 600; margin-top: 2px; }
+      .upcoming-body { flex: 1; min-width: 0; }
+      .upcoming-client { font-weight: 600; font-size: 14.5px; }
+      .upcoming-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+      .upcoming-meta a { color: var(--accent); text-decoration: none; }
+      .upcoming-meta a:hover { text-decoration: underline; }
+      .upcoming-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+      .upcoming-amt { font-weight: 700; font-size: 14px; }
+      @media (max-width: 640px) {
+        .upcoming-item { flex-wrap: wrap; gap: 8px; }
+        .upcoming-date { min-width: 0; border-right: none; border-bottom: none; padding-right: 0; flex-direction: row; gap: 6px; align-items: baseline; }
+        .upcoming-right { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+      }
 
       /* ─── User avatar in topbar ─── */
       .user-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -421,12 +460,16 @@
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
         <button class="tab-button" type="button" data-tab="conversations">Messages</button>
         <button class="tab-button" type="button" data-tab="mypage">My Page</button>
-        <span class="tab-sep"></span>
-        <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
-        <button class="tab-button" type="button" data-tab="analytics">Insights</button>
-        <button class="tab-button" type="button" data-tab="team">Team</button>
-        <button class="tab-button" type="button" data-tab="channels">Channels</button>
-        <button class="tab-button" type="button" data-tab="setup">Settings</button>
+        <div class="tab-more-wrap">
+          <button class="tab-button tab-more-trigger" type="button" id="tab-more-trigger">More ▾</button>
+          <div class="tab-more-menu" id="tab-more-menu">
+            <button class="tab-more-item" type="button" data-tab="reviews">⭐ Reviews</button>
+            <button class="tab-more-item" type="button" data-tab="analytics">📊 Insights</button>
+            <button class="tab-more-item" type="button" data-tab="team">👥 Team</button>
+            <button class="tab-more-item" type="button" data-tab="channels">🔗 Channels</button>
+            <button class="tab-more-item" type="button" data-tab="setup">⚙️ Settings</button>
+          </div>
+        </div>
       </nav>
 
       <!-- Landing -->
@@ -449,9 +492,14 @@
           <p class="muted" style="margin-bottom:14px;font-size:14px;">A few quick steps and you’re ready to take bookings. Clients can’t book until these are done.</p>
           <div id="setup-steps" class="setup-steps"></div>
         </div>
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">What's next</div>
+          <h2 id="upcoming-title">Your upcoming jobs</h2>
+          <div id="upcoming-jobs"></div>
+        </div>
         <div class="panel section">
           <div class="kicker">Overview</div>
-          <h2>Today at a glance</h2>
+          <h2>At a glance</h2>
           <div class="stat-grid">
             <div class="stat"><strong id="stat-leads">0</strong> Active leads</div>
             <div class="stat"><strong id="stat-bookings">0</strong> Confirmed bookings</div>
@@ -596,6 +644,7 @@
         <div class="panel section" style="margin-bottom:20px;">
           <div class="kicker">Your Artists</div>
           <h2 id="team-form-title">Add Team Member</h2>
+          <p class="muted" style="margin:-4px 0 14px;font-size:13.5px;">Add your hair & makeup specialists with their WhatsApp numbers. When a booking is confirmed, brief them in one tap from the <strong>Bookings</strong> tab — or turn on auto-alerts in <strong>Settings</strong> so they're notified automatically.</p>
           <form id="team-form">
             <input type="hidden" name="artistId" id="team-artist-id" />
             <div class="section-grid">
@@ -850,6 +899,20 @@
                 <div><label for="bookingConfirmTemplateLang">Request Template Language</label><input id="bookingConfirmTemplateLang" name="bookingConfirmTemplateLang" placeholder="en" /></div>
                 <div><label for="approvalTemplate">Approval Notification Template</label><input id="approvalTemplate" name="approvalTemplate" placeholder="booking_approved" /></div>
                 <div><label for="approvalTemplateLang">Approval Template Language</label><input id="approvalTemplateLang" name="approvalTemplateLang" placeholder="en" /></div>
+                <div>
+                  <label for="notifyTeamOnBooking">Auto-notify Team on Booking</label>
+                  <select id="notifyTeamOnBooking" name="notifyTeamOnBooking"><option>Yes</option><option>No</option></select>
+                </div>
+                <div><label for="teamNotifyTemplate">Team Alert Template</label><input id="teamNotifyTemplate" name="teamNotifyTemplate" placeholder="team_booking_alert" /></div>
+                <div><label for="teamNotifyTemplateLang">Team Alert Template Language</label><input id="teamNotifyTemplateLang" name="teamNotifyTemplateLang" placeholder="en" /></div>
+                <div><label for="quoteTemplate">Quote Send Template</label><input id="quoteTemplate" name="quoteTemplate" placeholder="send_quote" /></div>
+                <div><label for="quoteTemplateLang">Quote Template Language</label><input id="quoteTemplateLang" name="quoteTemplateLang" placeholder="en" /></div>
+                <div><label for="invoiceTemplate">Invoice Send Template</label><input id="invoiceTemplate" name="invoiceTemplate" placeholder="send_invoice" /></div>
+                <div><label for="invoiceTemplateLang">Invoice Template Language</label><input id="invoiceTemplateLang" name="invoiceTemplateLang" placeholder="en" /></div>
+                <div><label for="contractTemplate">Contract Send Template</label><input id="contractTemplate" name="contractTemplate" placeholder="send_contract" /></div>
+                <div><label for="contractTemplateLang">Contract Template Language</label><input id="contractTemplateLang" name="contractTemplateLang" placeholder="en" /></div>
+                <div><label for="collectionTemplate">Payment Reminder Template</label><input id="collectionTemplate" name="collectionTemplate" placeholder="payment_reminder" /></div>
+                <div><label for="collectionTemplateLang">Payment Reminder Language</label><input id="collectionTemplateLang" name="collectionTemplateLang" placeholder="en" /></div>
                 <div><label for="reminderTemplate">Pre-Event Reminder Template</label><input id="reminderTemplate" name="reminderTemplate" placeholder="event_reminder" /></div>
                 <div><label for="reminderTemplateLang">Reminder Template Language</label><input id="reminderTemplateLang" name="reminderTemplateLang" placeholder="en" /></div>
                 <div><label for="reminderDaysBefore">Remind X Days Before Event</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
@@ -861,6 +924,9 @@
                 WhatsApp only allows automated business-initiated messages via an <strong>approved template</strong>. Create templates in Meta Business Manager.<br>
                 <strong>Booking Request Template</strong> — sent when client submits the booking page. Variables: {{1}} client name, {{2}} event type, {{3}} event date.<br>
                 <strong>Approval Notification Template</strong> — sent when you click Approve on a lead. Variables: {{1}} client name, {{2}} event date, {{3}} quoted price.<br>
+                <strong>Team Alert Template</strong> — auto-sent to your assigned specialist (or whole active team if none is assigned) the moment a booking is confirmed. Variables: {{1}} artist name, {{2}} event type, {{3}} event date, {{4}} venue. Turn off with "Auto-notify Team on Booking". No template? Use the one-tap <strong>Notify team</strong> button on each booking — it works instantly with no setup.<br>
+                <strong>Quote / Invoice / Contract Send Templates</strong> — used when you tap "Send" on a quote, invoice, or contract. Variables: {{1}} client name, {{2}} event type, {{3}} event date, {{4}} document link. <strong>Payment Reminder Template</strong> — used for advance/balance reminders. Variables: {{1}} client name, {{2}} advance/balance, {{3}} amount, {{4}} event date.<br>
+                <em>These are optional. If you leave them blank, the message is sent as normal text — which WhatsApp only delivers within 24 hours of the client's last message. Set a template to send reliably any time.</em><br>
                 <strong>Pre-Event Reminder Template</strong> — auto-sent at 8 AM UTC each day. Variables: {{1}} client name, {{2}} event date, {{3}} event time. Set "Remind X Days Before" to control when (e.g. 7,1 = one week and one day before).<br>
                 <strong>Review Request Template</strong> — auto-sent the set number of days after the event. Variables: {{1}} client name, {{2}} business name, {{3}} Google review link. Leave "Auto Review Request" blank to turn it off.<br>
                 Clients also get a "Confirm on WhatsApp" button on the booking page, which works without any template.
@@ -941,6 +1007,18 @@
     </main>
     <div class="toast-shelf" id="toast-shelf"></div>
 
+    <!-- Notify-team modal: one-tap WhatsApp briefs to freelance specialists -->
+    <div class="modal-overlay" id="notify-team-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 style="margin:0;">Notify your team</h3>
+          <button class="modal-close" type="button" id="notify-team-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 14px;">Tap a specialist to open WhatsApp with their booking brief ready to send — straight from your number.</p>
+        <div id="notify-team-list"></div>
+      </div>
+    </div>
+
     <script>
       const configForm = document.getElementById("config-form");
       const leadForm = document.getElementById("lead-form");
@@ -1005,8 +1083,16 @@
         { key: "Lost", label: "Lost" },
       ];
 
+      const tabMoreMenu = document.getElementById("tab-more-menu");
+      const tabMoreTrigger = document.getElementById("tab-more-trigger");
+      const MORE_TABS = ["reviews", "analytics", "team", "channels", "setup"];
+
       function activateTab(name) {
         tabNav.querySelectorAll(".tab-button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
+        tabMoreMenu.querySelectorAll(".tab-more-item").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
+        // Keep the "More" trigger highlighted when one of its tabs is showing.
+        tabMoreTrigger.classList.toggle("active", MORE_TABS.includes(name));
+        tabMoreMenu.classList.remove("open");
         document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.getAttribute("data-panel") === name));
         if (name === "calendar") renderCalendar();
         if (name === "conversations") loadConversations();
@@ -1016,8 +1102,17 @@
         if (name === "mypage") loadMyPage();
       }
       tabNav.addEventListener("click", (e) => {
+        if (e.target.closest("#tab-more-trigger")) {
+          tabMoreMenu.classList.toggle("open");
+          return;
+        }
+        const item = e.target.closest(".tab-more-item");
+        if (item) { activateTab(item.getAttribute("data-tab")); return; }
         const b = e.target.closest(".tab-button");
         if (b) activateTab(b.getAttribute("data-tab"));
+      });
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".tab-more-wrap")) tabMoreMenu.classList.remove("open");
       });
 
       function escapeHtml(value) {
@@ -1070,6 +1165,15 @@
       function formatDate(value) {
         if (!value) return "—";
         try { return new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }); } catch { return value; }
+      }
+      // Friendly event-date label: "Mon, 15 Jun" (or with year if not this year).
+      function formatDay(value) {
+        if (!value) return "";
+        const d = new Date(value);
+        if (isNaN(d)) return value;
+        const opts = { weekday: "short", day: "numeric", month: "short" };
+        if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+        try { return d.toLocaleDateString("en-IN", opts); } catch { return value; }
       }
       function formatMoney(value) { return `₹${Number(value || 0).toLocaleString("en-IN")}`; }
       function pillClass(status) {
@@ -1188,7 +1292,7 @@
               </div>
             </div>
             <div class="card-meta">
-              ${escapeHtml(lead.eventType)} · ${escapeHtml(lead.eventDate)}${lead.eventTime ? " " + escapeHtml(lead.eventTime) : ""}<br>
+              ${escapeHtml(lead.eventType)} · ${escapeHtml(formatDay(lead.eventDate))}${lead.eventTime ? " " + escapeHtml(lead.eventTime) : ""}<br>
               ${escapeHtml(lead.locationText)}${lead.outstationFlag === "Yes" ? " · <strong>Outstation</strong>" : ""}
             </div>
             <div class="card-price" style="margin-top:6px;">
@@ -1255,7 +1359,7 @@
               <div class="lead-avatar">${escapeHtml(initial)}</div>
               <div class="lead-list-body">
                 <div class="lead-list-name">${escapeHtml(lead.clientName)}</div>
-                <div class="lead-list-sub">${escapeHtml(lead.eventType)} · ${escapeHtml(lead.eventDate)}${lead.locationText ? " · " + escapeHtml(lead.locationText) : ""}</div>
+                <div class="lead-list-sub">${escapeHtml(lead.eventType)} · ${escapeHtml(formatDay(lead.eventDate))}${lead.locationText ? " · " + escapeHtml(lead.locationText) : ""}</div>
               </div>
               <div class="lead-list-right">
                 <div class="lead-list-price">${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)}</div>
@@ -1330,8 +1434,8 @@
         bookingsBody.innerHTML = bookings.map((booking) => `
           <tr>
             <td><strong>${escapeHtml(booking.bookingId)}</strong><br><span class="muted">${formatDate(booking.bookedAt)}</span></td>
-            <td>${escapeHtml(booking.clientName)}<br><span class="muted">${escapeHtml(booking.clientWhatsApp)}</span></td>
-            <td>${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(booking.eventDate)}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
+            <td>${escapeHtml(booking.clientName)}<br><span class="muted">${escapeHtml(booking.clientWhatsApp)}</span><br><span class="muted" style="font-size:12px;">💇 ${booking.assignedArtist ? escapeHtml(booking.assignedArtist) : "<em>Unassigned</em>"}</span></td>
+            <td>${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(formatDay(booking.eventDate))}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
             <td>${formatMoney(booking.finalPrice)}<br><span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br><span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span></td>
             <td>
               <span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span><br>
@@ -1340,6 +1444,7 @@
             </td>
             <td>
               <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
+                <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Notify team</button>
                 ${booking.invoiceUrl
                   ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open invoice</a>`
                   : `<button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Create invoice</button>`}
@@ -1368,10 +1473,56 @@
         const leads = session.dashboard?.leads || [];
         const bookings = session.dashboard?.bookings || [];
         updateStats(leads, bookings);
+        renderUpcoming(bookings);
         renderSnapshot(leads, bookings);
         renderLeads();
         renderBookings();
         renderSetupChecklist();
+      }
+
+      // The home screen answers "what do I have coming up?" — the first thing a
+      // makeup artist wants when she opens the app (Booksy-style). Shows the next
+      // few confirmed jobs by date, with the assigned specialist and a one-tap
+      // map link for the venue she's travelling to.
+      function renderUpcoming(bookings) {
+        const box = document.getElementById("upcoming-jobs");
+        const title = document.getElementById("upcoming-title");
+        if (!box) return;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const upcoming = (bookings || [])
+          .filter((b) => { const d = new Date(b.eventDate); return !isNaN(d) && d >= today; })
+          .sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate))
+          .slice(0, 5);
+        if (!upcoming.length) {
+          title.textContent = "Your upcoming jobs";
+          box.innerHTML = `<div class="empty-state" style="padding:32px 16px;"><div class="empty-icon">🗓️</div><h3>Nothing booked yet</h3><p>Confirmed bookings show up here so you always know what's next. Share your booking link to start filling your calendar.</p></div>`;
+          return;
+        }
+        title.textContent = `Your next ${upcoming.length} job${upcoming.length > 1 ? "s" : ""}`;
+        box.innerHTML = `<div class="upcoming-list">${upcoming.map((b) => {
+          const days = daysUntil(b.eventDate);
+          const when = days === 0 ? "Today" : days === 1 ? "Tomorrow" : `in ${days} days`;
+          const mapHref = b.venue ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.venue)}` : "";
+          const paid = pillClass(b.paymentStatus || b.status);
+          return `
+            <div class="upcoming-item">
+              <div class="upcoming-date">
+                <span class="upcoming-day">${escapeHtml(formatDay(b.eventDate))}</span>
+                <span class="upcoming-rel">${when}</span>
+              </div>
+              <div class="upcoming-body">
+                <div class="upcoming-client">${escapeHtml(b.clientName)} · <span class="muted">${escapeHtml(b.eventType)}</span></div>
+                <div class="upcoming-meta">
+                  ${b.eventTime ? "🕒 " + escapeHtml(b.eventTime) + " · " : ""}💇 ${b.assignedArtist ? escapeHtml(b.assignedArtist) : "<em>Unassigned</em>"}
+                </div>
+                ${b.venue ? `<div class="upcoming-meta">📍 ${mapHref ? `<a href="${mapHref}" target="_blank" rel="noreferrer">${escapeHtml(b.venue)}</a>` : escapeHtml(b.venue)}</div>` : ""}
+              </div>
+              <div class="upcoming-right">
+                <span class="${paid}" style="font-size:11px;">${escapeHtml(b.paymentStatus || b.status)}</span>
+                <span class="upcoming-amt">${formatMoney(b.finalPrice)}</span>
+              </div>
+            </div>`;
+        }).join("")}</div>`;
       }
 
       // Onboarding readiness — surfaces the few things a new artist must do
@@ -2108,7 +2259,15 @@
         // Lead action buttons (card primary buttons and menu items)
         const b = e.target.closest("button[data-action], .card-menu-item[data-action]");
         if (b) {
-          runLeadAction(b.getAttribute("data-action"), b.getAttribute("data-lead-id"), b);
+          const action = b.getAttribute("data-action");
+          const leadId = b.getAttribute("data-lead-id");
+          // Declining a lead is destructive — confirm so a mis-tap doesn't lose a client.
+          if (action === "no") {
+            const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
+            const who = lead ? lead.clientName : "this lead";
+            if (!confirm(`Decline ${who}? They'll be moved to Lost. This can't be undone from here.`)) return;
+          }
+          runLeadAction(action, leadId, b);
           return;
         }
 
@@ -2177,7 +2336,69 @@
         await runLeadAction(action, id, null);
       });
 
+      // ─── Notify team: one-tap WhatsApp briefs (zero setup) ───
+      const notifyTeamModal = document.getElementById("notify-team-modal");
+      function closeTeamNotify() { notifyTeamModal.classList.remove("open"); }
+      document.getElementById("notify-team-close").addEventListener("click", closeTeamNotify);
+      notifyTeamModal.addEventListener("click", (e) => { if (e.target === notifyTeamModal) closeTeamNotify(); });
+
+      function teamBrief(booking, artistName) {
+        const biz = sessionState?.workspace?.config?.businessName || "";
+        const when = `${booking.eventDate}${booking.eventTime ? " at " + booking.eventTime : ""}`;
+        const lines = [
+          `Hi ${artistName} 👋`,
+          ``,
+          `New booking confirmed — please confirm your availability:`,
+          `💄 ${booking.eventType}`,
+          `📅 ${when}`,
+          `📍 ${booking.venue || "Venue TBC"}`,
+          `👤 Client: ${booking.clientName}`,
+          ``,
+          biz ? `— ${biz}` : "",
+        ];
+        return lines.filter((l) => l !== null).join("\n");
+      }
+
+      function openTeamNotify(bookingId) {
+        const booking = (sessionState?.dashboard?.bookings || []).find((b) => b.bookingId === bookingId);
+        if (!booking) return;
+        const list = document.getElementById("notify-team-list");
+        const active = (teamArtists || []).filter((a) => a.active !== "No");
+        const assigned = String(booking.assignedArtist || "").trim();
+        // Show the assigned specialist first; if none assigned, show whole active team.
+        const targets = assigned ? active.filter((a) => a.name === assigned) : active;
+        const pool = targets.length ? targets : active;
+
+        if (!pool.length) {
+          list.innerHTML = `<div class="empty-state" style="padding:24px 8px;"><div class="empty-icon">👥</div><h3>No team members yet</h3><p>Add your hair & makeup specialists in the Team tab, then brief them here in one tap.</p></div>`;
+        } else {
+          list.innerHTML = pool.map((a) => {
+            const phone = String(a.whatsApp || "").replace(/\D/g, "");
+            const brief = encodeURIComponent(teamBrief(booking, a.name));
+            const waLink = phone ? `https://wa.me/${phone}?text=${brief}` : "";
+            return `
+              <div class="notify-row">
+                <div class="notify-row-info">
+                  <strong>${escapeHtml(a.name)}</strong>
+                  <span>${a.skillLevel ? escapeHtml(a.skillLevel) : ""}${a.whatsApp ? " · " + escapeHtml(a.whatsApp) : " · no WhatsApp number"}</span>
+                </div>
+                ${waLink
+                  ? `<a class="button small" href="${waLink}" target="_blank" rel="noreferrer" data-notify-sent>Brief on WhatsApp</a>`
+                  : `<span class="muted" style="font-size:12px;">Add number</span>`}
+              </div>`;
+          }).join("");
+        }
+        notifyTeamModal.classList.add("open");
+      }
+      document.getElementById("notify-team-list").addEventListener("click", (e) => {
+        if (e.target.closest("[data-notify-sent]")) {
+          toast("WhatsApp opened — hit send to brief them.", "success");
+        }
+      });
+
       bookingsBody.addEventListener("click", async (e) => {
+        const notifyBtn = e.target.closest("[data-notify-team]");
+        if (notifyBtn) { openTeamNotify(notifyBtn.getAttribute("data-notify-team")); return; }
         const b = e.target.closest("button[data-booking-action]");
         if (!b) return;
         const bookingId = b.getAttribute("data-booking-id");

@@ -57,7 +57,7 @@ import {
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
 import { generateConversationReply } from "./services/grok.js";
-import { sendChannelMessage } from "./services/messaging.js";
+import { sendChannelMessage, sendBusinessMessage } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { generateInvoiceDocument, generateQuoteDocument } from "./services/documents.js";
 import {
@@ -795,12 +795,17 @@ app.post("/api/leads/:leadId/send-quote", async (req, res, next) => {
     }
 
     const message = buildQuoteShareMessage(workspace, currentLead);
-    await sendChannelMessage({
+    await sendBusinessMessage({
       workspace,
       connection: channelContext.connection,
       channel: channelContext.channel,
       actorId: channelContext.actorId,
       message,
+      template: {
+        name: workspace.config.quoteTemplate,
+        lang: workspace.config.quoteTemplateLang,
+        params: [currentLead.clientName, currentLead.eventType, currentLead.eventDate, currentLead.quoteUrl || ""],
+      },
     });
 
     currentLead = await updateLeadRecord(
@@ -918,12 +923,17 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
     }
 
     const message = buildInvoiceShareMessage(workspace, currentBooking);
-    await sendChannelMessage({
+    await sendBusinessMessage({
       workspace,
       connection: channelContext.connection,
       channel: channelContext.channel,
       actorId: channelContext.actorId,
       message,
+      template: {
+        name: workspace.config.invoiceTemplate,
+        lang: workspace.config.invoiceTemplateLang,
+        params: [currentBooking.clientName, currentBooking.eventType, currentBooking.eventDate, currentBooking.invoiceUrl || ""],
+      },
     });
 
     await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
@@ -1049,12 +1059,17 @@ app.post("/api/bookings/:bookingId/send-contract", async (req, res, next) => {
     }
 
     const message = buildContractShareMessage(workspace, currentBooking);
-    await sendChannelMessage({
+    await sendBusinessMessage({
       workspace,
       connection: channelContext.connection,
       channel: channelContext.channel,
       actorId: channelContext.actorId,
       message,
+      template: {
+        name: workspace.config.contractTemplate,
+        lang: workspace.config.contractTemplateLang,
+        params: [currentBooking.clientName, currentBooking.eventType, currentBooking.eventDate, currentBooking.contractUrl || ""],
+      },
     });
 
     await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
@@ -1165,12 +1180,17 @@ app.post("/api/bookings/:bookingId/send-review", async (req, res, next) => {
     }
 
     const message = buildReviewRequestMessage(workspace, booking);
-    await sendChannelMessage({
+    await sendBusinessMessage({
       workspace,
       connection: channelContext.connection,
       channel: channelContext.channel,
       actorId: channelContext.actorId,
       message,
+      template: {
+        name: workspace.config.reviewTemplate,
+        lang: workspace.config.reviewTemplateLang,
+        params: [booking.clientName, workspace.config.businessName || workspace.name, workspace.config.googleReviewLink || ""],
+      },
     });
 
     await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
@@ -1356,12 +1376,18 @@ app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
 
     const kind = req.body?.kind === "balance" ? "balance" : "advance";
     const message = buildCollectionReminderMessage(workspace, booking, kind);
-    await sendChannelMessage({
+    const dueAmount = kind === "balance" ? booking.balanceDue : booking.advanceAmount;
+    await sendBusinessMessage({
       workspace,
       connection: channelContext.connection,
       channel: channelContext.channel,
       actorId: channelContext.actorId,
       message,
+      template: {
+        name: workspace.config.collectionTemplate,
+        lang: workspace.config.collectionTemplateLang,
+        params: [booking.clientName, kind, String(dueAmount ?? ""), booking.eventDate],
+      },
     });
 
     await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
