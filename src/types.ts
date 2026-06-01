@@ -74,6 +74,11 @@ export type WorkspaceConfig = PricingRuleConfig & {
   serviceOtherAddons: string;
   bookingTimeSlots: string;
   bookingWaitlistEnabled: string;
+  portfolioImages: string;
+  aboutText: string;
+  reviewRequestDaysAfter: string;
+  reviewTemplate: string;
+  reviewTemplateLang: string;
 };
 
 export type StoredGoogleTokens = {

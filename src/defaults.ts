@@ -75,5 +75,10 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     serviceOtherAddons: "",
     bookingTimeSlots: "",
     bookingWaitlistEnabled: "No",
+    portfolioImages: "",
+    aboutText: "",
+    reviewRequestDaysAfter: "",
+    reviewTemplate: "",
+    reviewTemplateLang: "en",
   };
 }

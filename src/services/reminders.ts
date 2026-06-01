@@ -1,6 +1,6 @@
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { listActiveBookings, markBookingReminderSent } from "./booking.js";
+import { listActiveBookings, markBookingReminderSent, recordReviewRequest } from "./booking.js";
 import { listWorkspaces } from "./database.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
@@ -17,6 +17,7 @@ export function startReminderScheduler() {
 
   const tick = () => {
     runReminderJob().catch((err) => console.error("[reminders] job failed:", err));
+    runReviewRequestJob().catch((err) => console.error("[reviews] job failed:", err));
     setTimeout(tick, 24 * 60 * 60 * 1000);
   };
 
@@ -94,6 +95,84 @@ async function runReminderJob() {
   }
 
   console.log("[reminders] daily job complete");
+}
+
+// Automated post-event review requests. For each booking whose event was N days
+// ago (N = reviewRequestDaysAfter), send the review template once and record it
+// in the Reviews sheet. Deduplicated via the booking's remindersSent marker.
+async function runReviewRequestJob() {
+  const REVIEW_MARKER = "review";
+  const workspaces = await listWorkspaces();
+
+  for (const workspace of workspaces) {
+    const daysAfter = parseFirstPositiveInt(workspace.config.reviewRequestDaysAfter);
+    if (daysAfter === null) continue;
+
+    const templateName = String(workspace.config.reviewTemplate || "").trim();
+    if (!templateName) continue;
+
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    const connectionCanSend =
+      whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    if (!connectionCanSend && !envCanSend) continue;
+
+    const targetDate = addDaysToIso(-daysAfter);
+
+    try {
+      const tokens = await getWorkspaceCredentials(workspace.email);
+      const bookings = await listActiveBookings(workspace.email, tokens);
+
+      for (const booking of bookings) {
+        if (!booking.clientWhatsApp || booking.eventDate !== targetDate) continue;
+
+        const alreadySent = (booking.remindersSent || "")
+          .split(",")
+          .map((s) => s.trim())
+          .includes(REVIEW_MARKER);
+        if (alreadySent) continue;
+
+        const recipientPhone = booking.clientWhatsApp.replace(/[^\d]/g, "");
+        const reviewLink = String(workspace.config.googleReviewLink || "");
+
+        try {
+          await sendWhatsAppTemplate(
+            { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+            recipientPhone,
+            templateName,
+            String(workspace.config.reviewTemplateLang || "en"),
+            [booking.clientName, workspace.config.businessName || workspace.name, reviewLink],
+          );
+
+          await markBookingReminderSent(workspace.email, tokens, booking.bookingId, REVIEW_MARKER);
+          await recordReviewRequest(workspace.email, tokens, {
+            leadId: booking.leadId,
+            clientName: booking.clientName,
+            eventDate: booking.eventDate,
+            type: "request",
+          });
+
+          await logInteractionForWorkspace(workspace.email, tokens, {
+            leadId: booking.leadId,
+            direction: "Outbound",
+            channel: "WhatsApp",
+            actor: recipientPhone,
+            message: `Automated review request template "${templateName}" sent`,
+            aiSummary: `Automated post-event review request (T+${daysAfter})`,
+          });
+        } catch (err) {
+          console.error(`[reviews] send failed for booking ${booking.bookingId}:`, err);
+        }
+      }
+    } catch (err) {
+      console.error(`[reviews] workspace ${workspace.email} failed:`, err);
+    }
+  }
+}
+
+function parseFirstPositiveInt(raw: string): number | null {
+  const n = parseInt(String(raw || "").split(",")[0]?.trim(), 10);
+  return !isNaN(n) && n > 0 ? n : null;
 }
 
 function parseReminderDays(raw: string): number[] {

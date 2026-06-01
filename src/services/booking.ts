@@ -504,6 +504,57 @@ export async function markBookingReminderSent(
   });
 }
 
+// Append (or update) a row in the Reviews sheet so both manual and automated
+// review requests show up in the owner's Reviews tab. Deduplicated by leadId.
+export async function recordReviewRequest(
+  email: string,
+  tokens: Credentials,
+  input: { leadId: string; clientName: string; eventDate: string; type: "request" | "reminder" },
+) {
+  const workspace = await getRequiredWorkspace(email);
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.reviews}!A2:I`,
+  });
+  const rows = response.data.values ?? [];
+  const existingIndex = rows.findIndex((row) => row[1] === input.leadId);
+  const now = new Date().toISOString();
+
+  if (existingIndex >= 0) {
+    const row = [...rows[existingIndex]];
+    row[4] = input.type === "request" ? now : row[4] || "";
+    row[5] = input.type === "reminder" ? now : row[5] || "";
+    row[8] = row[8] || "Sent from 1Glam";
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A${existingIndex + 2}:I${existingIndex + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[...row]] },
+    });
+    return;
+  }
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.reviews}!A:I`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        `REV_${nanoid(10)}`,
+        input.leadId,
+        input.clientName,
+        input.eventDate,
+        input.type === "request" ? now : "",
+        input.type === "reminder" ? now : "",
+        "No",
+        "No",
+        "Sent from 1Glam",
+      ]],
+    },
+  });
+}
+
 export async function updateBookingRecord(
   email: string,
   tokens: Credentials,

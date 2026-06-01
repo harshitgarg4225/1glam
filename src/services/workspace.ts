@@ -288,6 +288,11 @@ async function seedSpreadsheet(
     ["service_other_addons", config.serviceOtherAddons, "Addons for Other"],
     ["booking_time_slots", config.bookingTimeSlots, "Available time slots, comma-separated (e.g. 09:00,11:00,14:00,16:00)"],
     ["booking_waitlist_enabled", config.bookingWaitlistEnabled, "Allow waitlist when date is fully booked (Yes/No)"],
+    ["portfolio_images", config.portfolioImages, "Portfolio image URLs shown on booking page, comma-separated"],
+    ["about_text", config.aboutText, "Short intro/bio shown on your public booking page"],
+    ["review_request_days_after", config.reviewRequestDaysAfter, "Days after event to auto-send a review request (blank = off)"],
+    ["review_template", config.reviewTemplate, "Approved WhatsApp template name for automated review requests"],
+    ["review_template_lang", config.reviewTemplateLang, "Language code for the review template (e.g. en)"],
   ];
 
   const artistsRows = [[
@@ -518,6 +523,11 @@ async function loadConfigFromSpreadsheet(
       serviceOtherAddons: String(values.service_other_addons ?? base.serviceOtherAddons),
       bookingTimeSlots: String(values.booking_time_slots ?? base.bookingTimeSlots),
       bookingWaitlistEnabled: String(values.booking_waitlist_enabled ?? base.bookingWaitlistEnabled),
+      portfolioImages: String(values.portfolio_images ?? base.portfolioImages),
+      aboutText: String(values.about_text ?? base.aboutText),
+      reviewRequestDaysAfter: String(values.review_request_days_after ?? base.reviewRequestDaysAfter),
+      reviewTemplate: String(values.review_template ?? base.reviewTemplate),
+      reviewTemplateLang: String(values.review_template_lang ?? base.reviewTemplateLang),
     });
 
     return parsed.success ? parsed.data : base;

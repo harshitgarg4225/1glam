@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Book an Appointment</title>
+    <meta property="og:title" content="Book an Appointment" />
+    <meta property="og:description" content="Check availability and request your booking." />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#C26B45" />
     <style>
       :root {
         --bg: #FAF8F5;
@@ -88,6 +92,32 @@
         font-size: 24px; margin-bottom: 16px;
       }
       .footer { text-align: center; margin-top: 22px; font-size: 12px; color: var(--muted); }
+
+      /* Intro + portfolio */
+      .about { font-size: 15px; color: var(--muted); line-height: 1.65; margin: 14px 0 20px; }
+      .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 24px; border-radius: var(--radius); overflow: hidden; }
+      .gallery img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--surface); cursor: zoom-in; transition: opacity 0.15s; }
+      .gallery img:hover { opacity: 0.92; }
+      @media (max-width: 480px) { .gallery { grid-template-columns: repeat(2, 1fr); } }
+      .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50; cursor: zoom-out; }
+      .lightbox.open { display: flex; }
+      .lightbox img { max-width: 100%; max-height: 90vh; border-radius: 10px; }
+
+      /* Visual availability calendar */
+      .cal { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; background: var(--card); }
+      .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+      .cal-head .m { font-weight: 600; font-size: 15px; }
+      .cal-nav { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); width: 36px; height: 36px; cursor: pointer; font-size: 17px; line-height: 1; color: var(--text); }
+      .cal-nav:hover:not(:disabled) { border-color: var(--accent); }
+      .cal-nav:disabled { opacity: 0.3; cursor: not-allowed; }
+      .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+      .cal-dow { text-align: center; font-size: 11px; color: var(--muted); padding: 4px 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+      .cal-day { aspect-ratio: 1 / 1; border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); display: flex; align-items: center; justify-content: center; }
+      .cal-day:hover:not(:disabled):not(.empty) { background: var(--accent-soft); border-color: var(--accent); }
+      .cal-day:disabled { color: #cbc4ba; cursor: not-allowed; }
+      .cal-day.empty { cursor: default; }
+      .cal-day.selected { background: var(--accent); color: #fff; font-weight: 600; }
+      .selected-date { margin-top: 10px; font-size: 14px; }
     </style>
   </head>
   <body>
@@ -111,6 +141,8 @@
         <p class="kicker">Book an appointment</p>
         <h1 id="biz-name"></h1>
         <p class="brand-meta" id="biz-meta"></p>
+        <p id="about" class="about hidden"></p>
+        <div id="gallery" class="gallery hidden"></div>
 
         <h2>Choose a service</h2>
         <div class="services" id="services"></div>
@@ -124,8 +156,10 @@
 
         <form id="form">
           <div>
-            <label for="eventDate">Event date</label>
-            <input type="date" id="eventDate" required />
+            <label>Event date</label>
+            <div class="cal" id="calendar"></div>
+            <input type="hidden" id="eventDate" />
+            <div class="selected-date muted" id="selected-date">No date selected yet.</div>
           </div>
 
           <div id="time-slots-wrap" class="hidden">
@@ -173,6 +207,8 @@
 
       <div class="footer">Powered by 1Glam Booking OS</div>
     </div>
+
+    <div class="lightbox" id="lightbox"><img id="lightbox-img" alt="" /></div>
 
     <script>
       const workspaceId = window.location.pathname.split("/").filter(Boolean)[1] || "";
@@ -226,6 +262,12 @@
         if (profile.instagramHandle) metaBits.push("@" + profile.instagramHandle.replace(/^@/, ""));
         el("biz-meta").textContent = metaBits.join("  ·  ");
 
+        if (profile.aboutText) {
+          el("about").textContent = profile.aboutText;
+          show("about");
+        }
+        renderGallery(profile.portfolioImages || []);
+
         eventTypesData = profile.eventTypes || [];
         const container = el("services");
         container.innerHTML = "";
@@ -247,13 +289,7 @@
         });
 
         if (availability) {
-          const dateInput = el("eventDate");
-          if (availability.minDate) dateInput.min = availability.minDate;
-          if (availability.maxDate) dateInput.max = availability.maxDate;
-          dateInput.addEventListener("change", () => {
-            const message = dateUnavailableReason(dateInput.value);
-            el("status").textContent = message || "";
-          });
+          initCalendar(availability);
 
           // Time slots
           const slots = availability.timeSlots || [];
@@ -290,6 +326,93 @@
           return h12 + (m ? ":" + String(m).padStart(2, "0") : "") + " " + ampm;
         } catch { return t; }
       }
+
+      // ---- Portfolio gallery + lightbox ----
+      function renderGallery(images) {
+        const g = el("gallery");
+        if (!images || !images.length) { hide("gallery"); return; }
+        g.innerHTML = images
+          .map((src) => '<img loading="lazy" src="' + String(src).replace(/"/g, "&quot;") + '" alt="Portfolio work" />')
+          .join("");
+        show("gallery");
+      }
+      el("gallery").addEventListener("click", (e) => {
+        const img = e.target.closest("img");
+        if (!img) return;
+        el("lightbox-img").src = img.src;
+        el("lightbox").classList.add("open");
+      });
+      el("lightbox").addEventListener("click", () => el("lightbox").classList.remove("open"));
+
+      // ---- Visual availability calendar ----
+      let calState = null;
+      const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+      function isoOf(y, m, d) {
+        return y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      }
+      function isDisabledDate(iso, avail) {
+        if (avail.minDate && iso < avail.minDate) return true;
+        if (avail.maxDate && iso > avail.maxDate) return true;
+        const weekday = new Date(iso + "T00:00:00Z").getUTCDay();
+        if ((avail.offWeekdays || []).includes(weekday)) return true;
+        if ((avail.blockedDates || []).includes(iso)) return true;
+        return false;
+      }
+      function initCalendar(avail) {
+        const start = avail.minDate ? new Date(avail.minDate + "T00:00:00Z") : new Date();
+        calState = { y: start.getUTCFullYear(), m: start.getUTCMonth(), avail };
+        renderCal();
+      }
+      function renderCal() {
+        if (!calState) return;
+        const { y, m, avail } = calState;
+        const startDow = new Date(Date.UTC(y, m, 1)).getUTCDay();
+        const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+        const selected = el("eventDate").value;
+
+        const minD = avail.minDate ? new Date(avail.minDate + "T00:00:00Z") : null;
+        const maxD = avail.maxDate ? new Date(avail.maxDate + "T00:00:00Z") : null;
+        const prevDisabled = minD && (y < minD.getUTCFullYear() || (y === minD.getUTCFullYear() && m <= minD.getUTCMonth()));
+        const nextDisabled = maxD && (y > maxD.getUTCFullYear() || (y === maxD.getUTCFullYear() && m >= maxD.getUTCMonth()));
+
+        let cells = "";
+        for (let i = 0; i < startDow; i++) cells += '<button type="button" class="cal-day empty" disabled></button>';
+        for (let d = 1; d <= daysInMonth; d++) {
+          const iso = isoOf(y, m, d);
+          const disabled = isDisabledDate(iso, avail);
+          const sel = iso === selected ? " selected" : "";
+          cells += '<button type="button" class="cal-day' + sel + '" data-iso="' + iso + '"' + (disabled ? " disabled" : "") + ">" + d + "</button>";
+        }
+        el("calendar").innerHTML =
+          '<div class="cal-head">' +
+            '<button type="button" class="cal-nav" data-cal-step="-1"' + (prevDisabled ? " disabled" : "") + ">&#8249;</button>" +
+            '<span class="m">' + MONTHS[m] + " " + y + "</span>" +
+            '<button type="button" class="cal-nav" data-cal-step="1"' + (nextDisabled ? " disabled" : "") + ">&#8250;</button>" +
+          "</div>" +
+          '<div class="cal-grid">' + DOW.map((d) => '<div class="cal-dow">' + d + "</div>").join("") + cells + "</div>";
+      }
+      el("calendar").addEventListener("click", (e) => {
+        const step = e.target.closest("[data-cal-step]");
+        if (step && !step.disabled && calState) {
+          let m = calState.m + Number(step.getAttribute("data-cal-step"));
+          let y = calState.y;
+          if (m < 0) { m = 11; y--; } else if (m > 11) { m = 0; y++; }
+          calState.y = y; calState.m = m;
+          renderCal();
+          return;
+        }
+        const day = e.target.closest(".cal-day[data-iso]");
+        if (!day || day.disabled) return;
+        const iso = day.getAttribute("data-iso");
+        el("eventDate").value = iso;
+        const dt = new Date(iso + "T00:00:00Z");
+        el("selected-date").textContent = "Selected: " + dt.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+        el("selected-date").classList.remove("muted");
+        el("status").textContent = "";
+        renderCal();
+      });
 
       function renderServiceDetail(type) {
         const detail = el("service-detail");
@@ -348,6 +471,11 @@
 
         if (!selectedEventType) {
           statusEl.textContent = "Please choose a service above.";
+          return;
+        }
+
+        if (!el("eventDate").value) {
+          statusEl.textContent = "Please pick an available date from the calendar.";
           return;
         }
 

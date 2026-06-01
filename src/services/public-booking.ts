@@ -37,6 +37,8 @@ export type PublicBusinessProfile = {
   ownerWhatsApp: string;
   advancePercentage: number;
   upiId: string;
+  aboutText: string;
+  portfolioImages: string[];
   eventTypes: PublicEventType[];
   availability: PublicAvailability;
 };
@@ -188,9 +190,19 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
     ownerWhatsApp: sanitizePhone(config.ownerWhatsApp),
     advancePercentage: Number(config.advancePercentage) || 0,
     upiId: config.upiId || "",
+    aboutText: String(config.aboutText || ""),
+    portfolioImages: parseImageList(config.portfolioImages),
     eventTypes,
     availability: buildAvailability(config),
   };
+}
+
+function parseImageList(raw: string): string[] {
+  return String(raw || "")
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter((s) => /^https?:\/\//i.test(s))
+    .slice(0, 12);
 }
 
 export async function getPublicBusinessProfile(workspaceId: string): Promise<PublicBusinessProfile | null> {
