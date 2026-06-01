@@ -266,6 +266,14 @@
       details.collapse[open] > summary::after { content: "−"; }
       details.collapse > .collapse-body { padding-bottom: 20px; }
 
+      .tab-sep { width: 1px; align-self: center; height: 20px; background: var(--line); margin: 0 8px; }
+      .button.primary-action { width: 100%; margin-top: 10px; }
+      .gallery-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-top: 12px; }
+      .gallery-preview img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+      .qr-img { width: 168px; height: 168px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); }
+      .more-summary { cursor: pointer; font-size: 13px; color: var(--accent); list-style: none; font-weight: 500; }
+      .more-summary::-webkit-details-marker { display: none; }
+
       @media (max-width: 980px) {
         .section-grid, .form-grid, .mini-grid, .stat-grid { grid-template-columns: 1fr; }
         .shell { width: calc(100vw - 16px); }
@@ -280,8 +288,8 @@
     <main class="shell">
       <header class="panel topbar">
         <div class="brand">
-          <span class="kicker">Private Luxury Booking Infrastructure</span>
-          <span class="brand-title">1Glam Booking OS</span>
+          <span class="kicker">Your booking workspace</span>
+          <span class="brand-title">1Glam</span>
         </div>
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
@@ -291,26 +299,27 @@
       </header>
 
       <nav class="tabs requires-auth" id="tab-nav">
-        <button class="tab-button active" type="button" data-tab="dashboard">Dashboard</button>
-        <button class="tab-button" type="button" data-tab="leads">Leads</button>
+        <button class="tab-button active" type="button" data-tab="dashboard">Today</button>
+        <button class="tab-button" type="button" data-tab="leads">Requests</button>
         <button class="tab-button" type="button" data-tab="bookings">Bookings</button>
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
-        <button class="tab-button" type="button" data-tab="conversations">Conversations</button>
-        <button class="tab-button" type="button" data-tab="team">Team</button>
+        <button class="tab-button" type="button" data-tab="conversations">Messages</button>
+        <button class="tab-button" type="button" data-tab="mypage">My Page</button>
+        <span class="tab-sep"></span>
         <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
-        <button class="tab-button" type="button" data-tab="analytics">Analytics</button>
+        <button class="tab-button" type="button" data-tab="analytics">Insights</button>
+        <button class="tab-button" type="button" data-tab="team">Team</button>
         <button class="tab-button" type="button" data-tab="channels">Channels</button>
-        <button class="tab-button" type="button" data-tab="setup">Setup</button>
+        <button class="tab-button" type="button" data-tab="setup">Settings</button>
       </nav>
 
       <!-- Landing -->
       <section id="landing" class="panel section">
-        <div class="kicker">Owner Onboarding</div>
-        <h1>A booking OS that lives in your own Google account.</h1>
+        <div class="kicker">Welcome</div>
+        <h1>Run your makeup bookings, beautifully simple.</h1>
         <p class="lead">
-          Sign in with Google. We provision your private booking sheet, a tentative calendar, and a premium
-          control surface — a visual lead pipeline, calendar, team management, and Instagram/WhatsApp
-          conversations — without exposing platform code.
+          Sign in with Google to get your own booking page, a calendar that stays in sync, and one tidy place
+          to handle every request, payment, and message. Your data lives in your own Google account.
         </p>
       </section>
 
@@ -319,7 +328,7 @@
       <!-- Dashboard -->
       <section class="tab-panel active" data-panel="dashboard">
         <div class="panel section">
-          <div class="kicker">Operator View</div>
+          <div class="kicker">Overview</div>
           <h2>Today at a glance</h2>
           <div class="stat-grid">
             <div class="stat"><strong id="stat-leads">0</strong> Active leads</div>
@@ -353,16 +362,23 @@
               </div>
               <div><label for="eventDate">Event Date</label><input id="eventDate" name="eventDate" type="date" required /></div>
               <div><label for="eventTime">Event Time</label><input id="eventTime" name="eventTime" type="time" /></div>
-              <div class="wide"><label for="locationText">Location Text</label><input id="locationText" name="locationText" required /></div>
-              <div><label for="distanceKm">Distance (km)</label><input id="distanceKm" name="distanceKm" type="number" placeholder="Auto from Google Maps" /></div>
-              <div><label for="travelTimeMin">Travel Time (min)</label><input id="travelTimeMin" name="travelTimeMin" type="number" placeholder="Auto from Google Maps" /></div>
-              <div>
-                <label for="profileTier">Profile Tier</label>
-                <select id="profileTier" name="profileTier"><option>Low</option><option selected>Mid</option><option>High</option></select>
-              </div>
-              <div><label for="followers">Followers</label><input id="followers" name="followers" type="number" value="0" /></div>
-              <div class="wide"><label for="clientTags">Client Tags</label><input id="clientTags" name="clientTags" placeholder="LUXURY_BRIDE,HIGH_INTENT" /></div>
+              <div class="wide"><label for="locationText">Location / Venue</label><input id="locationText" name="locationText" required /></div>
             </div>
+            <details class="collapse" style="margin-top:14px;">
+              <summary>Advanced — pricing &amp; travel (optional)</summary>
+              <div class="collapse-body">
+                <div class="section-grid">
+                  <div><label for="distanceKm">Distance (km)</label><input id="distanceKm" name="distanceKm" type="number" placeholder="Auto from Google Maps" /></div>
+                  <div><label for="travelTimeMin">Travel Time (min)</label><input id="travelTimeMin" name="travelTimeMin" type="number" placeholder="Auto from Google Maps" /></div>
+                  <div>
+                    <label for="profileTier">Profile Tier</label>
+                    <select id="profileTier" name="profileTier"><option>Low</option><option selected>Mid</option><option>High</option></select>
+                  </div>
+                  <div><label for="followers">Followers</label><input id="followers" name="followers" type="number" value="0" /></div>
+                  <div class="wide"><label for="clientTags">Client Tags</label><input id="clientTags" name="clientTags" placeholder="LUXURY_BRIDE,HIGH_INTENT" /></div>
+                </div>
+              </div>
+            </details>
             <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Create Lead</button></div>
             <div class="status" id="lead-status"></div>
           </form>
@@ -545,11 +561,63 @@
         </div>
       </section>
 
-      <!-- Setup -->
+      <!-- My Page -->
+      <section class="tab-panel" data-panel="mypage">
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">Your booking page</div>
+          <h2>Share &amp; get bookings</h2>
+          <p class="muted" style="margin-bottom:16px;font-size:14px;">This is the link clients use to see your work and request a date. Requests land in your <strong>Requests</strong> tab.</p>
+          <div class="mini-card">
+            <div class="kicker">Your link</div>
+            <div class="filter-bar" style="margin:8px 0 0;">
+              <input type="text" id="mypage-link" class="grow" readonly />
+              <button class="button secondary" type="button" id="copy-mypage-link">Copy</button>
+              <a class="button secondary" id="preview-mypage-link" target="_blank" rel="noreferrer">Preview</a>
+            </div>
+          </div>
+          <div class="mini-grid" style="margin-top:14px;">
+            <div class="mini-card">
+              <div class="kicker">Put it on Instagram</div>
+              <p class="muted" style="margin:8px 0;font-size:13px;">Paste this into your Instagram bio (Edit Profile → Website / Links) so followers can book in one tap.</p>
+              <div class="action-row" style="flex-direction:column;align-items:stretch;">
+                <input type="text" id="mypage-bio" readonly />
+                <button class="button secondary small" type="button" id="copy-mypage-bio" style="margin-top:8px;align-self:flex-start;">Copy bio link</button>
+              </div>
+            </div>
+            <div class="mini-card" style="text-align:center;">
+              <div class="kicker" style="text-align:left;">QR code</div>
+              <p class="muted" style="margin:8px 0;font-size:13px;text-align:left;">Add to flyers, cards, or your story.</p>
+              <img id="mypage-qr" class="qr-img" alt="Booking page QR code" />
+            </div>
+          </div>
+        </div>
+
+        <form id="mypage-form" class="panel section">
+          <div class="kicker">Make it yours</div>
+          <h2>Portfolio &amp; intro</h2>
+          <div class="section-grid">
+            <div class="wide">
+              <label for="mypage-about">About you</label>
+              <textarea id="mypage-about" name="aboutText" placeholder="A warm line or two about your style and experience. Shown at the top of your booking page."></textarea>
+            </div>
+            <div class="wide">
+              <label for="portfolio-input">Portfolio image links (one per line)</label>
+              <textarea id="portfolio-input" name="portfolioImages" placeholder="https://your-image-1.jpg&#10;https://your-image-2.jpg" style="min-height:120px;"></textarea>
+              <p class="muted" style="margin-top:6px;font-size:13px;">Paste direct image links (e.g. from Google Drive “share”, Imgur, or your website). Up to 12 are shown as a grid on your page.</p>
+              <div id="portfolio-preview" class="gallery-preview"></div>
+            </div>
+          </div>
+          <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save my page</button></div>
+          <div class="status" id="mypage-status"></div>
+          <p class="muted" style="margin-top:10px;font-size:13px;">Edit your services, prices, and available dates in <strong>Settings</strong>.</p>
+        </form>
+      </section>
+
+      <!-- Settings -->
       <section class="tab-panel" data-panel="setup">
         <form id="config-form" class="panel section">
-          <div class="kicker">Luxury Owner Setup</div>
-          <h2>Configuration</h2>
+          <div class="kicker">Settings</div>
+          <h2>Business settings</h2>
 
           <details class="collapse" open>
             <summary>Business &amp; Contact</summary>
@@ -622,12 +690,16 @@
                 <div><label for="reminderTemplate">Pre-Event Reminder Template</label><input id="reminderTemplate" name="reminderTemplate" placeholder="event_reminder" /></div>
                 <div><label for="reminderTemplateLang">Reminder Template Language</label><input id="reminderTemplateLang" name="reminderTemplateLang" placeholder="en" /></div>
                 <div><label for="reminderDaysBefore">Remind X Days Before Event</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
+                <div><label for="reviewRequestDaysAfter">Auto Review Request (days after event)</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
+                <div><label for="reviewTemplate">Review Request Template</label><input id="reviewTemplate" name="reviewTemplate" placeholder="review_request" /></div>
+                <div><label for="reviewTemplateLang">Review Template Language</label><input id="reviewTemplateLang" name="reviewTemplateLang" placeholder="en" /></div>
               </div>
               <p class="muted" style="margin-top:12px;font-size:13px;">
                 WhatsApp only allows automated business-initiated messages via an <strong>approved template</strong>. Create templates in Meta Business Manager.<br>
                 <strong>Booking Request Template</strong> — sent when client submits the booking page. Variables: {{1}} client name, {{2}} event type, {{3}} event date.<br>
                 <strong>Approval Notification Template</strong> — sent when you click Approve on a lead. Variables: {{1}} client name, {{2}} event date, {{3}} quoted price.<br>
                 <strong>Pre-Event Reminder Template</strong> — auto-sent at 8 AM UTC each day. Variables: {{1}} client name, {{2}} event date, {{3}} event time. Set "Remind X Days Before" to control when (e.g. 7,1 = one week and one day before).<br>
+                <strong>Review Request Template</strong> — auto-sent the set number of days after the event. Variables: {{1}} client name, {{2}} business name, {{3}} Google review link. Leave "Auto Review Request" blank to turn it off.<br>
                 Clients also get a "Confirm on WhatsApp" button on the booking page, which works without any template.
               </p>
             </div>
@@ -695,6 +767,8 @@
           <input type="hidden" name="profileHighMultiplier" value="1.25" />
           <input type="hidden" name="profileHighMinFollowers" value="10000" />
           <input type="hidden" name="qrImageUrl" value="" />
+          <input type="hidden" name="portfolioImages" value="" />
+          <input type="hidden" name="aboutText" value="" />
           <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save Owner Configuration</button></div>
           <div class="status" id="form-status"></div>
         </form>
@@ -740,6 +814,7 @@
         if (name === "team") loadTeam();
         if (name === "reviews") loadReviews();
         if (name === "analytics") loadAnalytics();
+        if (name === "mypage") loadMyPage();
       }
       tabNav.addEventListener("click", (e) => {
         const b = e.target.closest(".tab-button");
@@ -787,43 +862,58 @@
         return opts.join("");
       }
 
+      // The one obvious next step for a lead, based on where it is in the pipeline.
+      function primaryActionFor(lead) {
+        switch (lead.status) {
+          case "New": return { action: "yes", label: "Approve & quote" };
+          case "Awaiting Client": return { action: "confirm", label: "Confirm booking" };
+          case "Confirmed": return { action: "advance", label: "Mark advance paid" };
+          case "Payment Received": return { action: "full", label: "Mark paid in full" };
+          default: return null;
+        }
+      }
+
       function leadCard(lead) {
         const editValue = lead.finalApprovedPrice || lead.initialAiPrice || 0;
         const reply = escapeHtml(lead.suggestedReply || "");
+        const primary = primaryActionFor(lead);
+        const primaryBtn = primary
+          ? `<button class="button small primary-action" data-action="${primary.action}" data-lead-id="${lead.leadId}">${primary.label}</button>`
+          : "";
         return `
           <div class="card" draggable="true" data-card-lead-id="${lead.leadId}">
             <div class="card-name">${escapeHtml(lead.clientName)}</div>
             <div class="card-meta">
               ${escapeHtml(lead.eventType)} · ${escapeHtml(lead.eventDate)}${lead.eventTime ? " " + escapeHtml(lead.eventTime) : ""}<br>
-              ${escapeHtml(lead.locationText)} · ${escapeHtml(lead.source)}<br>
-              <span class="pill ${pillClass(lead.scarcityTag)}" style="margin-top:6px;">${escapeHtml(lead.scarcityTag || "Open")} demand</span>
+              ${escapeHtml(lead.locationText)} · ${escapeHtml(lead.source)}
             </div>
-            <div class="card-price">${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)} <span class="muted" style="font-weight:400;">(AI ${formatMoney(lead.initialAiPrice)})</span></div>
+            <div class="card-price">${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)} <span class="muted" style="font-weight:400;">AI ${formatMoney(lead.initialAiPrice)}</span></div>
+            ${primaryBtn}
             <div class="assign-row">
               <select data-assign-lead-id="${lead.leadId}">${assignOptions(lead.assignedArtist)}</select>
             </div>
             <details>
-              <summary>Actions &amp; details</summary>
-              <p class="card-meta">${escapeHtml(lead.aiInsight || "AI insight pending")}</p>
-              <div class="action-row" style="margin-top:8px;">
-                <button class="button tiny" data-action="yes" data-lead-id="${lead.leadId}">YES</button>
-                <button class="button tiny secondary" data-action="confirm" data-lead-id="${lead.leadId}" ${lead.status !== "Awaiting Client" ? "disabled" : ""}>Confirm</button>
-                <button class="button tiny secondary" data-action="advance" data-lead-id="${lead.leadId}" ${lead.status !== "Confirmed" ? "disabled" : ""}>Advance Paid</button>
-                <button class="button tiny secondary" data-action="full" data-lead-id="${lead.leadId}" ${lead.status !== "Confirmed" && lead.status !== "Payment Received" ? "disabled" : ""}>Paid Full</button>
+              <summary class="more-summary">More options</summary>
+              ${lead.aiInsight ? `<p class="card-meta" style="margin-top:8px;">${escapeHtml(lead.aiInsight)}</p>` : ""}
+              <div class="action-row" style="margin-top:10px;flex-direction:column;align-items:stretch;">
+                <label style="margin:0 0 4px;">Quoted price</label>
+                <div class="action-row">
+                  <input data-edit-input="${lead.leadId}" type="number" value="${editValue}" style="max-width:130px;" />
+                  <button class="button tiny secondary" data-action="edit" data-lead-id="${lead.leadId}">Update</button>
+                </div>
               </div>
-              <div class="action-row" style="margin-top:8px;">
-                <input data-edit-input="${lead.leadId}" type="number" value="${editValue}" style="max-width:120px;" />
-                <button class="button tiny secondary" data-action="edit" data-lead-id="${lead.leadId}">Edit Price</button>
-                <button class="button tiny secondary" data-action="no" data-lead-id="${lead.leadId}">No</button>
-              </div>
-              <div class="action-row" style="margin-top:8px;flex-direction:column;align-items:stretch;">
+              <div class="action-row" style="margin-top:10px;flex-direction:column;align-items:stretch;">
+                <label style="margin:0 0 4px;">Reply to client</label>
                 <input data-reply-input="${lead.leadId}" type="text" value="${reply}" />
-                <button class="button tiny secondary" style="margin-top:6px;" data-action="reply" data-lead-id="${lead.leadId}">Send Reply</button>
+                <button class="button tiny secondary" style="margin-top:6px;" data-action="reply" data-lead-id="${lead.leadId}">Send reply</button>
               </div>
-              <div class="action-row" style="margin-top:8px;align-items:center;">
-                <button class="button tiny secondary" data-action="quote" data-lead-id="${lead.leadId}">Quote</button>
-                <button class="button tiny secondary" data-action="send-quote" data-lead-id="${lead.leadId}">Send Quote</button>
+              <div class="action-row" style="margin-top:10px;align-items:center;">
+                <button class="button tiny secondary" data-action="quote" data-lead-id="${lead.leadId}">Make quote</button>
+                <button class="button tiny secondary" data-action="send-quote" data-lead-id="${lead.leadId}">Send quote</button>
                 ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer">Open</a>` : ""}
+              </div>
+              <div class="action-row" style="margin-top:12px;">
+                <button class="button tiny secondary" data-action="no" data-lead-id="${lead.leadId}">Decline lead</button>
               </div>
             </details>
           </div>`;
@@ -889,21 +979,24 @@
             <td><span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span></td>
             <td>
               <div class="action-row" style="align-items:center;flex-wrap:wrap;">
-                <button class="button small secondary" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Generate Invoice</button>
-                <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send Invoice</button>
-                ${booking.invoiceUrl ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer">Open Invoice</a>` : ""}
+                <button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Invoice</button>
+                <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask for review</button>
+                ${booking.invoiceUrl ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer">Open invoice</a>` : ""}
               </div>
-              <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
-                <button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create Contract</button>
-                <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send Contract</button>
-                <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync Contract</button>
-                ${booking.contractUrl ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer">Open Contract</a>` : `<span class="muted">${escapeHtml(booking.contractStatus || "Draft")}</span>`}
-              </div>
-              <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
-                <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Send Review Request</button>
-                <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Advance Reminder</button>
-                <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance Reminder</button>
-              </div>
+              <details style="margin-top:10px;">
+                <summary class="more-summary">More actions</summary>
+                <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
+                  <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send invoice</button>
+                  <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Advance reminder</button>
+                  <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance reminder</button>
+                </div>
+                <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
+                  <button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create contract</button>
+                  <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
+                  <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync</button>
+                  ${booking.contractUrl ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer">Open contract</a>` : `<span class="muted">${escapeHtml(booking.contractStatus || "Draft")}</span>`}
+                </div>
+              </details>
             </td>
           </tr>`).join("");
       }
@@ -1133,6 +1226,68 @@
             <span>${escapeHtml(e.type)}</span><span style="font-weight:600;">${formatMoney(e.revenue)}</span>
           </div>`).join("") || "<p style='color:var(--muted);font-size:14px;'>No data yet.</p>";
       }
+
+      // ---- My Page (booking page sharing + portfolio) ----
+      const mypageForm = document.getElementById("mypage-form");
+      const mypageStatus = document.getElementById("mypage-status");
+
+      // Save a partial config change without re-entering the whole Settings form:
+      // merge the patch onto the current config and post the full object.
+      async function saveConfigPatch(patch) {
+        const base = sessionState?.workspace?.config || {};
+        await postJson("/api/workspace/config", { ...base, ...patch });
+        await refreshSession();
+      }
+
+      function portfolioUrls() {
+        return (document.getElementById("portfolio-input").value || "")
+          .split(/[\n,]/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s)).slice(0, 12);
+      }
+      function renderPortfolioPreview() {
+        const urls = portfolioUrls();
+        document.getElementById("portfolio-preview").innerHTML =
+          urls.map((u) => `<img loading="lazy" src="${escapeHtml(u)}" alt="Portfolio" />`).join("");
+      }
+
+      function loadMyPage() {
+        const ws = sessionState?.workspace;
+        if (!ws) return;
+        const cfg = ws.config || {};
+        const bookingUrl = `${window.location.origin}/book/${encodeURIComponent(ws.workspaceId)}`;
+        document.getElementById("mypage-link").value = bookingUrl;
+        document.getElementById("preview-mypage-link").href = bookingUrl;
+        document.getElementById("mypage-bio").value = bookingUrl;
+        document.getElementById("mypage-qr").src =
+          `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(bookingUrl)}`;
+        setValue(mypageForm, "aboutText", cfg.aboutText);
+        setValue(mypageForm, "portfolioImages", cfg.portfolioImages);
+        renderPortfolioPreview();
+      }
+
+      document.getElementById("portfolio-input").addEventListener("input", renderPortfolioPreview);
+
+      async function copyToClipboard(text, btn) {
+        const original = btn.textContent;
+        try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+        btn.textContent = "Copied!";
+        setTimeout(() => { btn.textContent = original; }, 1800);
+      }
+      document.getElementById("copy-mypage-link").addEventListener("click", (e) =>
+        copyToClipboard(document.getElementById("mypage-link").value, e.currentTarget));
+      document.getElementById("copy-mypage-bio").addEventListener("click", (e) =>
+        copyToClipboard(document.getElementById("mypage-bio").value, e.currentTarget));
+
+      mypageForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        mypageStatus.textContent = "Saving…";
+        try {
+          await saveConfigPatch({
+            aboutText: document.getElementById("mypage-about").value,
+            portfolioImages: portfolioUrls().join("\n"),
+          });
+          mypageStatus.textContent = "Saved. Your booking page is updated.";
+        } catch (error) { mypageStatus.textContent = error.message; }
+      });
 
       // ---- Conversations ----
       async function loadConversations(force) {
