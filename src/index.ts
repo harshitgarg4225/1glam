@@ -1,5 +1,7 @@
 import express from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import multer from "multer";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
@@ -34,7 +36,7 @@ import {
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
-import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails } from "./services/public-booking.js";
+import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
   exchangeForLongLivedToken,
@@ -84,6 +86,7 @@ declare module "express-session" {
 }
 
 const app = express();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 app.use(
   express.json({
@@ -93,19 +96,44 @@ app.use(
   }),
 );
 app.use(express.urlencoded({ extended: true }));
+const PgSession = connectPgSimple(session);
+const sessionStore = appConfig.databaseUrl
+  ? new PgSession({
+      conString: appConfig.databaseUrl,
+      tableName: "user_sessions",
+      createTableIfMissing: true,
+    })
+  : undefined;
+
+app.set("trust proxy", 1);
 app.use(
   session({
+    store: sessionStore,
     secret: appConfig.sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: false,
-      maxAge: 1000 * 60 * 60 * 24 * 7,
+      secure: appConfig.baseUrl.startsWith("https://"),
+      maxAge: 1000 * 60 * 60 * 24 * 30,
     },
   }),
 );
+
+// Auto-restore Google tokens into session from persisted workspace store.
+// This heals sessions after server restarts: profile comes back from the
+// session cookie, tokens come from the workspace record.
+app.use(async (req, _res, next) => {
+  if (req.session.profile && !req.session.googleTokens) {
+    try {
+      req.session.googleTokens = await getWorkspaceCredentials(req.session.profile.email);
+    } catch {
+      // No workspace yet — user is mid-signup; route guards will handle it.
+    }
+  }
+  next();
+});
 
 app.use(express.static(path.join(process.cwd(), "public")));
 
@@ -216,6 +244,27 @@ app.get("/api/public/:workspaceId/payment/:leadId", async (req, res, next) => {
     next(error);
   }
 });
+
+app.post(
+  "/api/public/:workspaceId/payment/:leadId/screenshot",
+  upload.single("screenshot"),
+  async (req, res, next) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const result = await submitPaymentScreenshot(
+        String(req.params.workspaceId),
+        String(req.params.leadId),
+        req.file.buffer,
+        req.file.mimetype,
+        req.file.originalname,
+      );
+      if (!result.ok) return res.status(400).json({ error: result.error });
+      res.json({ ok: true, fileUrl: result.fileUrl });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 app.get("/auth/google", (_req, res) => {
   if (!appConfig.googleClientId || !appConfig.googleClientSecret) {

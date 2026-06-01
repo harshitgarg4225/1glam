@@ -873,6 +873,12 @@
         }
       }
 
+      function daysUntil(dateStr) {
+        if (!dateStr) return null;
+        const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+        return diff;
+      }
+
       function leadCard(lead) {
         const editValue = lead.finalApprovedPrice || lead.initialAiPrice || 0;
         const reply = escapeHtml(lead.suggestedReply || "");
@@ -880,23 +886,55 @@
         const primaryBtn = primary
           ? `<button class="button small primary-action" data-action="${primary.action}" data-lead-id="${lead.leadId}">${primary.label}</button>`
           : "";
+
+        const days = daysUntil(lead.eventDate);
+        const daysLabel = days === null ? "" :
+          days < 0 ? `<span class="pill danger">${Math.abs(days)}d ago</span>` :
+          days === 0 ? `<span class="pill danger">Today</span>` :
+          days <= 7 ? `<span class="pill danger">${days}d away</span>` :
+          days <= 14 ? `<span class="pill warning">${days}d away</span>` :
+          `<span class="pill">${days}d away</span>`;
+
+        const wa = lead.clientWhatsApp ? lead.clientWhatsApp.replace(/\D/g, "") : "";
+        const waLink = wa
+          ? `<a href="https://wa.me/${wa}" target="_blank" rel="noreferrer" style="color:var(--accent);text-decoration:none;">📱 ${escapeHtml(lead.clientWhatsApp)}</a>`
+          : "";
+
+        const quoteChip = lead.quoteUrl
+          ? `<span class="pill success" style="font-size:10px;">Quote sent</span>`
+          : lead.quoteGeneratedAt
+          ? `<span class="pill" style="font-size:10px;">Quote ready</span>`
+          : "";
+
+        const payChip = lead.paymentStatus
+          ? `<span class="pill ${pillClass(lead.paymentStatus)}" style="font-size:10px;">${escapeHtml(lead.paymentStatus)}</span>`
+          : "";
+
         return `
           <div class="card" draggable="true" data-card-lead-id="${lead.leadId}">
-            <div class="card-name">${escapeHtml(lead.clientName)}</div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px;">
+              <div class="card-name">${escapeHtml(lead.clientName)}</div>
+              ${daysLabel}
+            </div>
             <div class="card-meta">
               ${escapeHtml(lead.eventType)} · ${escapeHtml(lead.eventDate)}${lead.eventTime ? " " + escapeHtml(lead.eventTime) : ""}<br>
-              ${escapeHtml(lead.locationText)} · ${escapeHtml(lead.source)}
+              ${escapeHtml(lead.locationText)}${lead.outstationFlag === "Yes" ? " · <strong>Outstation</strong>" : ""}
             </div>
-            <div class="card-price">${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)} <span class="muted" style="font-weight:400;">AI ${formatMoney(lead.initialAiPrice)}</span></div>
+            ${waLink ? `<div style="margin:6px 0 4px;font-size:12px;">${waLink}</div>` : ""}
+            <div class="card-price" style="margin-top:6px;">
+              ${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)}
+              <span class="muted" style="font-weight:400;font-size:12px;">AI ${formatMoney(lead.initialAiPrice)}</span>
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0;">${quoteChip}${payChip}</div>
+            ${lead.aiInsight ? `<p class="card-meta" style="font-style:italic;margin:4px 0 8px;border-left:2px solid var(--line);padding-left:8px;">${escapeHtml(lead.aiInsight)}</p>` : ""}
             ${primaryBtn}
-            <div class="assign-row">
+            <div class="assign-row" style="margin-top:8px;">
               <select data-assign-lead-id="${lead.leadId}">${assignOptions(lead.assignedArtist)}</select>
             </div>
             <details>
               <summary class="more-summary">More options</summary>
-              ${lead.aiInsight ? `<p class="card-meta" style="margin-top:8px;">${escapeHtml(lead.aiInsight)}</p>` : ""}
               <div class="action-row" style="margin-top:10px;flex-direction:column;align-items:stretch;">
-                <label style="margin:0 0 4px;">Quoted price</label>
+                <label style="margin:0 0 4px;">Adjust quoted price</label>
                 <div class="action-row">
                   <input data-edit-input="${lead.leadId}" type="number" value="${editValue}" style="max-width:130px;" />
                   <button class="button tiny secondary" data-action="edit" data-lead-id="${lead.leadId}">Update</button>
@@ -907,10 +945,10 @@
                 <input data-reply-input="${lead.leadId}" type="text" value="${reply}" />
                 <button class="button tiny secondary" style="margin-top:6px;" data-action="reply" data-lead-id="${lead.leadId}">Send reply</button>
               </div>
-              <div class="action-row" style="margin-top:10px;align-items:center;">
-                <button class="button tiny secondary" data-action="quote" data-lead-id="${lead.leadId}">Make quote</button>
+              <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
+                <button class="button tiny secondary" data-action="quote" data-lead-id="${lead.leadId}">Generate quote</button>
                 <button class="button tiny secondary" data-action="send-quote" data-lead-id="${lead.leadId}">Send quote</button>
-                ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer">Open</a>` : ""}
+                ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer">Open quote</a>` : ""}
               </div>
               <div class="action-row" style="margin-top:12px;">
                 <button class="button tiny secondary" data-action="no" data-lead-id="${lead.leadId}">Decline lead</button>
@@ -976,25 +1014,31 @@
             <td>${escapeHtml(booking.clientName)}<br><span class="muted">${escapeHtml(booking.clientWhatsApp)}</span></td>
             <td>${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(booking.eventDate)}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
             <td>${formatMoney(booking.finalPrice)}<br><span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br><span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span></td>
-            <td><span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span></td>
             <td>
-              <div class="action-row" style="align-items:center;flex-wrap:wrap;">
-                <button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Invoice</button>
-                <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask for review</button>
-                ${booking.invoiceUrl ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer">Open invoice</a>` : ""}
+              <span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span><br>
+              ${booking.contractStatus ? `<span class="pill ${booking.contractStatus === "Signed" ? "success" : booking.contractStatus === "Sent" ? "warning" : ""}" style="margin-top:4px;font-size:10px;">${escapeHtml(booking.contractStatus)}</span>` : ""}
+              ${booking.contractSentAt ? `<br><span class="muted" style="font-size:11px;">Sent ${formatDate(booking.contractSentAt)}</span>` : ""}
+            </td>
+            <td>
+              <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
+                ${booking.invoiceUrl
+                  ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open invoice</a>`
+                  : `<button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Create invoice</button>`}
+                ${booking.contractUrl
+                  ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open contract</a>`
+                  : `<button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create contract</button>`}
               </div>
               <details style="margin-top:10px;">
                 <summary class="more-summary">More actions</summary>
                 <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
                   <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send invoice</button>
+                  <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
+                  <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync contract</button>
+                </div>
+                <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;">
+                  <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask for review</button>
                   <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Advance reminder</button>
                   <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance reminder</button>
-                </div>
-                <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
-                  <button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create contract</button>
-                  <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
-                  <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync</button>
-                  ${booking.contractUrl ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer">Open contract</a>` : `<span class="muted">${escapeHtml(booking.contractStatus || "Draft")}</span>`}
                 </div>
               </details>
             </td>
@@ -1038,9 +1082,8 @@
       // ---- Team ----
       async function loadTeam() {
         try {
-          const res = await fetch("/api/team");
-          const payload = await res.json();
-          if (payload.ok) { teamArtists = payload.artists || []; renderTeam(); renderLeads(); }
+          const payload = await getJson("/api/team");
+          if (payload?.ok) { teamArtists = payload.artists || []; renderTeam(); renderLeads(); }
         } catch (error) { document.getElementById("team-list").innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
       }
       function renderTeam() {
@@ -1118,9 +1161,8 @@
         const statsEl = document.getElementById("reviews-stats");
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>`;
         try {
-          const res = await fetch("/api/reviews");
-          const payload = await res.json();
-          if (!payload.ok) throw new Error(payload.error || "Failed");
+          const payload = await getJson("/api/reviews");
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
           renderReviews(payload.reviews || []);
         } catch (error) {
           tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">${escapeHtml(error.message)}</td></tr>`;
@@ -1173,9 +1215,8 @@
         loading.style.display = "block";
         body.classList.add("hidden");
         try {
-          const res = await fetch("/api/analytics");
-          const payload = await res.json();
-          if (!payload.ok) throw new Error(payload.error || "Failed");
+          const payload = await getJson("/api/analytics");
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
           renderAnalytics(payload);
         } catch (err) {
           loading.textContent = err.message || "Failed to load analytics.";
@@ -1295,9 +1336,8 @@
         if (interactionsCache && !force) { renderConversations(); return; }
         list.innerHTML = `<p class="muted">Loading conversations…</p>`;
         try {
-          const res = await fetch("/api/conversations");
-          const payload = await res.json();
-          if (!payload.ok) throw new Error(payload.error || "Failed");
+          const payload = await getJson("/api/conversations");
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
           interactionsCache = payload.interactions || [];
           renderConversations();
         } catch (error) { list.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
@@ -1376,6 +1416,10 @@
 
       async function refreshSession() {
         const response = await fetch("/api/session");
+        if (response.status === 401) {
+          window.location.href = "/auth/google";
+          return;
+        }
         const payload = await response.json();
         sessionState = payload;
         if (!payload.authenticated) {
@@ -1433,6 +1477,21 @@
 
       async function postJson(url, body) {
         const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (response.status === 401) {
+          window.location.href = "/auth/google";
+          return;
+        }
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Request failed");
+        return payload;
+      }
+
+      async function getJson(url) {
+        const response = await fetch(url);
+        if (response.status === 401) {
+          window.location.href = "/auth/google";
+          return null;
+        }
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Request failed");
         return payload;
