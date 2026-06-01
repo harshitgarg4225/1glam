@@ -8,7 +8,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
-import { appConfig } from "./config.js";
+import { appConfig, assertDeploymentConfig } from "./config.js";
 import { createLeadSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema } from "./api-schema.js";
 import { workspaceConfigSchema } from "./schema.js";
 import {
@@ -59,6 +59,8 @@ import {
 import { generateConversationReply } from "./services/grok.js";
 import { sendChannelMessage, sendBusinessMessage } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
+import { logger, captureException } from "./services/logger.js";
+import { encryptionEnabled } from "./services/crypto.js";
 import { generateInvoiceDocument, generateQuoteDocument } from "./services/documents.js";
 import {
   checkLeegalityDocumentDetails,
@@ -2043,8 +2045,8 @@ app.get("/legal/data-deletion", (_req, res) => {
 });
 
 app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  // Always log the full error server-side for debugging.
-  console.error(`[error] ${req.method} ${req.path}`, error);
+  // Always log the full error server-side for debugging (structured + captured).
+  captureException(error, { method: req.method, path: req.path });
 
   // Validation errors are safe to surface and help the user fix their input.
   if (error instanceof ZodError) {
@@ -2062,8 +2064,17 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
   res.status(500).json({ error: isUserSafe ? message : "Something went wrong on our end. Please try again." });
 });
 
+// Fail closed: refuse to boot a deployed environment without a database and a
+// token-encryption key, rather than silently using ephemeral/plaintext storage.
+assertDeploymentConfig();
+
 app.listen(appConfig.port, () => {
-  console.log(`1Glam app listening on ${appConfig.baseUrl}`);
+  logger.info("1Glam app listening", {
+    baseUrl: appConfig.baseUrl,
+    env: appConfig.appEnv,
+    persistence: appConfig.databaseUrl ? "postgres" : "file",
+    tokenEncryption: encryptionEnabled() ? "on" : "off",
+  });
   startReminderScheduler();
 });
 

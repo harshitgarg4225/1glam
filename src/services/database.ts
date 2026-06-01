@@ -2,7 +2,18 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Pool } from "pg";
 import { appConfig } from "../config.js";
+import { decryptWorkspaceSecrets, encryptWorkspaceSecrets } from "./crypto.js";
 import type { MetaChannel, WorkspaceRecord } from "../types.js";
+
+// Persistence boundary helpers: records are encrypted on the way to storage and
+// decrypted on the way back, so the rest of the app only ever sees plaintext
+// tokens and storage only ever holds ciphertext.
+function toStored(record: WorkspaceRecord): WorkspaceRecord {
+  return encryptWorkspaceSecrets(record);
+}
+function fromStored(record: WorkspaceRecord): WorkspaceRecord {
+  return decryptWorkspaceSecrets(record);
+}
 
 type WorkspaceDb = {
   workspaces: WorkspaceRecord[];
@@ -81,7 +92,7 @@ async function backfillPostgresFromFileIfNeeded() {
         [
           normalizeEmail(workspace.email),
           workspace.workspaceId,
-          JSON.stringify(workspace),
+          JSON.stringify(toStored(workspace)),
         ],
       );
     }
@@ -108,7 +119,8 @@ async function readWorkspaceDbFromFileSafe(): Promise<WorkspaceDb> {
   try {
     await ensureDbFile();
     const content = await fs.readFile(appConfig.workspaceDbPath, "utf8");
-    return JSON.parse(content) as WorkspaceDb;
+    const db = JSON.parse(content) as WorkspaceDb;
+    return { workspaces: db.workspaces.map(fromStored) };
   } catch {
     return { workspaces: [] };
   }
@@ -117,12 +129,14 @@ async function readWorkspaceDbFromFileSafe(): Promise<WorkspaceDb> {
 async function readWorkspaceDbFromFile(): Promise<WorkspaceDb> {
   await ensureDbFile();
   const content = await fs.readFile(appConfig.workspaceDbPath, "utf8");
-  return JSON.parse(content) as WorkspaceDb;
+  const db = JSON.parse(content) as WorkspaceDb;
+  return { workspaces: db.workspaces.map(fromStored) };
 }
 
 async function writeWorkspaceDbToFile(db: WorkspaceDb) {
   await ensureDbFile();
-  await fs.writeFile(appConfig.workspaceDbPath, JSON.stringify(db, null, 2), "utf8");
+  const stored: WorkspaceDb = { workspaces: db.workspaces.map(toStored) };
+  await fs.writeFile(appConfig.workspaceDbPath, JSON.stringify(stored, null, 2), "utf8");
 }
 
 async function listWorkspacesFromPostgres() {
@@ -130,7 +144,7 @@ async function listWorkspacesFromPostgres() {
   const result = await getPool().query<{ data: WorkspaceRecord }>(
     `SELECT data FROM workspace_records ORDER BY updated_at DESC`,
   );
-  return result.rows.map((row: { data: WorkspaceRecord }) => row.data);
+  return result.rows.map((row: { data: WorkspaceRecord }) => fromStored(row.data));
 }
 
 async function findWorkspaceByEmailFromPostgres(email: string) {
@@ -139,7 +153,7 @@ async function findWorkspaceByEmailFromPostgres(email: string) {
     `SELECT data FROM workspace_records WHERE email = $1 LIMIT 1`,
     [normalizeEmail(email)],
   );
-  return result.rows[0]?.data ?? null;
+  return result.rows[0]?.data ? fromStored(result.rows[0].data) : null;
 }
 
 async function saveWorkspaceToPostgres(record: WorkspaceRecord) {
@@ -154,7 +168,7 @@ async function saveWorkspaceToPostgres(record: WorkspaceRecord) {
         data = EXCLUDED.data,
         updated_at = NOW()
     `,
-    [normalizeEmail(record.email), record.workspaceId, JSON.stringify(record)],
+    [normalizeEmail(record.email), record.workspaceId, JSON.stringify(toStored(record))],
   );
 }
 
@@ -194,7 +208,7 @@ export async function writeWorkspaceDb(db: WorkspaceDb) {
             INSERT INTO workspace_records (email, workspace_id, data, updated_at)
             VALUES ($1, $2, $3::jsonb, NOW())
           `,
-          [normalizeEmail(workspace.email), workspace.workspaceId, JSON.stringify(workspace)],
+          [normalizeEmail(workspace.email), workspace.workspaceId, JSON.stringify(toStored(workspace))],
         );
       }
       await client.query("COMMIT");
@@ -270,7 +284,7 @@ export async function findWorkspaceByWorkspaceId(workspaceId: string) {
       `SELECT data FROM workspace_records WHERE workspace_id = $1 LIMIT 1`,
       [workspaceId],
     );
-    return result.rows[0]?.data ?? null;
+    return result.rows[0]?.data ? fromStored(result.rows[0].data) : null;
   }
 
   const db = await readWorkspaceDbFromFile();
@@ -306,6 +320,38 @@ export async function findWorkspaceByMetaAsset(input: {
       );
     }) ?? null
   );
+}
+
+// Runs `fn` only if this instance can acquire a Postgres advisory lock for `key`.
+// Used by the reminder cron so that when more than one app instance is running,
+// exactly one of them executes the daily send and the others skip it — preventing
+// duplicate WhatsApp messages. In file mode (single-instance dev) it always runs.
+export async function withDistributedLock<T>(
+  key: number,
+  fn: () => Promise<T>,
+): Promise<{ ran: boolean; result?: T }> {
+  if (!hasPostgres()) {
+    return { ran: true, result: await fn() };
+  }
+
+  await ensurePostgres();
+  const client = await getPool().connect();
+  try {
+    const res = await client.query<{ locked: boolean }>(
+      "SELECT pg_try_advisory_lock($1) AS locked",
+      [key],
+    );
+    if (!res.rows[0]?.locked) {
+      return { ran: false };
+    }
+    try {
+      return { ran: true, result: await fn() };
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1)", [key]);
+    }
+  } finally {
+    client.release();
+  }
 }
 
 export async function findWorkspaceByMetaUserId(metaUserId: string) {
