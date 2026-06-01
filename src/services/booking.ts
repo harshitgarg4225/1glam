@@ -7,6 +7,7 @@ import { enrichLeadWithGrok } from "./grok.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { resolveTravelIntelligence } from "./maps.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
+import { listArtists } from "./team.js";
 import { getWorkspaceByEmail } from "./workspace.js";
 import { bookingHeaders, leadHeaders, sheetNames } from "./sheet-definitions.js";
 import type { WorkspaceRecord } from "../types.js";
@@ -377,7 +378,70 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
 
   await updateLeadRow(workspace, tokens, lead.rowNumber, updatedLead);
 
+  void notifyTeamOfBooking(workspace, tokens, booking);
+
   return { lead: updatedLead, booking };
+}
+
+// Tells the artist's freelance team a booking just landed. Fire-and-forget,
+// mirroring sendApprovalNotification: it never throws into the confirm flow.
+// Targets the assigned specialist if one is set, otherwise every active team
+// member. Only sends when a team template is configured and WhatsApp can send.
+async function notifyTeamOfBooking(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  booking: BookingRecord,
+) {
+  if (String(workspace.config.notifyTeamOnBooking || "").toLowerCase() === "no") return;
+
+  const templateName = String(workspace.config.teamNotifyTemplate || "").trim();
+  if (!templateName) return;
+
+  const whatsapp = workspace.metaConnections?.whatsapp;
+  const connectionCanSend =
+    whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+  const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+  if (!connectionCanSend && !envCanSend) return;
+
+  let artists;
+  try {
+    artists = await listArtists(workspace.email, tokens);
+  } catch (error) {
+    console.error("Team notify: could not load artists", error);
+    return;
+  }
+
+  const active = artists.filter((a) => a.active !== "No" && String(a.whatsApp || "").trim());
+  const assignedName = String(booking.assignedArtist || "").trim();
+  const recipients = assignedName
+    ? active.filter((a) => a.name === assignedName)
+    : active;
+  if (!recipients.length) return;
+
+  const lang = String(workspace.config.teamNotifyTemplateLang || "en");
+  for (const artist of recipients) {
+    const phone = String(artist.whatsApp || "").replace(/[^\d]/g, "");
+    if (!phone) continue;
+    try {
+      await sendWhatsAppTemplate(
+        { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+        phone,
+        templateName,
+        lang,
+        [artist.name, booking.eventType, booking.eventDate, booking.venue || "—"],
+      );
+      await logInteractionForWorkspace(workspace.email, tokens, {
+        leadId: booking.leadId,
+        direction: "Outbound",
+        channel: "WhatsApp",
+        actor: phone,
+        message: `Team booking alert "${templateName}" sent to ${artist.name}`,
+        aiSummary: "Automated team booking notification",
+      });
+    } catch (error) {
+      console.error(`Team notify send failed for ${artist.name}`, error);
+    }
+  }
 }
 
 export async function updatePaymentStatus(

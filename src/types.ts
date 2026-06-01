@@ -57,6 +57,9 @@ export type WorkspaceConfig = PricingRuleConfig & {
   bookingConfirmTemplateLang: string;
   approvalTemplate: string;
   approvalTemplateLang: string;
+  notifyTeamOnBooking: string;
+  teamNotifyTemplate: string;
+  teamNotifyTemplateLang: string;
   reminderTemplate: string;
   reminderTemplateLang: string;
   reminderDaysBefore: string;

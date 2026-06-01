@@ -329,6 +329,18 @@
       /* ─── Button states ─── */
       .button:disabled, .button.loading { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
+      /* ─── Modal ─── */
+      .modal-overlay { position: fixed; inset: 0; background: rgba(28,25,23,0.5); display: none; align-items: center; justify-content: center; z-index: 9000; padding: 20px; }
+      .modal-overlay.open { display: flex; }
+      .modal { background: var(--card); border-radius: var(--radius-lg); box-shadow: 0 24px 64px rgba(0,0,0,0.24); width: min(440px, 100%); max-height: 85vh; overflow: auto; padding: 24px; animation: toast-in 0.2s cubic-bezier(.22,.68,0,1.2); }
+      .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+      .modal-close { width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--surface); cursor: pointer; font-size: 20px; line-height: 1; color: var(--muted); }
+      .modal-close:hover { background: var(--line); color: var(--text); }
+      .notify-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+      .notify-row-info { min-width: 0; }
+      .notify-row-info strong { font-size: 14px; display: block; }
+      .notify-row-info span { font-size: 12.5px; color: var(--muted); }
+
       /* ─── Card hover elevation ─── */
       .card { transition: box-shadow 0.15s, transform 0.12s; }
       .card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.06); transform: translateY(-1px); }
@@ -596,6 +608,7 @@
         <div class="panel section" style="margin-bottom:20px;">
           <div class="kicker">Your Artists</div>
           <h2 id="team-form-title">Add Team Member</h2>
+          <p class="muted" style="margin:-4px 0 14px;font-size:13.5px;">Add your hair & makeup specialists with their WhatsApp numbers. When a booking is confirmed, brief them in one tap from the <strong>Bookings</strong> tab — or turn on auto-alerts in <strong>Settings</strong> so they're notified automatically.</p>
           <form id="team-form">
             <input type="hidden" name="artistId" id="team-artist-id" />
             <div class="section-grid">
@@ -850,6 +863,12 @@
                 <div><label for="bookingConfirmTemplateLang">Request Template Language</label><input id="bookingConfirmTemplateLang" name="bookingConfirmTemplateLang" placeholder="en" /></div>
                 <div><label for="approvalTemplate">Approval Notification Template</label><input id="approvalTemplate" name="approvalTemplate" placeholder="booking_approved" /></div>
                 <div><label for="approvalTemplateLang">Approval Template Language</label><input id="approvalTemplateLang" name="approvalTemplateLang" placeholder="en" /></div>
+                <div>
+                  <label for="notifyTeamOnBooking">Auto-notify Team on Booking</label>
+                  <select id="notifyTeamOnBooking" name="notifyTeamOnBooking"><option>Yes</option><option>No</option></select>
+                </div>
+                <div><label for="teamNotifyTemplate">Team Alert Template</label><input id="teamNotifyTemplate" name="teamNotifyTemplate" placeholder="team_booking_alert" /></div>
+                <div><label for="teamNotifyTemplateLang">Team Alert Template Language</label><input id="teamNotifyTemplateLang" name="teamNotifyTemplateLang" placeholder="en" /></div>
                 <div><label for="reminderTemplate">Pre-Event Reminder Template</label><input id="reminderTemplate" name="reminderTemplate" placeholder="event_reminder" /></div>
                 <div><label for="reminderTemplateLang">Reminder Template Language</label><input id="reminderTemplateLang" name="reminderTemplateLang" placeholder="en" /></div>
                 <div><label for="reminderDaysBefore">Remind X Days Before Event</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
@@ -861,6 +880,7 @@
                 WhatsApp only allows automated business-initiated messages via an <strong>approved template</strong>. Create templates in Meta Business Manager.<br>
                 <strong>Booking Request Template</strong> — sent when client submits the booking page. Variables: {{1}} client name, {{2}} event type, {{3}} event date.<br>
                 <strong>Approval Notification Template</strong> — sent when you click Approve on a lead. Variables: {{1}} client name, {{2}} event date, {{3}} quoted price.<br>
+                <strong>Team Alert Template</strong> — auto-sent to your assigned specialist (or whole active team if none is assigned) the moment a booking is confirmed. Variables: {{1}} artist name, {{2}} event type, {{3}} event date, {{4}} venue. Turn off with "Auto-notify Team on Booking". No template? Use the one-tap <strong>Notify team</strong> button on each booking — it works instantly with no setup.<br>
                 <strong>Pre-Event Reminder Template</strong> — auto-sent at 8 AM UTC each day. Variables: {{1}} client name, {{2}} event date, {{3}} event time. Set "Remind X Days Before" to control when (e.g. 7,1 = one week and one day before).<br>
                 <strong>Review Request Template</strong> — auto-sent the set number of days after the event. Variables: {{1}} client name, {{2}} business name, {{3}} Google review link. Leave "Auto Review Request" blank to turn it off.<br>
                 Clients also get a "Confirm on WhatsApp" button on the booking page, which works without any template.
@@ -940,6 +960,18 @@
       </div><!-- /tab-panels -->
     </main>
     <div class="toast-shelf" id="toast-shelf"></div>
+
+    <!-- Notify-team modal: one-tap WhatsApp briefs to freelance specialists -->
+    <div class="modal-overlay" id="notify-team-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 style="margin:0;">Notify your team</h3>
+          <button class="modal-close" type="button" id="notify-team-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 14px;">Tap a specialist to open WhatsApp with their booking brief ready to send — straight from your number.</p>
+        <div id="notify-team-list"></div>
+      </div>
+    </div>
 
     <script>
       const configForm = document.getElementById("config-form");
@@ -1330,7 +1362,7 @@
         bookingsBody.innerHTML = bookings.map((booking) => `
           <tr>
             <td><strong>${escapeHtml(booking.bookingId)}</strong><br><span class="muted">${formatDate(booking.bookedAt)}</span></td>
-            <td>${escapeHtml(booking.clientName)}<br><span class="muted">${escapeHtml(booking.clientWhatsApp)}</span></td>
+            <td>${escapeHtml(booking.clientName)}<br><span class="muted">${escapeHtml(booking.clientWhatsApp)}</span><br><span class="muted" style="font-size:12px;">💇 ${booking.assignedArtist ? escapeHtml(booking.assignedArtist) : "<em>Unassigned</em>"}</span></td>
             <td>${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(booking.eventDate)}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
             <td>${formatMoney(booking.finalPrice)}<br><span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br><span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span></td>
             <td>
@@ -1340,6 +1372,7 @@
             </td>
             <td>
               <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
+                <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Notify team</button>
                 ${booking.invoiceUrl
                   ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open invoice</a>`
                   : `<button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Create invoice</button>`}
@@ -2177,7 +2210,69 @@
         await runLeadAction(action, id, null);
       });
 
+      // ─── Notify team: one-tap WhatsApp briefs (zero setup) ───
+      const notifyTeamModal = document.getElementById("notify-team-modal");
+      function closeTeamNotify() { notifyTeamModal.classList.remove("open"); }
+      document.getElementById("notify-team-close").addEventListener("click", closeTeamNotify);
+      notifyTeamModal.addEventListener("click", (e) => { if (e.target === notifyTeamModal) closeTeamNotify(); });
+
+      function teamBrief(booking, artistName) {
+        const biz = sessionState?.workspace?.config?.businessName || "";
+        const when = `${booking.eventDate}${booking.eventTime ? " at " + booking.eventTime : ""}`;
+        const lines = [
+          `Hi ${artistName} 👋`,
+          ``,
+          `New booking confirmed — please confirm your availability:`,
+          `💄 ${booking.eventType}`,
+          `📅 ${when}`,
+          `📍 ${booking.venue || "Venue TBC"}`,
+          `👤 Client: ${booking.clientName}`,
+          ``,
+          biz ? `— ${biz}` : "",
+        ];
+        return lines.filter((l) => l !== null).join("\n");
+      }
+
+      function openTeamNotify(bookingId) {
+        const booking = (sessionState?.dashboard?.bookings || []).find((b) => b.bookingId === bookingId);
+        if (!booking) return;
+        const list = document.getElementById("notify-team-list");
+        const active = (teamArtists || []).filter((a) => a.active !== "No");
+        const assigned = String(booking.assignedArtist || "").trim();
+        // Show the assigned specialist first; if none assigned, show whole active team.
+        const targets = assigned ? active.filter((a) => a.name === assigned) : active;
+        const pool = targets.length ? targets : active;
+
+        if (!pool.length) {
+          list.innerHTML = `<div class="empty-state" style="padding:24px 8px;"><div class="empty-icon">👥</div><h3>No team members yet</h3><p>Add your hair & makeup specialists in the Team tab, then brief them here in one tap.</p></div>`;
+        } else {
+          list.innerHTML = pool.map((a) => {
+            const phone = String(a.whatsApp || "").replace(/\D/g, "");
+            const brief = encodeURIComponent(teamBrief(booking, a.name));
+            const waLink = phone ? `https://wa.me/${phone}?text=${brief}` : "";
+            return `
+              <div class="notify-row">
+                <div class="notify-row-info">
+                  <strong>${escapeHtml(a.name)}</strong>
+                  <span>${a.skillLevel ? escapeHtml(a.skillLevel) : ""}${a.whatsApp ? " · " + escapeHtml(a.whatsApp) : " · no WhatsApp number"}</span>
+                </div>
+                ${waLink
+                  ? `<a class="button small" href="${waLink}" target="_blank" rel="noreferrer" data-notify-sent>Brief on WhatsApp</a>`
+                  : `<span class="muted" style="font-size:12px;">Add number</span>`}
+              </div>`;
+          }).join("");
+        }
+        notifyTeamModal.classList.add("open");
+      }
+      document.getElementById("notify-team-list").addEventListener("click", (e) => {
+        if (e.target.closest("[data-notify-sent]")) {
+          toast("WhatsApp opened — hit send to brief them.", "success");
+        }
+      });
+
       bookingsBody.addEventListener("click", async (e) => {
+        const notifyBtn = e.target.closest("[data-notify-team]");
+        if (notifyBtn) { openTeamNotify(notifyBtn.getAttribute("data-notify-team")); return; }
         const b = e.target.closest("button[data-booking-action]");
         if (!b) return;
         const bookingId = b.getAttribute("data-booking-id");
