@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
 import { createGoogleClients } from "./google.js";
+import { getDocumentTheme, type DocumentTheme } from "./document-themes.js";
 import type { WorkspaceRecord } from "../types.js";
 import type { BookingRecord, LeadRecord } from "./booking.js";
 
@@ -28,32 +29,33 @@ export async function generateQuoteDocument(
     (quotedAmount * workspace.config.advancePercentage) / 100,
   );
 
+  const theme = getDocumentTheme(workspace.config.documentTemplate);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  drawDocumentFrame(page, workspace);
+  drawDocumentFrame(page, workspace, theme);
   drawHeader(page, {
     title: "Luxury Quote",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: quoteNumber,
     docDate: new Date().toLocaleDateString("en-IN"),
-  }, bold, regular);
+  }, bold, regular, theme);
 
   let y = 650;
   y = drawSection(page, "Prepared For", [
     lead.clientName || "Valued Client",
     lead.clientWhatsApp ? `WhatsApp: ${lead.clientWhatsApp}` : "",
     lead.clientInstagram ? `Instagram: ${lead.clientInstagram}` : "",
-  ].filter(Boolean), y, bold, regular);
+  ].filter(Boolean), y, bold, regular, theme);
 
   y = drawSection(page, "Event Details", [
     `Event: ${lead.eventType}`,
     `Date: ${lead.eventDate || "To be confirmed"}`,
     `Time: ${lead.eventTime || "To be confirmed"}`,
     `Location: ${lead.locationText || "To be confirmed"}`,
-  ], y - 12, bold, regular);
+  ], y - 12, bold, regular, theme);
 
   y = drawPricingBlock(page, {
     heading: "Quote Summary",
@@ -64,15 +66,15 @@ export async function generateQuoteDocument(
       ["Hold Expires", lead.holdExpiresAt ? formatDateTime(lead.holdExpiresAt) : "On request"],
     ],
     y: y - 16,
-  }, bold, regular);
+  }, bold, regular, theme);
 
   drawParagraph(
     page,
     workspace.config.paymentTerms,
-    { x: 56, y: y - 30, size: 11, font: regular, color: rgb(0.2, 0.2, 0.2), maxWidth: 480 },
+    { x: 56, y: y - 30, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
   );
 
-  drawFooter(page, workspace, regular);
+  drawFooter(page, workspace, regular, theme);
 
   const pdfBytes = await pdf.save();
   return uploadPdfToDrive(tokens, {
@@ -89,24 +91,25 @@ export async function generateInvoiceDocument(
 ) {
   const invoiceNumber = `INV-${booking.bookingId}`;
   const stage = resolveInvoiceStage(booking);
+  const theme = getDocumentTheme(workspace.config.documentTemplate);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  drawDocumentFrame(page, workspace);
+  drawDocumentFrame(page, workspace, theme);
   drawHeader(page, {
     title: "Booking Invoice",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: invoiceNumber,
     docDate: new Date().toLocaleDateString("en-IN"),
-  }, bold, regular);
+  }, bold, regular, theme);
 
   let y = 650;
   y = drawSection(page, "Billed To", [
     booking.clientName || "Valued Client",
     booking.clientWhatsApp ? `WhatsApp: ${booking.clientWhatsApp}` : "",
-  ].filter(Boolean), y, bold, regular);
+  ].filter(Boolean), y, bold, regular, theme);
 
   y = drawSection(page, "Booking Details", [
     `Event: ${booking.eventType}`,
@@ -114,7 +117,7 @@ export async function generateInvoiceDocument(
     `Time: ${booking.eventTime || "To be confirmed"}`,
     `Venue: ${booking.venue || "To be confirmed"}`,
     `Assigned Artist: ${booking.assignedArtist || "To be assigned"}`,
-  ], y - 12, bold, regular);
+  ], y - 12, bold, regular, theme);
 
   y = drawPricingBlock(page, {
     heading: `${stage.label} Invoice`,
@@ -125,7 +128,7 @@ export async function generateInvoiceDocument(
       ["Balance", inr(booking.balanceDue)],
     ],
     y: y - 16,
-  }, bold, regular);
+  }, bold, regular, theme);
 
   if (workspace.config.upiId) {
     const qrBytes = await buildUpiQrPng(
@@ -145,23 +148,23 @@ export async function generateInvoiceDocument(
       drawParagraph(
         page,
         `Pay via UPI: ${workspace.config.upiId}`,
-        { x: 220, y: y - 70, size: 12, font: bold, color: rgb(0.18, 0.18, 0.18), maxWidth: 260 },
+        { x: 220, y: y - 70, size: 12, font: bold, color: theme.blockValue, maxWidth: 260 },
       );
       drawParagraph(
         page,
         workspace.config.paymentTerms,
-        { x: 220, y: y - 100, size: 11, font: regular, color: rgb(0.24, 0.24, 0.24), maxWidth: 300 },
+        { x: 220, y: y - 100, size: 11, font: regular, color: theme.paragraph, maxWidth: 300 },
       );
     }
   } else {
     drawParagraph(
       page,
       workspace.config.paymentTerms,
-      { x: 56, y: y - 40, size: 11, font: regular, color: rgb(0.24, 0.24, 0.24), maxWidth: 480 },
+      { x: 56, y: y - 40, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
     );
   }
 
-  drawFooter(page, workspace, regular);
+  drawFooter(page, workspace, regular, theme);
 
   const pdfBytes = await pdf.save();
   return uploadPdfToDrive(tokens, {
@@ -177,25 +180,26 @@ export async function generateContractPdfBytes(
   booking: BookingRecord,
 ) {
   const contractNumber = `CTR-${booking.bookingId}`;
+  const theme = getDocumentTheme(workspace.config.documentTemplate);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  drawDocumentFrame(page, workspace);
+  drawDocumentFrame(page, workspace, theme);
   drawHeader(page, {
     title: "Booking Agreement",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: contractNumber,
     docDate: new Date().toLocaleDateString("en-IN"),
-  }, bold, regular);
+  }, bold, regular, theme);
 
   let y = 650;
   y = drawSection(page, "Client", [
     lead.clientName || "Valued Client",
     lead.clientWhatsApp ? `WhatsApp: ${lead.clientWhatsApp}` : "",
     lead.clientInstagram ? `Instagram: ${lead.clientInstagram}` : "",
-  ].filter(Boolean), y, bold, regular);
+  ].filter(Boolean), y, bold, regular, theme);
 
   y = drawSection(page, "Booking Details", [
     `Booking ID: ${booking.bookingId}`,
@@ -204,7 +208,7 @@ export async function generateContractPdfBytes(
     `Time: ${booking.eventTime || "To be confirmed"}`,
     `Venue: ${booking.venue || "To be confirmed"}`,
     `Artist: ${booking.assignedArtist || workspace.config.ownerName}`,
-  ], y - 12, bold, regular);
+  ], y - 12, bold, regular, theme);
 
   y = drawPricingBlock(page, {
     heading: "Commercial Terms",
@@ -215,7 +219,7 @@ export async function generateContractPdfBytes(
       ["Payment Terms", workspace.config.advancePercentage ? `${workspace.config.advancePercentage}% advance` : "As agreed"],
     ],
     y: y - 16,
-  }, bold, regular);
+  }, bold, regular, theme);
 
   drawParagraph(
     page,
@@ -224,10 +228,10 @@ export async function generateContractPdfBytes(
       workspace.config.paymentTerms,
       "By signing this agreement, the client confirms the booking details and accepts the quoted payment terms.",
     ].join(" "),
-    { x: 56, y: y - 32, size: 11, font: regular, color: rgb(0.22, 0.22, 0.22), maxWidth: 480 },
+    { x: 56, y: y - 32, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
   );
 
-  drawFooter(page, workspace, regular);
+  drawFooter(page, workspace, regular, theme);
   return pdf.save();
 }
 
@@ -296,13 +300,13 @@ async function uploadPdfToDrive(
   };
 }
 
-function drawDocumentFrame(page: PDFDocument["addPage"] extends (...args: any[]) => infer T ? T : never, workspace: WorkspaceRecord) {
+function drawDocumentFrame(page: PDFDocument["addPage"] extends (...args: any[]) => infer T ? T : never, workspace: WorkspaceRecord, theme: DocumentTheme) {
   page.drawRectangle({
     x: 24,
     y: 24,
     width: 547,
     height: 794,
-    borderColor: rgb(0.77, 0.66, 0.53),
+    borderColor: theme.frameBorder,
     borderWidth: 1,
   });
   page.drawRectangle({
@@ -310,13 +314,13 @@ function drawDocumentFrame(page: PDFDocument["addPage"] extends (...args: any[])
     y: 770,
     width: 595,
     height: 72,
-    color: rgb(0.97, 0.95, 0.92),
+    color: theme.bandBg,
   });
   page.drawText((workspace.config.businessName || workspace.name).toUpperCase(), {
     x: 56,
     y: 790,
     size: 12,
-    color: rgb(0.39, 0.29, 0.18),
+    color: theme.bandText,
   });
 }
 
@@ -325,34 +329,35 @@ function drawHeader(
   input: { title: string; subtitle: string; docNumber: string; docDate: string },
   bold: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  theme: DocumentTheme,
 ) {
   page.drawText(input.title, {
     x: 56,
     y: 720,
     size: 28,
     font: bold,
-    color: rgb(0.14, 0.1, 0.08),
+    color: theme.title,
   });
   page.drawText(input.subtitle, {
     x: 56,
     y: 690,
     size: 13,
     font: regular,
-    color: rgb(0.32, 0.25, 0.2),
+    color: theme.subtitle,
   });
   page.drawText(`No. ${input.docNumber}`, {
     x: 400,
     y: 720,
     size: 11,
     font: bold,
-    color: rgb(0.2, 0.2, 0.2),
+    color: theme.meta,
   });
   page.drawText(input.docDate, {
     x: 400,
     y: 702,
     size: 11,
     font: regular,
-    color: rgb(0.3, 0.3, 0.3),
+    color: theme.meta,
   });
 }
 
@@ -363,13 +368,14 @@ function drawSection(
   startY: number,
   bold: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  theme: DocumentTheme,
 ) {
   page.drawText(heading, {
     x: 56,
     y: startY,
     size: 12,
     font: bold,
-    color: rgb(0.23, 0.17, 0.12),
+    color: theme.sectionHeading,
   });
 
   let y = startY - 24;
@@ -379,7 +385,7 @@ function drawSection(
       y,
       size: 11,
       font: regular,
-      color: rgb(0.2, 0.2, 0.2),
+      color: theme.bodyText,
     });
     y -= 18;
   }
@@ -392,14 +398,15 @@ function drawPricingBlock(
   input: { heading: string; lines: [string, string][]; y: number },
   bold: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  theme: DocumentTheme,
 ) {
   page.drawRectangle({
     x: 56,
     y: input.y - 100,
     width: 483,
     height: 110,
-    color: rgb(0.985, 0.972, 0.955),
-    borderColor: rgb(0.9, 0.82, 0.7),
+    color: theme.blockBg,
+    borderColor: theme.blockBorder,
     borderWidth: 1,
   });
 
@@ -408,7 +415,7 @@ function drawPricingBlock(
     y: input.y - 18,
     size: 12,
     font: bold,
-    color: rgb(0.23, 0.17, 0.12),
+    color: theme.blockHeading,
   });
 
   let y = input.y - 42;
@@ -418,14 +425,14 @@ function drawPricingBlock(
       y,
       size: 11,
       font: regular,
-      color: rgb(0.25, 0.25, 0.25),
+      color: theme.blockLabel,
     });
     page.drawText(value, {
       x: 400,
       y,
       size: 11,
       font: bold,
-      color: rgb(0.16, 0.16, 0.16),
+      color: theme.blockValue,
     });
     y -= 20;
   }
@@ -437,6 +444,7 @@ function drawFooter(
   page: PDFDocument["addPage"] extends (...args: any[]) => infer T ? T : never,
   workspace: WorkspaceRecord,
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  theme: DocumentTheme,
 ) {
   const footer = [
     workspace.config.businessName || workspace.name,
@@ -449,7 +457,7 @@ function drawFooter(
     y: 44,
     size: 10,
     font: regular,
-    color: rgb(0.45, 0.45, 0.45),
+    color: theme.footer,
   });
 }
 

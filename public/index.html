@@ -81,7 +81,7 @@
       }
       .brand { display: flex; flex-direction: column; gap: 2px; }
       .brand-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
-      .topbar-account { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; text-align: right; }
+      .topbar-account { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
       .account-id { font-size: 13px; line-height: 1.5; color: var(--muted); }
 
       .tabs {
@@ -134,7 +134,7 @@
       .button.secondary:hover { background: var(--surface); }
       .button.small { padding: 7px 13px; font-size: 13px; }
       .button.tiny { padding: 5px 9px; font-size: 12px; border-radius: 6px; }
-      .button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .button:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
       .login-state, .workspace, .status { margin-top: 16px; }
 
@@ -271,6 +271,40 @@
       .gallery-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-top: 12px; }
       .gallery-preview img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
       .qr-img { width: 168px; height: 168px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); }
+      .portfolio-drop { border: 2px dashed var(--line); border-radius: 12px; padding: 28px 18px; text-align: center; cursor: pointer; background: var(--surface); transition: border-color 0.15s, background 0.15s; }
+      .portfolio-drop:hover, .portfolio-drop.drag-over { border-color: var(--accent); background: #FBF0EA; }
+      .portfolio-drop-icon { font-size: 30px; margin-bottom: 6px; }
+      .portfolio-drop-label { font-size: 13px; color: var(--muted); }
+      .portfolio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 12px; }
+      .portfolio-item { position: relative; aspect-ratio: 1/1; }
+      .portfolio-item img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+      .portfolio-item .remove { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: none; background: rgba(0,0,0,0.6); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+      .portfolio-item .remove:hover { background: rgba(0,0,0,0.85); }
+      .setup-checklist { border-left: 4px solid var(--accent); }
+      .setup-steps { display: flex; flex-direction: column; gap: 8px; }
+      .setup-step { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; transition: border-color 0.15s, background 0.15s; text-align: left; }
+      .setup-step:hover { border-color: var(--accent); background: #FBF0EA; }
+      .setup-step.done { cursor: default; opacity: 0.7; }
+      .setup-step.done:hover { border-color: var(--line); background: var(--card); }
+      .setup-step .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #fff; }
+      .setup-step.done .check { background: var(--success); border-color: var(--success); }
+      .setup-step .step-text { flex: 1; }
+      .setup-step .step-text strong { display: block; font-size: 14px; }
+      .setup-step .step-text span { font-size: 12.5px; color: var(--muted); }
+      .setup-step .step-go { font-size: 12px; color: var(--accent); font-weight: 600; }
+      .setup-progress { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+      .gmb-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; }
+      .gmb-result-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .gmb-result-info strong { font-size: 14px; }
+      .gmb-result-info span { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+      .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+      .template-card { border: 2px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: var(--card); transition: border-color 0.15s; }
+      .template-card:hover { border-color: var(--accent); }
+      .template-card.selected { border-color: var(--accent); background: #FBF0EA; }
+      .template-swatch { height: 64px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--line); position: relative; overflow: hidden; }
+      .template-swatch .band { position: absolute; top: 0; left: 0; right: 0; height: 20px; }
+      .template-card strong { font-size: 13px; display: block; }
+      .template-card span { font-size: 11.5px; color: var(--muted); }
       .more-summary { cursor: pointer; font-size: 13px; color: var(--accent); list-style: none; font-weight: 500; }
       .more-summary::-webkit-details-marker { display: none; }
 
@@ -280,7 +314,89 @@
         .intro, .cta-card, .section, .tab-panel { padding: 20px; }
         .topbar { flex-direction: column; align-items: flex-start; }
         .topbar-account { text-align: left; }
-        .tabs { padding: 0 16px; overflow-x: auto; flex-wrap: nowrap; }
+        .tabs { padding: 0 16px; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+      }
+
+      /* ─── Toast notifications ─── */
+      .toast-shelf { position: fixed; bottom: 28px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; pointer-events: none; }
+      .toast { padding: 13px 18px; border-radius: 12px; font-size: 14px; font-weight: 500; line-height: 1.4; box-shadow: 0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1); pointer-events: auto; max-width: 360px; animation: toast-in 0.22s cubic-bezier(.22,.68,0,1.2); background: #1C1917; color: #fff; }
+      .toast.success { background: var(--success); }
+      .toast.error { background: var(--danger); }
+      @keyframes toast-in { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: none; } }
+      @keyframes toast-out { to { opacity: 0; transform: translateY(6px); } }
+      .toast.removing { animation: toast-out 0.18s ease forwards; }
+
+      /* ─── Button states ─── */
+      .button:disabled, .button.loading { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+
+      /* ─── Card hover elevation ─── */
+      .card { transition: box-shadow 0.15s, transform 0.12s; }
+      .card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.06); transform: translateY(-1px); }
+
+      /* ─── Action menu (⋮ kebab) ─── */
+      .card-menu-wrap { position: relative; }
+      .card-menu-trigger { width: 30px; height: 30px; border-radius: 50%; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); transition: background 0.15s, color 0.15s; padding: 0; font-size: 20px; line-height: 1; flex-shrink: 0; }
+      .card-menu-trigger:hover { background: var(--surface); color: var(--text); }
+      .card-menu { position: absolute; right: 0; top: 36px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07); min-width: 224px; z-index: 200; padding: 6px 0; display: none; }
+      .card-menu.open { display: block; }
+      .card-menu-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 13px; cursor: pointer; border: none; background: transparent; width: 100%; text-align: left; color: var(--text); transition: background 0.1s; font-family: inherit; text-decoration: none; }
+      .card-menu-item:hover { background: var(--surface); }
+      .card-menu-item.danger { color: var(--danger); }
+      .card-menu-sep { height: 1px; background: var(--line); margin: 4px 0; }
+      .card-menu-section { padding: 8px 14px 4px; }
+      .card-menu-section .field-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); display: block; margin-bottom: 6px; }
+      .card-menu-section input { padding: 6px 8px; font-size: 13px; margin-bottom: 6px; }
+
+      /* ─── Lead list view ─── */
+      .lead-list { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; }
+      .lead-list-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+      .lead-list-item:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
+      .lead-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; text-transform: uppercase; }
+      .lead-list-body { flex: 1; min-width: 0; }
+      .lead-list-name { font-weight: 600; font-size: 14px; line-height: 1.3; }
+      .lead-list-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+      .lead-list-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+      .lead-list-price { font-size: 14px; font-weight: 700; }
+      .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; background: var(--muted); }
+      .status-dot.success { background: var(--success); }
+      .status-dot.warning { background: #D97706; }
+      .status-dot.danger { background: var(--danger); }
+      #leads-board.list-mode { display: block !important; overflow-x: visible; }
+
+      /* ─── View toggle ─── */
+      .view-toggle { display: flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+      .view-toggle-btn { padding: 7px 13px; font-size: 13px; font-weight: 500; border: none; background: transparent; cursor: pointer; color: var(--muted); transition: background 0.15s, color 0.15s; display: inline-flex; align-items: center; gap: 5px; font-family: inherit; white-space: nowrap; }
+      .view-toggle-btn:hover { color: var(--text); background: var(--surface); }
+      .view-toggle-btn.active { background: var(--text); color: #fff; }
+
+      /* ─── Empty states ─── */
+      .empty-state { text-align: center; padding: 48px 24px; }
+      .empty-icon { width: 58px; height: 58px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 26px; margin: 0 auto 14px; }
+      .empty-state h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+      .empty-state p { color: var(--muted); font-size: 14px; max-width: 320px; margin: 0 auto 20px; line-height: 1.6; }
+
+      /* ─── User avatar in topbar ─── */
+      .user-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+      /* ─── Skeleton shimmer ─── */
+      .skeleton { background: linear-gradient(90deg, var(--surface) 25%, var(--line) 50%, var(--surface) 75%); background-size: 200% 100%; animation: shimmer 1.5s ease-in-out infinite; border-radius: 8px; }
+      @keyframes shimmer { to { background-position: -200% 0; } }
+      .skel-card { height: 120px; border-radius: var(--radius); margin-bottom: 8px; }
+      .skel-text { height: 13px; border-radius: 4px; margin-bottom: 8px; }
+      .skel-text.w60 { width: 60%; }
+      .skel-text.w40 { width: 40%; }
+
+      /* ─── Analytics cards (replace inline styles) ─── */
+      .analytics-metric { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px 20px; }
+      .analytics-metric-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 8px; }
+      .analytics-metric-value { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+
+      @media (max-width: 640px) {
+        .board:not(.list-mode) .board-col { flex: 0 0 calc(100vw - 72px); }
+        .toast-shelf { bottom: 16px; right: 12px; left: 12px; }
+        .toast { max-width: none; }
+        .filter-bar { gap: 7px; }
+        .view-toggle-btn { padding: 6px 10px; font-size: 12px; }
       }
     </style>
   </head>
@@ -327,6 +443,12 @@
 
       <!-- Dashboard -->
       <section class="tab-panel active" data-panel="dashboard">
+        <div class="panel section setup-checklist" id="setup-checklist" style="display:none;margin-bottom:20px;">
+          <div class="kicker">Get set up</div>
+          <h2 id="setup-checklist-title">Finish setting up your booking page</h2>
+          <p class="muted" style="margin-bottom:14px;font-size:14px;">A few quick steps and you’re ready to take bookings. Clients can’t book until these are done.</p>
+          <div id="setup-steps" class="setup-steps"></div>
+        </div>
         <div class="panel section">
           <div class="kicker">Overview</div>
           <h2>Today at a glance</h2>
@@ -397,6 +519,10 @@
               <option value="">All sources</option>
               <option>Instagram</option><option>WhatsApp</option><option>Manual</option>
             </select>
+            <div class="view-toggle">
+              <button class="view-toggle-btn active" type="button" id="view-board-btn">⊞ Board</button>
+              <button class="view-toggle-btn" type="button" id="view-list-btn">≡ List</button>
+            </div>
             <span class="muted" id="lead-count"></span>
           </div>
           <div class="board" id="leads-board"></div>
@@ -505,6 +631,32 @@
 
       <!-- Reviews -->
       <section class="tab-panel" data-panel="reviews">
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">Google reviews</div>
+          <h2>Get found &amp; trusted on Google</h2>
+          <p class="muted" style="margin-bottom:14px;font-size:14px;">
+            Connect your Google Business listing once. We’ll create your one-tap “leave a review” link so every
+            review request sends clients straight to your Google page.
+          </p>
+          <div id="gmb-connected" class="mini-card" style="display:none;">
+            <div class="kicker" style="color:var(--success);">✓ Connected</div>
+            <p class="muted" style="margin:8px 0;font-size:13px;">Your review link is set. Clients who get a review request will land on your Google page.</p>
+            <div class="filter-bar" style="margin-top:6px;">
+              <input type="text" id="gmb-link" class="grow" readonly />
+              <button class="button secondary" type="button" id="gmb-copy">Copy</button>
+              <a class="button secondary" id="gmb-open" target="_blank" rel="noreferrer">Test link</a>
+              <button class="button secondary" type="button" id="gmb-change">Change</button>
+            </div>
+          </div>
+          <div id="gmb-setup">
+            <div class="filter-bar" style="margin-bottom:10px;">
+              <input type="text" id="gmb-query" class="grow" placeholder="Your business name and city, e.g. Glow by Aisha, Mumbai" />
+              <button class="button" type="button" id="gmb-search-btn">Find my business</button>
+            </div>
+            <div id="gmb-results"></div>
+            <div class="status" id="gmb-status"></div>
+          </div>
+        </div>
         <div class="panel section">
           <div class="kicker">Client Feedback</div>
           <h2>Reviews</h2>
@@ -601,10 +753,15 @@
               <textarea id="mypage-about" name="aboutText" placeholder="A warm line or two about your style and experience. Shown at the top of your booking page."></textarea>
             </div>
             <div class="wide">
-              <label for="portfolio-input">Portfolio image links (one per line)</label>
-              <textarea id="portfolio-input" name="portfolioImages" placeholder="https://your-image-1.jpg&#10;https://your-image-2.jpg" style="min-height:120px;"></textarea>
-              <p class="muted" style="margin-top:6px;font-size:13px;">Paste direct image links (e.g. from Google Drive “share”, Imgur, or your website). Up to 12 are shown as a grid on your page.</p>
-              <div id="portfolio-preview" class="gallery-preview"></div>
+              <label>Portfolio photos</label>
+              <p class="muted" style="margin:0 0 10px;font-size:13px;">Show your best work — up to 12 photos appear as a gallery on your booking page. Drag &amp; drop or tap to upload straight from your phone or computer.</p>
+              <div class="portfolio-drop" id="portfolio-drop">
+                <input type="file" id="portfolio-file" accept="image/*" multiple hidden />
+                <div class="portfolio-drop-icon">🖼️</div>
+                <div class="portfolio-drop-label">Tap to upload photos · JPG, PNG, WEBP · up to 10 MB each</div>
+              </div>
+              <div id="portfolio-grid" class="portfolio-grid"></div>
+              <div class="status" id="portfolio-upload-status"></div>
             </div>
           </div>
           <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save my page</button></div>
@@ -643,6 +800,12 @@
                 <div><label for="googleReviewLink">Google Review Link</label><input id="googleReviewLink" name="googleReviewLink" /></div>
                 <div><label for="contractTemplateUrl">Leegality Template ID / URL</label><input id="contractTemplateUrl" name="contractTemplateUrl" /></div>
                 <div class="wide"><label for="paymentTerms">Payment Terms</label><textarea id="paymentTerms" name="paymentTerms" required></textarea></div>
+              </div>
+              <div class="wide" style="margin-top:8px;">
+                <label>Document design</label>
+                <p class="muted" style="margin:0 0 4px;font-size:13px;">Choose how your quotes, invoices, and contracts look. Applies to every PDF you generate.</p>
+                <input type="hidden" name="documentTemplate" id="documentTemplate" value="classic" />
+                <div class="template-grid" id="template-grid"></div>
               </div>
             </div>
           </details>
@@ -776,6 +939,7 @@
 
       </div><!-- /tab-panels -->
     </main>
+    <div class="toast-shelf" id="toast-shelf"></div>
 
     <script>
       const configForm = document.getElementById("config-form");
@@ -796,6 +960,41 @@
       let sessionState = null;
       let teamArtists = [];
       let interactionsCache = null;
+
+      // ─── Toast notifications ───
+      function toast(message, type = "info") {
+        const shelf = document.getElementById("toast-shelf");
+        const el = document.createElement("div");
+        el.className = `toast ${type}`;
+        el.textContent = message;
+        shelf.appendChild(el);
+        setTimeout(() => {
+          el.classList.add("removing");
+          el.addEventListener("animationend", () => el.remove(), { once: true });
+        }, type === "error" ? 5000 : 3200);
+      }
+
+      // ─── Button loading state ───
+      function setLoading(btn, label = "Saving…") {
+        if (!btn) return;
+        btn._origText = btn.textContent;
+        btn.textContent = label;
+        btn.disabled = true;
+        btn.classList.add("loading");
+      }
+      function clearLoading(btn, label) {
+        if (!btn) return;
+        btn.textContent = label !== undefined ? label : (btn._origText || btn.textContent);
+        btn.disabled = false;
+        btn.classList.remove("loading");
+      }
+
+      // ─── Close any open card menu when clicking outside ───
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".card-menu-wrap")) {
+          document.querySelectorAll(".card-menu.open").forEach((m) => m.classList.remove("open"));
+        }
+      });
 
       const LEAD_COLUMNS = [
         { key: "New", label: "New" },
@@ -825,7 +1024,49 @@
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
       function setValue(form, name, value) { const f = form.elements.namedItem(name); if (f) f.value = value ?? ""; }
-      function fillConfig(config) { Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v)); }
+      function fillConfig(config) { Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v)); renderTemplatePicker(config.documentTemplate); }
+
+      // ---- Document design picker ----
+      // Visual swatch colours mirror the server-side themes in document-themes.ts.
+      const TEMPLATE_SWATCHES = {
+        classic: { band: "#9C7A4D", bg: "#F7F2EB" },
+        minimal: { band: "#1A1A1A", bg: "#F7F7F7" },
+        noir: { band: "#1C1A1F", bg: "#F4F4F6" },
+        blush: { band: "#C26B45", bg: "#FBF0EA" },
+      };
+      let documentTemplates = null;
+      let selectedTemplate = "classic";
+      async function ensureTemplates() {
+        if (documentTemplates) return;
+        try {
+          const payload = await getJson("/api/document-templates");
+          documentTemplates = payload?.templates || [];
+        } catch { documentTemplates = []; }
+      }
+      async function renderTemplatePicker(current) {
+        selectedTemplate = current || selectedTemplate || "classic";
+        document.getElementById("documentTemplate").value = selectedTemplate;
+        await ensureTemplates();
+        const grid = document.getElementById("template-grid");
+        if (!grid) return;
+        grid.innerHTML = (documentTemplates || []).map((t) => {
+          const sw = TEMPLATE_SWATCHES[t.key] || TEMPLATE_SWATCHES.classic;
+          return `
+            <div class="template-card ${t.key === selectedTemplate ? "selected" : ""}" data-template="${escapeHtml(t.key)}">
+              <div class="template-swatch" style="background:${sw.bg};"><div class="band" style="background:${sw.band};"></div></div>
+              <strong>${escapeHtml(t.label)}</strong>
+              <span>${escapeHtml(t.description)}</span>
+            </div>`;
+        }).join("");
+      }
+      document.getElementById("template-grid").addEventListener("click", (e) => {
+        const card = e.target.closest("[data-template]");
+        if (!card) return;
+        selectedTemplate = card.getAttribute("data-template");
+        document.getElementById("documentTemplate").value = selectedTemplate;
+        document.querySelectorAll("#template-grid .template-card").forEach((c) =>
+          c.classList.toggle("selected", c.getAttribute("data-template") === selectedTemplate));
+      });
       function formatDate(value) {
         if (!value) return "—";
         try { return new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }); } catch { return value; }
@@ -873,6 +1114,12 @@
         }
       }
 
+      function daysUntil(dateStr) {
+        if (!dateStr) return null;
+        const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+        return diff;
+      }
+
       function leadCard(lead) {
         const editValue = lead.finalApprovedPrice || lead.initialAiPrice || 0;
         const reply = escapeHtml(lead.suggestedReply || "");
@@ -880,42 +1127,81 @@
         const primaryBtn = primary
           ? `<button class="button small primary-action" data-action="${primary.action}" data-lead-id="${lead.leadId}">${primary.label}</button>`
           : "";
+
+        const days = daysUntil(lead.eventDate);
+        const urgencyPill = days === null ? "" :
+          days < 0 ? `<span class="pill danger" style="font-size:11px;">${Math.abs(days)}d ago</span>` :
+          days === 0 ? `<span class="pill danger" style="font-size:11px;">Today</span>` :
+          days <= 7 ? `<span class="pill danger" style="font-size:11px;">${days}d</span>` :
+          days <= 14 ? `<span class="pill warning" style="font-size:11px;">${days}d</span>` :
+          `<span style="font-size:11px;color:var(--muted);">${days}d</span>`;
+
+        const wa = lead.clientWhatsApp ? lead.clientWhatsApp.replace(/\D/g, "") : "";
+        const waBtn = wa
+          ? `<a href="https://wa.me/${wa}" target="_blank" rel="noreferrer" class="button tiny secondary" style="text-decoration:none;margin-top:6px;width:100%;justify-content:center;">💬 WhatsApp</a>`
+          : "";
+
+        const quoteChip = lead.quoteUrl
+          ? `<span class="pill success" style="font-size:11px;">Quote sent</span>`
+          : lead.quoteGeneratedAt
+          ? `<span class="pill" style="font-size:11px;">Quote ready</span>`
+          : "";
+        const payChip = lead.paymentStatus
+          ? `<span class="${pillClass(lead.paymentStatus)}" style="font-size:11px;">${escapeHtml(lead.paymentStatus)}</span>`
+          : "";
+
+        const initial = (lead.clientName || "?")[0].toUpperCase();
+
         return `
           <div class="card" draggable="true" data-card-lead-id="${lead.leadId}">
-            <div class="card-name">${escapeHtml(lead.clientName)}</div>
-            <div class="card-meta">
-              ${escapeHtml(lead.eventType)} · ${escapeHtml(lead.eventDate)}${lead.eventTime ? " " + escapeHtml(lead.eventTime) : ""}<br>
-              ${escapeHtml(lead.locationText)} · ${escapeHtml(lead.source)}
-            </div>
-            <div class="card-price">${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)} <span class="muted" style="font-weight:400;">AI ${formatMoney(lead.initialAiPrice)}</span></div>
-            ${primaryBtn}
-            <div class="assign-row">
-              <select data-assign-lead-id="${lead.leadId}">${assignOptions(lead.assignedArtist)}</select>
-            </div>
-            <details>
-              <summary class="more-summary">More options</summary>
-              ${lead.aiInsight ? `<p class="card-meta" style="margin-top:8px;">${escapeHtml(lead.aiInsight)}</p>` : ""}
-              <div class="action-row" style="margin-top:10px;flex-direction:column;align-items:stretch;">
-                <label style="margin:0 0 4px;">Quoted price</label>
-                <div class="action-row">
-                  <input data-edit-input="${lead.leadId}" type="number" value="${editValue}" style="max-width:130px;" />
-                  <button class="button tiny secondary" data-action="edit" data-lead-id="${lead.leadId}">Update</button>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+                <div class="lead-avatar" style="width:32px;height:32px;font-size:13px;flex-shrink:0;">${escapeHtml(initial)}</div>
+                <span class="card-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(lead.clientName)}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+                ${urgencyPill}
+                <div class="card-menu-wrap">
+                  <button class="card-menu-trigger" data-menu-for="${lead.leadId}" title="More options" type="button">⋮</button>
+                  <div class="card-menu" id="menu-${lead.leadId}">
+                    <div class="card-menu-section">
+                      <span class="field-label">Adjust price</span>
+                      <div style="display:flex;gap:6px;align-items:center;">
+                        <input data-edit-input="${lead.leadId}" type="number" value="${editValue}" style="width:94px;" />
+                        <button class="button tiny" data-action="edit" data-lead-id="${lead.leadId}" type="button">Save</button>
+                      </div>
+                    </div>
+                    <div class="card-menu-sep"></div>
+                    <div class="card-menu-section">
+                      <span class="field-label">Reply to client</span>
+                      <input data-reply-input="${lead.leadId}" type="text" value="${reply}" placeholder="Your message…" style="width:100%;" />
+                      <button class="button tiny secondary" style="width:100%;margin-top:6px;" data-action="reply" data-lead-id="${lead.leadId}" type="button">Send</button>
+                    </div>
+                    <div class="card-menu-sep"></div>
+                    <button class="card-menu-item" data-action="quote" data-lead-id="${lead.leadId}" type="button">📄 Generate quote</button>
+                    <button class="card-menu-item" data-action="send-quote" data-lead-id="${lead.leadId}" type="button">📤 Send quote</button>
+                    ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer" class="card-menu-item">🔗 Open quote</a>` : ""}
+                    <div class="card-menu-sep"></div>
+                    <button class="card-menu-item danger" data-action="no" data-lead-id="${lead.leadId}" type="button">✕ Decline lead</button>
+                  </div>
                 </div>
               </div>
-              <div class="action-row" style="margin-top:10px;flex-direction:column;align-items:stretch;">
-                <label style="margin:0 0 4px;">Reply to client</label>
-                <input data-reply-input="${lead.leadId}" type="text" value="${reply}" />
-                <button class="button tiny secondary" style="margin-top:6px;" data-action="reply" data-lead-id="${lead.leadId}">Send reply</button>
-              </div>
-              <div class="action-row" style="margin-top:10px;align-items:center;">
-                <button class="button tiny secondary" data-action="quote" data-lead-id="${lead.leadId}">Make quote</button>
-                <button class="button tiny secondary" data-action="send-quote" data-lead-id="${lead.leadId}">Send quote</button>
-                ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer">Open</a>` : ""}
-              </div>
-              <div class="action-row" style="margin-top:12px;">
-                <button class="button tiny secondary" data-action="no" data-lead-id="${lead.leadId}">Decline lead</button>
-              </div>
-            </details>
+            </div>
+            <div class="card-meta">
+              ${escapeHtml(lead.eventType)} · ${escapeHtml(lead.eventDate)}${lead.eventTime ? " " + escapeHtml(lead.eventTime) : ""}<br>
+              ${escapeHtml(lead.locationText)}${lead.outstationFlag === "Yes" ? " · <strong>Outstation</strong>" : ""}
+            </div>
+            <div class="card-price" style="margin-top:6px;">
+              ${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)}
+              <span class="muted" style="font-weight:400;font-size:12px;">est. ${formatMoney(lead.initialAiPrice)}</span>
+            </div>
+            ${lead.aiInsight ? `<p class="card-meta" style="font-style:italic;margin:6px 0 0;border-left:2px solid var(--line);padding-left:8px;line-height:1.5;">${escapeHtml(lead.aiInsight)}</p>` : ""}
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0;">${quoteChip}${payChip}</div>
+            ${waBtn}
+            ${primaryBtn}
+            <div class="assign-row" style="margin-top:8px;">
+              <select data-assign-lead-id="${lead.leadId}">${assignOptions(lead.assignedArtist)}</select>
+            </div>
           </div>`;
       }
 
@@ -935,19 +1221,87 @@
         });
       }
 
+      let leadsViewMode = "board";
+
+      function statusDotClass(status) {
+        if (["Confirmed", "Payment Received", "Completed"].includes(status)) return "success";
+        if (["New", "Awaiting Client"].includes(status)) return "warning";
+        if (["Lost"].includes(status)) return "danger";
+        return "";
+      }
+
+      function renderLeadList(leads) {
+        if (!leads.length) {
+          leadsBoard.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>No matches</h3><p>Try adjusting your filters above.</p></div>`;
+          return;
+        }
+        const sorted = [...leads].sort((a, b) => {
+          const da = daysUntil(a.eventDate) ?? 9999;
+          const db = daysUntil(b.eventDate) ?? 9999;
+          return da - db;
+        });
+        leadsBoard.innerHTML = `<div class="lead-list">${sorted.map((lead) => {
+          const days = daysUntil(lead.eventDate);
+          const daysStr = days === null ? "" :
+            days < 0 ? `<span class="pill danger" style="font-size:11px;">${Math.abs(days)}d ago</span>` :
+            days === 0 ? `<span class="pill danger" style="font-size:11px;">Today</span>` :
+            days <= 7 ? `<span class="pill danger" style="font-size:11px;">${days}d</span>` :
+            days <= 14 ? `<span class="pill warning" style="font-size:11px;">${days}d</span>` :
+            `<span style="font-size:12px;color:var(--muted);">${days}d</span>`;
+          const initial = (lead.clientName || "?")[0].toUpperCase();
+          const dot = statusDotClass(lead.status);
+          return `
+            <div class="lead-list-item" data-list-lead-id="${lead.leadId}">
+              <div class="lead-avatar">${escapeHtml(initial)}</div>
+              <div class="lead-list-body">
+                <div class="lead-list-name">${escapeHtml(lead.clientName)}</div>
+                <div class="lead-list-sub">${escapeHtml(lead.eventType)} · ${escapeHtml(lead.eventDate)}${lead.locationText ? " · " + escapeHtml(lead.locationText) : ""}</div>
+              </div>
+              <div class="lead-list-right">
+                <div class="lead-list-price">${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)}</div>
+                <div style="display:flex;align-items:center;gap:6px;">${daysStr}<span class="status-dot ${dot}"></span></div>
+              </div>
+            </div>`;
+        }).join("")}</div>`;
+      }
+
       function renderLeads() {
         const leads = filteredLeads();
         document.getElementById("lead-count").textContent = `${leads.length} shown`;
-        leadsBoard.innerHTML = LEAD_COLUMNS.map((col) => {
-          const items = leads.filter((l) => (l.status || "New") === col.key);
-          return `
-            <div class="board-col">
-              <div class="board-col-head"><strong>${col.label}</strong><span class="count">${items.length}</span></div>
-              <div class="board-col-body" data-col-status="${col.key}">
-                ${items.map(leadCard).join("") || '<p class="muted" style="font-size:12px;">—</p>'}
-              </div>
+        const totalLeads = (sessionState?.dashboard?.leads || []).length;
+        if (totalLeads === 0) {
+          leadsBoard.classList.remove("list-mode");
+          leadsBoard.classList.add("board");
+          const wsId = sessionState?.workspace?.workspaceId;
+          const bookingUrl = wsId ? `${window.location.origin}/book/${encodeURIComponent(wsId)}` : "";
+          leadsBoard.innerHTML = `
+            <div class="empty-state" style="width:100%;">
+              <div class="empty-icon">📩</div>
+              <h3>No requests yet</h3>
+              <p>Share your booking link so clients can request a date. New requests land here automatically.</p>
+              ${bookingUrl ? `<button class="button" type="button" id="empty-share-link" data-share="${escapeHtml(bookingUrl)}">Copy booking link</button>` : ""}
             </div>`;
-        }).join("");
+          return;
+        }
+        const effectiveMode = window.innerWidth < 640 ? "list" : leadsViewMode;
+        if (effectiveMode === "list") {
+          leadsBoard.classList.add("list-mode");
+          leadsBoard.classList.remove("board");
+          renderLeadList(leads);
+        } else {
+          leadsBoard.classList.remove("list-mode");
+          leadsBoard.classList.add("board");
+          leadsBoard.innerHTML = LEAD_COLUMNS.map((col) => {
+            const items = leads.filter((l) => (l.status || "New") === col.key);
+            return `
+              <div class="board-col">
+                <div class="board-col-head"><strong>${col.label}</strong><span class="count">${items.length}</span></div>
+                <div class="board-col-body" data-col-status="${col.key}">
+                  ${items.map(leadCard).join("") || '<p class="muted" style="font-size:12px;padding:8px 4px;">—</p>'}
+                </div>
+              </div>`;
+          }).join("");
+        }
       }
 
       function filteredBookings() {
@@ -969,32 +1323,41 @@
       function renderBookings() {
         const bookings = filteredBookings();
         document.getElementById("booking-count").textContent = `${bookings.length} shown`;
-        if (!bookings.length) { bookingsBody.innerHTML = `<tr><td colspan="6" class="muted">No bookings match.</td></tr>`; return; }
+        if (!bookings.length) {
+          bookingsBody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📅</div><h3>No bookings yet</h3><p>When you confirm a lead, it appears here as a confirmed booking with invoicing and contract tools.</p></div></td></tr>`;
+          return;
+        }
         bookingsBody.innerHTML = bookings.map((booking) => `
           <tr>
             <td><strong>${escapeHtml(booking.bookingId)}</strong><br><span class="muted">${formatDate(booking.bookedAt)}</span></td>
             <td>${escapeHtml(booking.clientName)}<br><span class="muted">${escapeHtml(booking.clientWhatsApp)}</span></td>
             <td>${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(booking.eventDate)}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
             <td>${formatMoney(booking.finalPrice)}<br><span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br><span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span></td>
-            <td><span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span></td>
             <td>
-              <div class="action-row" style="align-items:center;flex-wrap:wrap;">
-                <button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Invoice</button>
-                <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask for review</button>
-                ${booking.invoiceUrl ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer">Open invoice</a>` : ""}
+              <span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span><br>
+              ${booking.contractStatus ? `<span class="pill ${booking.contractStatus === "Signed" ? "success" : booking.contractStatus === "Sent" ? "warning" : ""}" style="margin-top:4px;font-size:10px;">${escapeHtml(booking.contractStatus)}</span>` : ""}
+              ${booking.contractSentAt ? `<br><span class="muted" style="font-size:11px;">Sent ${formatDate(booking.contractSentAt)}</span>` : ""}
+            </td>
+            <td>
+              <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
+                ${booking.invoiceUrl
+                  ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open invoice</a>`
+                  : `<button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Create invoice</button>`}
+                ${booking.contractUrl
+                  ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open contract</a>`
+                  : `<button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create contract</button>`}
               </div>
               <details style="margin-top:10px;">
                 <summary class="more-summary">More actions</summary>
                 <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
                   <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send invoice</button>
+                  <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
+                  <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync contract</button>
+                </div>
+                <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;">
+                  <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask for review</button>
                   <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Advance reminder</button>
                   <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance reminder</button>
-                </div>
-                <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
-                  <button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create contract</button>
-                  <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
-                  <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync</button>
-                  ${booking.contractUrl ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer">Open contract</a>` : `<span class="muted">${escapeHtml(booking.contractStatus || "Draft")}</span>`}
                 </div>
               </details>
             </td>
@@ -1008,7 +1371,42 @@
         renderSnapshot(leads, bookings);
         renderLeads();
         renderBookings();
+        renderSetupChecklist();
       }
+
+      // Onboarding readiness — surfaces the few things a new artist must do
+      // before their booking page is client-ready. Each step jumps to where
+      // it can be completed.
+      function renderSetupChecklist() {
+        const box = document.getElementById("setup-checklist");
+        const cfg = sessionState?.workspace?.config;
+        if (!cfg) { box.style.display = "none"; return; }
+        const portfolioCount = String(cfg.portfolioImages || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length;
+        const steps = [
+          { done: !!(cfg.businessName && cfg.businessName.trim()), title: "Add your business name", desc: "Shown at the top of your booking page.", tab: "setup" },
+          { done: !!(cfg.ownerWhatsApp && cfg.ownerWhatsApp.replace(/\D/g, "").length >= 8), title: "Add your WhatsApp number", desc: "So clients can reach you and get confirmations.", tab: "setup" },
+          { done: !!(cfg.upiId && cfg.upiId.trim()), title: "Set up payments (UPI ID)", desc: "Lets clients pay the advance to lock their date.", tab: "setup" },
+          { done: portfolioCount >= 1, title: "Upload portfolio photos", desc: "Show your work — pages with photos book far more.", tab: "mypage" },
+          { done: !!(cfg.aboutText && cfg.aboutText.trim()), title: "Write a short intro", desc: "A warm line about your style and experience.", tab: "mypage" },
+        ];
+        const doneCount = steps.filter((s) => s.done).length;
+        if (doneCount === steps.length) { box.style.display = "none"; return; }
+        box.style.display = "";
+        document.getElementById("setup-checklist-title").textContent =
+          doneCount === 0 ? "Finish setting up your booking page" : "Almost there — finish your setup";
+        document.getElementById("setup-steps").innerHTML =
+          `<div class="setup-progress">${doneCount} of ${steps.length} done</div>` +
+          steps.map((s) => `
+            <button type="button" class="setup-step ${s.done ? "done" : ""}" ${s.done ? "" : `data-setup-go="${s.tab}"`}>
+              <span class="check">${s.done ? "✓" : ""}</span>
+              <span class="step-text"><strong>${escapeHtml(s.title)}</strong><span>${escapeHtml(s.desc)}</span></span>
+              ${s.done ? "" : '<span class="step-go">Set up →</span>'}
+            </button>`).join("");
+      }
+      document.getElementById("setup-steps").addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-setup-go]");
+        if (btn) activateTab(btn.getAttribute("data-setup-go"));
+      });
 
       // ---- Calendar ----
       let calMode = "MONTH";
@@ -1038,14 +1436,16 @@
       // ---- Team ----
       async function loadTeam() {
         try {
-          const res = await fetch("/api/team");
-          const payload = await res.json();
-          if (payload.ok) { teamArtists = payload.artists || []; renderTeam(); renderLeads(); }
+          const payload = await getJson("/api/team");
+          if (payload?.ok) { teamArtists = payload.artists || []; renderTeam(); renderLeads(); }
         } catch (error) { document.getElementById("team-list").innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
       }
       function renderTeam() {
         const list = document.getElementById("team-list");
-        if (!teamArtists.length) { list.innerHTML = `<p class="muted">No team members yet.</p>`; return; }
+        if (!teamArtists.length) {
+          list.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>No team members yet</h3><p>Add your first artist using the form above to start building your team roster.</p></div>`;
+          return;
+        }
         list.innerHTML = `<div class="mini-grid">${teamArtists.map((a) => `
           <div class="mini-card">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -1068,16 +1468,23 @@
       const teamStatus = document.getElementById("team-status");
       teamForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        teamStatus.textContent = "Saving…";
+        const btn = document.getElementById("team-save-btn");
+        setLoading(btn, "Saving…");
+        teamStatus.textContent = "";
         try {
           await postJson("/api/team", Object.fromEntries(new FormData(teamForm).entries()));
-          teamStatus.textContent = "Saved.";
+          toast("Team member saved.", "success");
           teamForm.reset();
           document.getElementById("team-artist-id").value = "";
           document.getElementById("team-form-title").textContent = "Add Team Member";
           document.getElementById("team-save-btn").textContent = "Add Artist";
           await loadTeam();
-        } catch (error) { teamStatus.textContent = error.message; }
+        } catch (error) {
+          toast(error.message, "error");
+          teamStatus.textContent = error.message;
+        } finally {
+          clearLoading(btn);
+        }
       });
       document.getElementById("team-reset-btn").addEventListener("click", () => {
         teamForm.reset();
@@ -1114,18 +1521,87 @@
 
       // ---- Reviews ----
       async function loadReviews() {
+        renderGmbState();
         const tbody = document.getElementById("reviews-table-body");
         const statsEl = document.getElementById("reviews-stats");
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>`;
         try {
-          const res = await fetch("/api/reviews");
-          const payload = await res.json();
-          if (!payload.ok) throw new Error(payload.error || "Failed");
+          const payload = await getJson("/api/reviews");
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
           renderReviews(payload.reviews || []);
         } catch (error) {
           tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">${escapeHtml(error.message)}</td></tr>`;
         }
       }
+
+      // ---- Google Business Profile review-link setup ----
+      let gmbForceSetup = false;
+      function renderGmbState() {
+        const link = sessionState?.workspace?.config?.googleReviewLink || "";
+        const connected = !!link && !gmbForceSetup;
+        document.getElementById("gmb-connected").style.display = connected ? "" : "none";
+        document.getElementById("gmb-setup").style.display = connected ? "none" : "";
+        if (connected) {
+          document.getElementById("gmb-link").value = link;
+          document.getElementById("gmb-open").href = link;
+        }
+      }
+      document.getElementById("gmb-change").addEventListener("click", () => { gmbForceSetup = true; renderGmbState(); });
+      document.getElementById("gmb-copy").addEventListener("click", (e) =>
+        copyToClipboard(document.getElementById("gmb-link").value, e.currentTarget));
+
+      document.getElementById("gmb-search-btn").addEventListener("click", async () => {
+        const q = document.getElementById("gmb-query").value.trim();
+        const status = document.getElementById("gmb-status");
+        const results = document.getElementById("gmb-results");
+        const searchBtn = document.getElementById("gmb-search-btn");
+        if (q.length < 3) { status.textContent = "Type your business name and city first."; return; }
+        setLoading(searchBtn, "Searching…");
+        status.textContent = "";
+        results.innerHTML = "";
+        try {
+          const payload = await getJson(`/api/gmb/search?q=${encodeURIComponent(q)}`);
+          if (!payload?.ok) throw new Error(payload?.error || "Search failed");
+          if (!payload.candidates.length) { results.innerHTML = `<p class="muted" style="font-size:13px;">No matches found. Try adding your city or area name.</p>`; return; }
+          results.innerHTML = payload.candidates.map((c) => `
+            <div class="gmb-result">
+              <div class="gmb-result-info">
+                <strong>${escapeHtml(c.name)}</strong>
+                <span class="muted">${escapeHtml(c.address)}${c.rating ? ` · ★ ${c.rating} (${c.userRatingsTotal || 0})` : ""}</span>
+              </div>
+              <button class="button small" type="button" data-gmb-place="${escapeHtml(c.placeId)}">This is me</button>
+            </div>`).join("");
+        } catch (error) {
+          status.textContent = error.message;
+          toast(error.message, "error");
+        } finally {
+          clearLoading(searchBtn);
+        }
+      });
+      document.getElementById("gmb-query").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); document.getElementById("gmb-search-btn").click(); }
+      });
+      document.getElementById("gmb-results").addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-gmb-place]");
+        if (!btn) return;
+        const status = document.getElementById("gmb-status");
+        setLoading(btn, "Connecting…");
+        try {
+          const payload = await postJson("/api/gmb/select", { placeId: btn.getAttribute("data-gmb-place") });
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          await refreshSession();
+          gmbForceSetup = false;
+          status.textContent = "";
+          document.getElementById("gmb-results").innerHTML = "";
+          document.getElementById("gmb-query").value = "";
+          renderGmbState();
+          toast("Google Business connected. Review link is ready.", "success");
+        } catch (error) {
+          status.textContent = error.message;
+          toast(error.message, "error");
+          clearLoading(btn);
+        }
+      });
       function renderReviews(reviews) {
         const tbody = document.getElementById("reviews-table-body");
         const statsEl = document.getElementById("reviews-stats");
@@ -1156,13 +1632,15 @@
       document.getElementById("reviews-table-body").addEventListener("click", async (e) => {
         const reviewId = e.target.closest("[data-review-confirm]")?.getAttribute("data-review-confirm");
         if (!reviewId) return;
-        e.target.disabled = true;
+        const btn = e.target.closest("[data-review-confirm]");
+        setLoading(btn, "…");
         try {
           await postJson(`/api/reviews/${reviewId}/confirm`, {});
+          toast("Review marked confirmed.", "success");
           loadReviews();
         } catch (error) {
-          alert(error.message);
-          e.target.disabled = false;
+          toast(error.message, "error");
+          clearLoading(btn);
         }
       });
 
@@ -1173,9 +1651,8 @@
         loading.style.display = "block";
         body.classList.add("hidden");
         try {
-          const res = await fetch("/api/analytics");
-          const payload = await res.json();
-          if (!payload.ok) throw new Error(payload.error || "Failed");
+          const payload = await getJson("/api/analytics");
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
           renderAnalytics(payload);
         } catch (err) {
           loading.textContent = err.message || "Failed to load analytics.";
@@ -1197,9 +1674,9 @@
           { label: "Avg Booking Value", value: formatMoney(summary.avgBookingValue) },
         ];
         document.getElementById("analytics-summary").innerHTML = cards.map((c) =>
-          `<div style="background:rgba(255,255,255,0.7);border:1px solid var(--line);border-radius:18px;padding:18px 20px;">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:8px;">${escapeHtml(c.label)}</div>
-            <div style="font-size:22px;font-weight:700;">${escapeHtml(String(c.value))}</div>
+          `<div class="analytics-metric">
+            <div class="analytics-metric-label">${escapeHtml(c.label)}</div>
+            <div class="analytics-metric-value">${escapeHtml(String(c.value))}</div>
           </div>`).join("");
 
         // Revenue bar chart
@@ -1239,15 +1716,77 @@
         await refreshSession();
       }
 
-      function portfolioUrls() {
-        return (document.getElementById("portfolio-input").value || "")
-          .split(/[\n,]/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s)).slice(0, 12);
+      let portfolioImages = [];
+      function parsePortfolio(raw) {
+        return String(raw || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
       }
-      function renderPortfolioPreview() {
-        const urls = portfolioUrls();
-        document.getElementById("portfolio-preview").innerHTML =
-          urls.map((u) => `<img loading="lazy" src="${escapeHtml(u)}" alt="Portfolio" />`).join("");
+      function renderPortfolioGrid() {
+        const grid = document.getElementById("portfolio-grid");
+        grid.innerHTML = portfolioImages.map((u, i) => `
+          <div class="portfolio-item">
+            <img loading="lazy" src="${escapeHtml(u)}" alt="Portfolio photo" />
+            <button type="button" class="remove" data-remove-portfolio="${i}" title="Remove">×</button>
+          </div>`).join("");
       }
+
+      const portfolioDrop = document.getElementById("portfolio-drop");
+      const portfolioFile = document.getElementById("portfolio-file");
+      const portfolioUploadStatus = document.getElementById("portfolio-upload-status");
+
+      portfolioDrop.addEventListener("click", () => portfolioFile.click());
+      portfolioDrop.addEventListener("dragover", (e) => { e.preventDefault(); portfolioDrop.classList.add("drag-over"); });
+      portfolioDrop.addEventListener("dragleave", () => portfolioDrop.classList.remove("drag-over"));
+      portfolioDrop.addEventListener("drop", (e) => {
+        e.preventDefault();
+        portfolioDrop.classList.remove("drag-over");
+        if (e.dataTransfer.files.length) uploadPortfolioFiles(e.dataTransfer.files);
+      });
+      portfolioFile.addEventListener("change", () => {
+        if (portfolioFile.files.length) uploadPortfolioFiles(portfolioFile.files);
+        portfolioFile.value = "";
+      });
+
+      async function uploadPortfolioFiles(fileList) {
+        const files = Array.from(fileList);
+        for (const file of files) {
+          if (portfolioImages.length >= 12) {
+            portfolioUploadStatus.textContent = "You can show up to 12 photos. Remove one to add more.";
+            break;
+          }
+          if (!file.type.startsWith("image/")) {
+            portfolioUploadStatus.textContent = `${file.name} is not an image — skipped.`;
+            continue;
+          }
+          portfolioUploadStatus.textContent = `Uploading ${file.name}…`;
+          try {
+            const form = new FormData();
+            form.append("image", file);
+            const res = await fetch("/api/workspace/portfolio/upload", { method: "POST", body: form });
+            if (res.status === 401) { window.location.href = "/auth/google"; return; }
+            const data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed");
+            portfolioImages = parsePortfolio(data.portfolioImages);
+            renderPortfolioGrid();
+            portfolioUploadStatus.textContent = "Photo added.";
+          } catch (err) {
+            portfolioUploadStatus.textContent = err.message || "Upload failed. Try again.";
+          }
+        }
+        await refreshSession();
+      }
+
+      document.getElementById("portfolio-grid").addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-remove-portfolio]");
+        if (!btn) return;
+        const idx = Number(btn.getAttribute("data-remove-portfolio"));
+        portfolioImages.splice(idx, 1);
+        renderPortfolioGrid();
+        portfolioUploadStatus.textContent = "Removing…";
+        try {
+          await saveConfigPatch({ portfolioImages: portfolioImages.join("\n") });
+          portfolioUploadStatus.textContent = "Photo removed.";
+        } catch (err) { portfolioUploadStatus.textContent = err.message; }
+      });
 
       function loadMyPage() {
         const ws = sessionState?.workspace;
@@ -1260,11 +1799,9 @@
         document.getElementById("mypage-qr").src =
           `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(bookingUrl)}`;
         setValue(mypageForm, "aboutText", cfg.aboutText);
-        setValue(mypageForm, "portfolioImages", cfg.portfolioImages);
-        renderPortfolioPreview();
+        portfolioImages = parsePortfolio(cfg.portfolioImages);
+        renderPortfolioGrid();
       }
-
-      document.getElementById("portfolio-input").addEventListener("input", renderPortfolioPreview);
 
       async function copyToClipboard(text, btn) {
         const original = btn.textContent;
@@ -1279,14 +1816,21 @@
 
       mypageForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        mypageStatus.textContent = "Saving…";
+        const btn = e.submitter || mypageForm.querySelector("[type=submit]");
+        setLoading(btn, "Saving…");
+        mypageStatus.textContent = "";
         try {
           await saveConfigPatch({
             aboutText: document.getElementById("mypage-about").value,
-            portfolioImages: portfolioUrls().join("\n"),
+            portfolioImages: portfolioImages.join("\n"),
           });
-          mypageStatus.textContent = "Saved. Your booking page is updated.";
-        } catch (error) { mypageStatus.textContent = error.message; }
+          toast("Your page is updated.", "success");
+        } catch (error) {
+          toast(error.message, "error");
+          mypageStatus.textContent = error.message;
+        } finally {
+          clearLoading(btn);
+        }
       });
 
       // ---- Conversations ----
@@ -1295,9 +1839,8 @@
         if (interactionsCache && !force) { renderConversations(); return; }
         list.innerHTML = `<p class="muted">Loading conversations…</p>`;
         try {
-          const res = await fetch("/api/conversations");
-          const payload = await res.json();
-          if (!payload.ok) throw new Error(payload.error || "Failed");
+          const payload = await getJson("/api/conversations");
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
           interactionsCache = payload.interactions || [];
           renderConversations();
         } catch (error) { list.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
@@ -1324,7 +1867,10 @@
             t.title.toLowerCase().includes(q) || t.msgs.some((m) => (m.message || "").toLowerCase().includes(q)));
         }
         document.getElementById("convo-count").textContent = `${threads.length} threads`;
-        if (!threads.length) { list.innerHTML = `<p class="muted">No conversations yet.</p>`; return; }
+        if (!threads.length) {
+          list.innerHTML = `<div class="empty-state"><div class="empty-icon">💬</div><h3>No conversations yet</h3><p>WhatsApp messages and interactions with your clients will appear here as threaded conversations.</p></div>`;
+          return;
+        }
         list.innerHTML = threads.map((t) => `
           <details class="thread">
             <summary>
@@ -1349,6 +1895,20 @@
         document.getElementById(id).addEventListener("input", renderLeads));
       ["booking-search", "booking-filter-event", "booking-filter-payment"].forEach((id) =>
         document.getElementById(id).addEventListener("input", renderBookings));
+
+      // ---- View toggle (Board / List) ----
+      document.getElementById("view-board-btn").addEventListener("click", () => {
+        leadsViewMode = "board";
+        document.getElementById("view-board-btn").classList.add("active");
+        document.getElementById("view-list-btn").classList.remove("active");
+        renderLeads();
+      });
+      document.getElementById("view-list-btn").addEventListener("click", () => {
+        leadsViewMode = "list";
+        document.getElementById("view-list-btn").classList.add("active");
+        document.getElementById("view-board-btn").classList.remove("active");
+        renderLeads();
+      });
 
       // ---- Session ----
       function renderMetaConnections(workspace, profile) {
@@ -1376,6 +1936,10 @@
 
       async function refreshSession() {
         const response = await fetch("/api/session");
+        if (response.status === 401) {
+          window.location.href = "/auth/google";
+          return;
+        }
         const payload = await response.json();
         sessionState = payload;
         if (!payload.authenticated) {
@@ -1387,7 +1951,15 @@
         }
         logoutButton.style.display = "inline-flex";
         connectLink.style.display = "none";
-        loginState.innerHTML = `<strong>${escapeHtml(payload.profile.name)}</strong><br>${escapeHtml(payload.profile.email)}`;
+        const _initial = (payload.profile.name || "?")[0].toUpperCase();
+        loginState.innerHTML = `
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="user-avatar">${escapeHtml(_initial)}</div>
+            <div>
+              <div style="font-size:14px;font-weight:600;line-height:1.3;">${escapeHtml(payload.profile.name)}</div>
+              <div style="font-size:12px;color:var(--muted);">${escapeHtml(payload.profile.email)}</div>
+            </div>
+          </div>`;
         if (payload.workspace) {
           document.body.classList.add("authenticated");
           fillConfig(payload.workspace.config);
@@ -1433,6 +2005,21 @@
 
       async function postJson(url, body) {
         const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (response.status === 401) {
+          window.location.href = "/auth/google";
+          return;
+        }
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Request failed");
+        return payload;
+      }
+
+      async function getJson(url) {
+        const response = await fetch(url);
+        if (response.status === 401) {
+          window.location.href = "/auth/google";
+          return null;
+        }
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Request failed");
         return payload;
@@ -1440,27 +2027,44 @@
 
       configForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        formStatus.textContent = "Saving configuration...";
-        try { await postJson("/api/workspace/config", Object.fromEntries(new FormData(configForm).entries())); formStatus.textContent = "Configuration saved to your private Google Sheet."; await refreshSession(); }
-        catch (error) { formStatus.textContent = error.message; }
+        const btn = e.submitter || configForm.querySelector("[type=submit]");
+        setLoading(btn, "Saving…");
+        formStatus.textContent = "";
+        try {
+          await postJson("/api/workspace/config", Object.fromEntries(new FormData(configForm).entries()));
+          toast("Settings saved.", "success");
+          await refreshSession();
+        } catch (error) {
+          toast(error.message, "error");
+          formStatus.textContent = error.message;
+        } finally {
+          clearLoading(btn);
+        }
       });
 
       leadForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        leadStatus.textContent = "Creating lead...";
+        const btn = e.submitter || leadForm.querySelector("[type=submit]");
+        setLoading(btn, "Creating…");
+        leadStatus.textContent = "";
         try {
           await postJson("/api/leads", Object.fromEntries(new FormData(leadForm).entries()));
-          leadStatus.textContent = "Lead created and written to Google Sheets.";
+          toast("Lead created.", "success");
           leadForm.reset();
           leadForm.elements.namedItem("source").value = "Instagram";
           leadForm.elements.namedItem("eventType").value = "Bridal";
           leadForm.elements.namedItem("profileTier").value = "Mid";
           await refreshSession();
-        } catch (error) { leadStatus.textContent = error.message; }
+        } catch (error) {
+          toast(error.message, "error");
+          leadStatus.textContent = error.message;
+        } finally {
+          clearLoading(btn);
+        }
       });
 
-      async function runLeadAction(action, leadId) {
-        leadStatus.textContent = "Updating lead...";
+      async function runLeadAction(action, leadId, btn) {
+        if (btn) { btn.disabled = true; btn.classList.add("loading"); }
         try {
           if (action === "yes") await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
           else if (action === "no") await postJson(`/api/leads/${leadId}/decision`, { decision: "NO" });
@@ -1469,25 +2073,71 @@
           else if (action === "advance") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Advance Paid" });
           else if (action === "full") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
           else if (action === "reply") { const i = document.querySelector(`[data-reply-input="${leadId}"]`); await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" }); }
-          else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); documentStatus.textContent = "Quote generated."; }
-          else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); documentStatus.textContent = "Quote sent to client."; }
-          leadStatus.textContent = "Lead updated.";
+          else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
+          else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast("Quote sent to client.", "success"); }
+          toast("Lead updated.", "success");
           await refreshSession();
-        } catch (error) { leadStatus.textContent = error.message; }
+        } catch (error) {
+          toast(error.message, "error");
+          if (btn && btn.isConnected) { btn.disabled = false; btn.classList.remove("loading"); }
+        }
       }
 
       leadsBoard.addEventListener("click", (e) => {
-        const b = e.target.closest("button[data-action]");
-        if (!b) return;
-        runLeadAction(b.getAttribute("data-action"), b.getAttribute("data-lead-id"));
+        // Copy booking link from empty state
+        const share = e.target.closest("[data-share]");
+        if (share) { copyToClipboard(share.getAttribute("data-share"), share); return; }
+
+        // Toggle card action menu (⋮ button)
+        const menuTrigger = e.target.closest("[data-menu-for]");
+        if (menuTrigger) {
+          e.stopPropagation();
+          const menuId = menuTrigger.getAttribute("data-menu-for");
+          const menu = document.getElementById(`menu-${menuId}`);
+          if (menu) {
+            const wasOpen = menu.classList.contains("open");
+            document.querySelectorAll(".card-menu.open").forEach((m) => m.classList.remove("open"));
+            if (!wasOpen) menu.classList.add("open");
+          }
+          return;
+        }
+
+        // Stop menu-internal clicks from bubbling into drag
+        if (e.target.closest(".card-menu")) { e.stopPropagation(); }
+
+        // Lead action buttons (card primary buttons and menu items)
+        const b = e.target.closest("button[data-action], .card-menu-item[data-action]");
+        if (b) {
+          runLeadAction(b.getAttribute("data-action"), b.getAttribute("data-lead-id"), b);
+          return;
+        }
+
+        // List view: clicking a row opens an action prompt (primary action)
+        const listItem = e.target.closest("[data-list-lead-id]");
+        if (listItem) {
+          const leadId = listItem.getAttribute("data-list-lead-id");
+          const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
+          if (!lead) return;
+          const primary = primaryActionFor(lead);
+          if (primary) {
+            const ok = confirm(`${lead.clientName} — ${primary.label}?`);
+            if (ok) runLeadAction(primary.action, leadId, null);
+          }
+        }
       });
       leadsBoard.addEventListener("change", async (e) => {
         const sel = e.target.closest("select[data-assign-lead-id]");
         if (!sel) return;
         const leadId = sel.getAttribute("data-assign-lead-id");
-        leadStatus.textContent = "Assigning…";
-        try { await postJson(`/api/leads/${leadId}/assign`, { assignedArtist: sel.value }); leadStatus.textContent = "Assigned."; await refreshSession(); }
-        catch (error) { leadStatus.textContent = error.message; }
+        sel.disabled = true;
+        try {
+          await postJson(`/api/leads/${leadId}/assign`, { assignedArtist: sel.value });
+          toast("Artist assigned.", "success");
+          await refreshSession();
+        } catch (error) {
+          toast(error.message, "error");
+          sel.disabled = false;
+        }
       });
 
       // Drag-and-drop pipeline. Forward transitions map to existing endpoints.
@@ -1523,8 +2173,8 @@
           "Payment Received": "full",
         };
         const action = map[target];
-        if (!action) { leadStatus.textContent = `Can't move to ${target} directly.`; renderLeads(); return; }
-        await runLeadAction(action, id);
+        if (!action) { toast(`Can't move directly to "${target}".`, "error"); renderLeads(); return; }
+        await runLeadAction(action, id, null);
       });
 
       bookingsBody.addEventListener("click", async (e) => {
@@ -1532,18 +2182,23 @@
         if (!b) return;
         const bookingId = b.getAttribute("data-booking-id");
         const action = b.getAttribute("data-booking-action");
-        documentStatus.textContent = "Processing document...";
+        setLoading(b, "…");
+        documentStatus.textContent = "";
         try {
-          if (action === "invoice") { await postJson(`/api/bookings/${bookingId}/invoice`, {}); documentStatus.textContent = "Invoice generated."; }
-          else if (action === "send-invoice") { await postJson(`/api/bookings/${bookingId}/send-invoice`, {}); documentStatus.textContent = "Invoice sent to client."; }
-          else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); documentStatus.textContent = "Contract sent to Leegality."; }
-          else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); documentStatus.textContent = "Contract message sent to client."; }
-          else if (action === "sync-contract") { const r = await postJson(`/api/bookings/${bookingId}/contract/sync`, {}); documentStatus.textContent = `Contract status synced: ${r.booking?.contractStatus || "Updated"}.`; }
-          else if (action === "review") { await postJson(`/api/bookings/${bookingId}/send-review`, {}); documentStatus.textContent = "Review request sent."; }
-          else if (action === "advance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); documentStatus.textContent = "Advance reminder sent."; }
-          else if (action === "balance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); documentStatus.textContent = "Balance reminder sent."; }
+          if (action === "invoice") { await postJson(`/api/bookings/${bookingId}/invoice`, {}); toast("Invoice generated.", "success"); }
+          else if (action === "send-invoice") { await postJson(`/api/bookings/${bookingId}/send-invoice`, {}); toast("Invoice sent to client.", "success"); }
+          else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); toast("Contract sent to Leegality.", "success"); }
+          else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); toast("Contract message sent.", "success"); }
+          else if (action === "sync-contract") { const r = await postJson(`/api/bookings/${bookingId}/contract/sync`, {}); toast(`Contract: ${r.booking?.contractStatus || "Updated"}.`, "success"); }
+          else if (action === "review") { await postJson(`/api/bookings/${bookingId}/send-review`, {}); toast("Review request sent.", "success"); }
+          else if (action === "advance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); toast("Advance reminder sent.", "success"); }
+          else if (action === "balance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); toast("Balance reminder sent.", "success"); }
           await refreshSession();
-        } catch (error) { documentStatus.textContent = error.message; }
+        } catch (error) {
+          toast(error.message, "error");
+          documentStatus.textContent = error.message;
+          clearLoading(b);
+        }
       });
 
       logoutButton.addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); window.location.reload(); });
@@ -1559,14 +2214,32 @@
       }
       protectBtn?.addEventListener("click", async () => {
         const protect = protectBtn.dataset.protected !== "true";
-        protectStatus.textContent = protect ? "Enabling protection..." : "Disabling protection...";
-        try { const r = await postJson("/api/workspace/protect-sheet", { protect }); syncProtectButton(r.workspace); protectStatus.textContent = protect ? "Sheet protected — padlock is visible in Google Drive." : "Protection removed."; }
-        catch (error) { protectStatus.textContent = error.message; }
+        setLoading(protectBtn, protect ? "Enabling…" : "Disabling…");
+        protectStatus.textContent = "";
+        try {
+          const r = await postJson("/api/workspace/protect-sheet", { protect });
+          syncProtectButton(r.workspace);
+          toast(protect ? "Sheet protected." : "Protection removed.", "success");
+        } catch (error) {
+          toast(error.message, "error");
+          protectStatus.textContent = error.message;
+        } finally {
+          clearLoading(protectBtn);
+        }
       });
       recoverBtn?.addEventListener("click", async () => {
-        protectStatus.textContent = "Scanning Drive for your sheet...";
-        try { await postJson("/api/workspace/recover-sheet", {}); protectStatus.textContent = "Sheet recovered. Reloading..."; await refreshSession(); protectStatus.textContent = "Sheet recovery complete."; }
-        catch (error) { protectStatus.textContent = error.message; }
+        setLoading(recoverBtn, "Scanning…");
+        protectStatus.textContent = "";
+        try {
+          await postJson("/api/workspace/recover-sheet", {});
+          toast("Sheet recovered.", "success");
+          await refreshSession();
+        } catch (error) {
+          toast(error.message, "error");
+          protectStatus.textContent = error.message;
+        } finally {
+          clearLoading(recoverBtn);
+        }
       });
 
       metaSummary.addEventListener("click", async (e) => {

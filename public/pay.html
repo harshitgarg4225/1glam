@@ -47,6 +47,22 @@
     .error { text-align: center; color: var(--danger); padding: 40px 0; }
     .hidden { display: none; }
     .footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 28px; }
+    .upload-section { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 20px; }
+    .upload-section h3 { font-size: 15px; margin-bottom: 8px; }
+    .upload-section p { font-size: 13px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
+    .upload-drop { border: 2px dashed var(--line); border-radius: 10px; padding: 28px 20px; text-align: center; cursor: pointer; background: var(--surface); transition: border-color 0.15s; }
+    .upload-drop:hover, .upload-drop.drag-over { border-color: var(--accent); }
+    .upload-drop input[type=file] { display: none; }
+    .upload-drop .drop-icon { font-size: 28px; margin-bottom: 8px; }
+    .upload-drop .drop-label { font-size: 13px; color: var(--muted); }
+    .upload-preview { margin-top: 12px; max-width: 100%; border-radius: 8px; display: none; }
+    .upload-btn { display: block; width: 100%; padding: 13px 20px; text-align: center; cursor: pointer; border: none; border-radius: 8px; font: 600 15px/1 -apple-system, sans-serif; color: #fff; background: var(--accent); margin-top: 12px; transition: background 0.15s; }
+    .upload-btn:hover { background: var(--accent-hover); }
+    .upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .upload-status { font-size: 13px; text-align: center; margin-top: 10px; }
+    .upload-status.success { color: var(--success); }
+    .upload-status.error { color: var(--danger); }
+    .done-banner { background: #DCFCE7; border: 1px solid #BBF7D0; border-radius: 10px; padding: 16px 18px; text-align: center; color: var(--success); font-weight: 600; font-size: 15px; margin-top: 16px; display: none; }
   </style>
 </head>
 <body>
@@ -78,8 +94,21 @@
 
       <a id="upi-btn" class="pay-btn hidden" href="#">Pay ₹<span id="upi-amount"></span> via UPI →</a>
       <p class="upi-id hidden" id="upi-id-row">UPI ID: <strong id="upi-id-text"></strong></p>
+      <p class="note hidden" id="no-upi-note" style="background:#FEF3C7;border:1px solid #FDE68A;color:#92400E;padding:12px 14px;border-radius:8px;">Please contact the artist directly to arrange your advance payment, then upload your payment screenshot below to confirm.</p>
 
-      <p class="note">Once paid, please send a screenshot to the artist on WhatsApp to confirm your booking slot.</p>
+      <div class="upload-section">
+        <h3>Confirm your payment</h3>
+        <p>After paying, upload a screenshot of your payment here. Your booking slot will be confirmed automatically.</p>
+        <div class="upload-drop" id="upload-drop">
+          <input type="file" id="screenshot-file" accept="image/*" />
+          <div class="drop-icon">📷</div>
+          <div class="drop-label">Tap to attach screenshot · JPG or PNG · max 10 MB</div>
+        </div>
+        <img class="upload-preview" id="upload-preview" alt="Screenshot preview" />
+        <button class="upload-btn" id="upload-btn" disabled>Confirm payment</button>
+        <div class="upload-status" id="upload-status"></div>
+        <div class="done-banner" id="done-banner">✓ Payment confirmed — your slot is secured!</div>
+      </div>
     </div>
 
     <p class="footer">Powered by 1Glam Booking OS</p>
@@ -127,6 +156,8 @@
         const idRow = document.getElementById("upi-id-row");
         document.getElementById("upi-id-text").textContent = d.upiId;
         idRow.classList.remove("hidden");
+      } else {
+        document.getElementById("no-upi-note").classList.remove("hidden");
       }
 
       document.getElementById("payment-card").classList.remove("hidden");
@@ -139,6 +170,64 @@
     }
 
     load();
+
+    // Screenshot upload
+    const drop = document.getElementById("upload-drop");
+    const fileInput = document.getElementById("screenshot-file");
+    const preview = document.getElementById("upload-preview");
+    const uploadBtn = document.getElementById("upload-btn");
+    const uploadStatus = document.getElementById("upload-status");
+    const doneBanner = document.getElementById("done-banner");
+
+    drop.addEventListener("click", () => fileInput.click());
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag-over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("drag-over");
+      const file = e.dataTransfer.files[0];
+      if (file) setFile(file);
+    });
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files[0]) setFile(fileInput.files[0]);
+    });
+
+    function setFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        preview.src = e.target.result;
+        preview.style.display = "block";
+      };
+      reader.readAsDataURL(file);
+      uploadBtn.disabled = false;
+    }
+
+    uploadBtn.addEventListener("click", async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      uploadBtn.disabled = true;
+      uploadStatus.textContent = "Uploading…";
+      uploadStatus.className = "upload-status";
+      try {
+        const form = new FormData();
+        form.append("screenshot", file);
+        const res = await fetch(
+          `/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(leadId)}/screenshot`,
+          { method: "POST", body: form },
+        );
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed");
+        uploadStatus.textContent = "";
+        doneBanner.style.display = "block";
+        drop.style.display = "none";
+        uploadBtn.style.display = "none";
+        preview.style.display = "none";
+      } catch (err) {
+        uploadStatus.textContent = err.message || "Upload failed. Try again.";
+        uploadStatus.className = "upload-status error";
+        uploadBtn.disabled = false;
+      }
+    });
   </script>
 </body>
 </html>

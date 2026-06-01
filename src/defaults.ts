@@ -80,5 +80,6 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     reviewRequestDaysAfter: "",
     reviewTemplate: "",
     reviewTemplateLang: "en",
+    documentTemplate: "classic",
   };
 }

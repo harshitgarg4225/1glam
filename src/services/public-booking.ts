@@ -1,7 +1,9 @@
+import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord } from "./booking.js";
+import { countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, updateLeadRecord, updateBookingRecord } from "./booking.js";
 import { findWorkspaceByWorkspaceId } from "./database.js";
+import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
 import type { WorkspaceConfig, WorkspaceRecord } from "../types.js";
@@ -377,6 +379,88 @@ export async function getPublicPaymentDetails(
     paymentTerms: config.paymentTerms || "",
     leadStatus: lead.status,
   };
+}
+
+export async function submitPaymentScreenshot(
+  workspaceId: string,
+  leadId: string,
+  fileBuffer: Buffer,
+  mimeType: string,
+  originalName: string,
+): Promise<{ ok: true; fileUrl: string } | { ok: false; error: string }> {
+  const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+  if (!workspace) return { ok: false, error: "Workspace not found" };
+
+  const tokens = await getWorkspaceCredentials(workspace.email);
+  const lead = await getLeadRecord(workspace.email, tokens, leadId);
+  if (!lead) return { ok: false, error: "Lead not found" };
+
+  const eligible = ["Awaiting Client", "Payment Pending", "Confirmed"];
+  if (!eligible.includes(lead.status)) return { ok: false, error: "Payment not expected for this booking" };
+
+  const { drive } = createGoogleClients(tokens);
+  const ext = originalName.split(".").pop() || "jpg";
+  const fileName = `payment-screenshot-${leadId}.${ext}`;
+
+  const response = await drive.files.create({
+    requestBody: {
+      name: fileName,
+      mimeType,
+      description: `Payment screenshot for ${lead.clientName} — ${leadId}`,
+    },
+    media: { mimeType, body: Readable.from(fileBuffer) },
+    fields: "id, webViewLink",
+  });
+
+  const fileId = response.data.id;
+  if (!fileId) return { ok: false, error: "Drive upload failed" };
+
+  try {
+    await drive.permissions.create({ fileId, requestBody: { role: "reader", type: "anyone" } });
+  } catch { /* keep private if sharing is blocked */ }
+
+  const fileUrl =
+    response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
+
+  // A screenshot at this stage means the client has paid the advance to lock
+  // the slot. Mark the lead "Advance Paid" / "Payment Received" and keep a
+  // note pointing at the proof so the artist can verify.
+  const noteLine = `Payment screenshot uploaded ${new Date().toISOString().slice(0, 10)}: ${fileUrl}`;
+  await updateLeadRecord(workspace.email, tokens, leadId, (l) => ({
+    ...l,
+    paymentStatus: "Advance Paid",
+    status: "Payment Received" as typeof l.status,
+    ownerNotes: l.ownerNotes ? `${l.ownerNotes}\n${noteLine}` : noteLine,
+    lastContactedAt: new Date().toISOString(),
+  }));
+
+  // Keep the booking record in sync when the lead has already been confirmed.
+  if (lead.bookingId) {
+    try {
+      await updateBookingRecord(workspace.email, tokens, lead.bookingId, (b) => ({
+        ...b,
+        paymentStatus: "Advance Paid",
+      }));
+    } catch {
+      // Booking row may not exist yet — lead-level status is the source of truth.
+    }
+  }
+
+  // Audit trail so the upload is visible in the Conversations/activity view.
+  try {
+    await logInteractionForWorkspace(workspace.email, tokens, {
+      leadId,
+      direction: "Inbound",
+      channel: "Booking Page",
+      actor: lead.clientName || "Client",
+      message: `Uploaded payment screenshot. Proof: ${fileUrl}`,
+      aiSummary: "Client submitted payment proof — verify and confirm the slot.",
+    });
+  } catch {
+    // Logging is best-effort; never fail the client's upload because of it.
+  }
+
+  return { ok: true, fileUrl };
 }
 
 function buildInboundMessage(input: PublicBookingInput) {

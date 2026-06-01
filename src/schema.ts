@@ -80,6 +80,7 @@ export const workspaceConfigSchema = z.object({
   reviewRequestDaysAfter: z.string().optional().default(""),
   reviewTemplate: z.string().optional().default(""),
   reviewTemplateLang: z.string().optional().default("en"),
+  documentTemplate: z.string().optional().default("classic"),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;
