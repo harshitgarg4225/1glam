@@ -27,7 +27,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces } from "./services/database.js";
+import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces, saveWorkspace } from "./services/database.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
@@ -360,6 +360,47 @@ app.get("/auth/google/callback", async (req, res, next) => {
     next(error);
   }
 });
+
+// Dev-only login + seed. Triple-gated: only mounts when APP_ENV=development AND
+// DEV_LOGIN=1. Used to drive the authenticated UI locally without Google OAuth.
+// Never available in staging/production.
+if (appConfig.appEnv === "development" && process.env.DEV_LOGIN === "1") {
+  app.get("/dev/login", async (req, res, next) => {
+    try {
+      const profile = { email: "aisha@glowbyaisha.test", name: "Aisha Khan" };
+      const existing = await getWorkspaceByEmail(profile.email);
+      if (!existing) {
+        const { buildDefaultConfig } = await import("./defaults.js");
+        const config = buildDefaultConfig(profile);
+        config.businessName = "Glow by Aisha";
+        config.city = "Mumbai";
+        config.ownerWhatsApp = "+919812345678";
+        config.instagramHandle = "glowbyaisha";
+        await saveWorkspace({
+          workspaceId: "dev-aisha",
+          email: profile.email,
+          name: profile.name,
+          spreadsheetId: "dev-sheet",
+          spreadsheetUrl: "https://example.com",
+          spreadsheetName: "Glow by Aisha",
+          confirmedCalendarId: "dev-confirmed",
+          tentativeCalendarId: "dev-tentative",
+          tentativeCalendarName: "Tentative",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          config,
+        });
+      }
+      req.session.profile = profile;
+      req.session.save((err) => {
+        if (err) return next(err);
+        res.type("text").send("dev login ok");
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+}
 
 app.get("/auth/meta/callback", async (req, res, next) => {
   try {
