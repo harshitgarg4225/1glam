@@ -61,7 +61,10 @@ async function ensurePostgres() {
     }
 
     await backfillPostgresFromFileIfNeeded();
-  })();
+  })().catch((err) => {
+    postgresReady = null;
+    throw err;
+  });
 
   return postgresReady;
 }
@@ -136,7 +139,9 @@ async function readWorkspaceDbFromFile(): Promise<WorkspaceDb> {
 async function writeWorkspaceDbToFile(db: WorkspaceDb) {
   await ensureDbFile();
   const stored: WorkspaceDb = { workspaces: db.workspaces.map(toStored) };
-  await fs.writeFile(appConfig.workspaceDbPath, JSON.stringify(stored, null, 2), "utf8");
+  const tmp = appConfig.workspaceDbPath + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(stored, null, 2), "utf8");
+  await fs.rename(tmp, appConfig.workspaceDbPath);
 }
 
 async function listWorkspacesFromPostgres() {

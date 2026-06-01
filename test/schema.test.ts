@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret";
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
 const { workspaceConfigSchema } = await import("../src/schema.ts");
 

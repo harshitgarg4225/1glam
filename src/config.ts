@@ -7,7 +7,7 @@ const envSchema = z.object({
   APP_ENV: z.enum(["development", "staging", "production"]).optional(),
   NODE_ENV: z.string().optional(),
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
-  SESSION_SECRET: z.string().min(8, "SESSION_SECRET must be at least 8 characters"),
+  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters — generate with: openssl rand -hex 32"),
   DATABASE_URL: z.string().optional().default(""),
   TOKEN_ENCRYPTION_KEY: z.string().optional().default(""),
   SENTRY_DSN: z.string().optional().default(""),

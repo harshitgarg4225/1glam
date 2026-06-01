@@ -451,7 +451,7 @@
         </div>
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
-          <a href="/auth/google" id="connect-link"><button class="button" type="button">Connect Google Account</button></a>
+          <a href="/auth/google" id="connect-link" class="button" style="text-decoration:none;">Connect Google Account</a>
           <button id="settings-icon-btn" class="requires-auth icon-btn" type="button" title="Settings" style="display:none;">⚙️</button>
           <button id="logout-button" class="button secondary" type="button" style="display:none;">Log out</button>
         </div>
@@ -1117,6 +1117,10 @@
         if (!e.target.closest(".tab-more-wrap")) tabMoreMenu.classList.remove("open");
       });
       document.getElementById("settings-icon-btn")?.addEventListener("click", () => activateTab("setup"));
+
+      function debounce(fn, ms = 200) {
+        let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+      }
 
       function escapeHtml(value) {
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -2041,14 +2045,14 @@
             </div>
           </details>`).join("");
       }
-      document.getElementById("convo-search").addEventListener("input", renderConversations);
+      document.getElementById("convo-search").addEventListener("input", debounce(renderConversations));
       document.getElementById("convo-refresh").addEventListener("click", () => loadConversations(true));
 
       // ---- Filters ----
       ["lead-search", "lead-filter-event", "lead-filter-source"].forEach((id) =>
-        document.getElementById(id).addEventListener("input", renderLeads));
+        document.getElementById(id).addEventListener("input", debounce(renderLeads)));
       ["booking-search", "booking-filter-event", "booking-filter-payment"].forEach((id) =>
-        document.getElementById(id).addEventListener("input", renderBookings));
+        document.getElementById(id).addEventListener("input", debounce(renderBookings)));
 
       // ---- View toggle (Board / List) ----
       document.getElementById("view-board-btn").addEventListener("click", () => {
@@ -2231,7 +2235,7 @@
           else if (action === "reply") { const i = document.querySelector(`[data-reply-input="${leadId}"]`); await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" }); }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
           else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast("Quote sent to client.", "success"); }
-          toast("Lead updated.", "success");
+          else toast("Lead updated.", "success");
           await refreshSession();
         } catch (error) {
           toast(error.message, "error");
@@ -2343,7 +2347,17 @@
 
       // ─── Notify team: one-tap WhatsApp briefs (zero setup) ───
       const notifyTeamModal = document.getElementById("notify-team-modal");
-      function closeTeamNotify() { notifyTeamModal.classList.remove("open"); }
+      function closeTeamNotify() {
+        notifyTeamModal.classList.remove("open");
+        document.removeEventListener("keydown", modalEscHandler);
+      }
+      function modalEscHandler(e) { if (e.key === "Escape") closeTeamNotify(); }
+      function openModalWithFocus() {
+        notifyTeamModal.classList.add("open");
+        document.addEventListener("keydown", modalEscHandler);
+        const firstFocusable = notifyTeamModal.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+        if (firstFocusable) firstFocusable.focus();
+      }
       document.getElementById("notify-team-close").addEventListener("click", closeTeamNotify);
       notifyTeamModal.addEventListener("click", (e) => { if (e.target === notifyTeamModal) closeTeamNotify(); });
 
@@ -2393,7 +2407,7 @@
               </div>`;
           }).join("");
         }
-        notifyTeamModal.classList.add("open");
+        openModalWithFocus();
       }
       document.getElementById("notify-team-list").addEventListener("click", (e) => {
         if (e.target.closest("[data-notify-sent]")) {

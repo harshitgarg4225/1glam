@@ -69,6 +69,7 @@ import {
   verifyLeegalityWebhookRequest,
 } from "./services/contracts.js";
 import { sheetNames } from "./services/sheet-definitions.js";
+import type { MetaChannel, WorkspaceRecord } from "./types.js";
 import {
   addPortfolioImage,
   disconnectMetaConnection,
@@ -343,6 +344,9 @@ app.get("/auth/google/callback", async (req, res, next) => {
     const tokens = await exchangeCodeForTokens(code);
     const profile = await fetchGoogleProfile(tokens);
 
+    await new Promise<void>((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve())),
+    );
     req.session.googleTokens = tokens;
     req.session.profile = profile;
 
@@ -402,6 +406,19 @@ app.get("/auth/instagram/callback", (_req, res) => {
   res.redirect("/?instagram_login_ready=1");
 });
 
+function scrubWorkspaceTokens(workspace: WorkspaceRecord | null): WorkspaceRecord | null {
+  if (!workspace) return null;
+  const { googleTokens: _gt, ...rest } = workspace;
+  if (!rest.metaConnections) return rest as WorkspaceRecord;
+  const scrubbed: typeof rest.metaConnections = {};
+  for (const [ch, conn] of Object.entries(rest.metaConnections)) {
+    if (!conn) continue;
+    const { accessToken: _at, pageAccessToken: _pt, ...safeConn } = conn;
+    scrubbed[ch as MetaChannel] = safeConn as typeof conn;
+  }
+  return { ...rest, metaConnections: scrubbed } as WorkspaceRecord;
+}
+
 app.get("/api/session", async (req, res, next) => {
   try {
     if (!req.session.profile) {
@@ -416,7 +433,7 @@ app.get("/api/session", async (req, res, next) => {
     return res.json({
       authenticated: true,
       profile: req.session.profile,
-      workspace,
+      workspace: scrubWorkspaceTokens(workspace),
       dashboard,
     });
   } catch (error) {
@@ -1619,7 +1636,7 @@ app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
 app.post("/webhooks/wati", async (req, res, next) => {
   try {
     const parsed = normalizeWatiPayload(req.body as Record<string, unknown>);
-    if (appConfig.watiWebhookSecret && parsed.secret !== appConfig.watiWebhookSecret) {
+    if (!appConfig.watiWebhookSecret || parsed.secret !== appConfig.watiWebhookSecret) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
 
@@ -1661,7 +1678,7 @@ app.post("/webhooks/wati", async (req, res, next) => {
 app.post("/webhooks/manychat", async (req, res, next) => {
   try {
     const parsed = normalizeManychatPayload(req.body as Record<string, unknown>);
-    if (appConfig.manychatWebhookSecret && parsed.secret !== appConfig.manychatWebhookSecret) {
+    if (!appConfig.manychatWebhookSecret || parsed.secret !== appConfig.manychatWebhookSecret) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
 

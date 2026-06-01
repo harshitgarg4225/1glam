@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 // Config reads env at import time, so set required vars before importing.
-process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret";
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 process.env.TOKEN_ENCRYPTION_KEY = "unit-test-encryption-key-abcdefghijklmnop";
 
 const {

@@ -37,7 +37,7 @@ export function startReminderScheduler() {
 }
 
 async function runReminderJob() {
-  console.log("[reminders] running daily job");
+  logger.info("[reminders] running daily job");
   const workspaces = await listWorkspaces();
 
   for (const workspace of workspaces) {
@@ -93,19 +93,16 @@ async function runReminderJob() {
               aiSummary: `Automated ${day}-day pre-event reminder`,
             });
           } catch (err) {
-            console.error(
-              `[reminders] send failed for booking ${booking.bookingId} (T-${day}):`,
-              err,
-            );
+            captureException(err, { bookingId: booking.bookingId, day });
           }
         }
       }
     } catch (err) {
-      console.error(`[reminders] workspace ${workspace.email} failed:`, err);
+      captureException(err, { workspace: workspace.email });
     }
   }
 
-  console.log("[reminders] daily job complete");
+  logger.info("[reminders] daily job complete");
 }
 
 // Automated post-event review requests. For each booking whose event was N days
@@ -172,11 +169,11 @@ async function runReviewRequestJob() {
             aiSummary: `Automated post-event review request (T+${daysAfter})`,
           });
         } catch (err) {
-          console.error(`[reviews] send failed for booking ${booking.bookingId}:`, err);
+          captureException(err, { bookingId: booking.bookingId });
         }
       }
     } catch (err) {
-      console.error(`[reviews] workspace ${workspace.email} failed:`, err);
+      captureException(err, { workspace: workspace.email });
     }
   }
 }
