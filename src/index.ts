@@ -39,6 +39,8 @@ import {
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
+import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured } from "./services/places.js";
+import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
   exchangeForLongLivedToken,
@@ -467,6 +469,55 @@ app.post(
     }
   },
 );
+
+// ---- Google Business Profile (reviews) setup ----
+// Finds the artist's business on Google so we can generate their direct
+// "write a review" link without the restricted Business Profile API.
+app.get("/api/gmb/search", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (!placesConfigured()) {
+      return res.status(400).json({ error: "Google search isn't configured yet. Ask the admin to add a Maps API key." });
+    }
+    const query = typeof req.query.q === "string" ? req.query.q : "";
+    const candidates = await findBusinessCandidates(query);
+    res.json({ ok: true, candidates });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Saves the chosen place's review link into the workspace config.
+app.post("/api/gmb/select", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const placeId = typeof req.body?.placeId === "string" ? req.body.placeId.trim() : "";
+    if (!placeId) return res.status(400).json({ error: "Pick your business from the list first." });
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const googleReviewLink = buildGoogleReviewLink(placeId);
+    const updated = await updateWorkspaceConfig(
+      req.session.profile.email,
+      { ...workspace.config, googleReviewLink },
+      req.session.googleTokens,
+    );
+    res.json({ ok: true, googleReviewLink, workspace: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Lists the available document design themes for the picker.
+app.get("/api/document-templates", (req, res) => {
+  if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+  res.json({ ok: true, templates: DOCUMENT_THEME_LIST });
+});
 
 app.post("/api/workspace/protect-sheet", async (req, res, next) => {
   try {

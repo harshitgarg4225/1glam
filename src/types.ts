@@ -79,6 +79,7 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reviewRequestDaysAfter: string;
   reviewTemplate: string;
   reviewTemplateLang: string;
+  documentTemplate: string;
 };
 
 export type StoredGoogleTokens = {

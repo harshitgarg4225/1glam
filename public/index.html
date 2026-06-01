@@ -293,6 +293,18 @@
       .setup-step .step-text span { font-size: 12.5px; color: var(--muted); }
       .setup-step .step-go { font-size: 12px; color: var(--accent); font-weight: 600; }
       .setup-progress { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+      .gmb-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; }
+      .gmb-result-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .gmb-result-info strong { font-size: 14px; }
+      .gmb-result-info span { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+      .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+      .template-card { border: 2px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: var(--card); transition: border-color 0.15s; }
+      .template-card:hover { border-color: var(--accent); }
+      .template-card.selected { border-color: var(--accent); background: #FBF0EA; }
+      .template-swatch { height: 64px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--line); position: relative; overflow: hidden; }
+      .template-swatch .band { position: absolute; top: 0; left: 0; right: 0; height: 20px; }
+      .template-card strong { font-size: 13px; display: block; }
+      .template-card span { font-size: 11.5px; color: var(--muted); }
       .more-summary { cursor: pointer; font-size: 13px; color: var(--accent); list-style: none; font-weight: 500; }
       .more-summary::-webkit-details-marker { display: none; }
 
@@ -533,6 +545,32 @@
 
       <!-- Reviews -->
       <section class="tab-panel" data-panel="reviews">
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">Google reviews</div>
+          <h2>Get found &amp; trusted on Google</h2>
+          <p class="muted" style="margin-bottom:14px;font-size:14px;">
+            Connect your Google Business listing once. We’ll create your one-tap “leave a review” link so every
+            review request sends clients straight to your Google page.
+          </p>
+          <div id="gmb-connected" class="mini-card" style="display:none;">
+            <div class="kicker" style="color:var(--success);">✓ Connected</div>
+            <p class="muted" style="margin:8px 0;font-size:13px;">Your review link is set. Clients who get a review request will land on your Google page.</p>
+            <div class="filter-bar" style="margin-top:6px;">
+              <input type="text" id="gmb-link" class="grow" readonly />
+              <button class="button secondary" type="button" id="gmb-copy">Copy</button>
+              <a class="button secondary" id="gmb-open" target="_blank" rel="noreferrer">Test link</a>
+              <button class="button secondary" type="button" id="gmb-change">Change</button>
+            </div>
+          </div>
+          <div id="gmb-setup">
+            <div class="filter-bar" style="margin-bottom:10px;">
+              <input type="text" id="gmb-query" class="grow" placeholder="Your business name and city, e.g. Glow by Aisha, Mumbai" />
+              <button class="button" type="button" id="gmb-search-btn">Find my business</button>
+            </div>
+            <div id="gmb-results"></div>
+            <div class="status" id="gmb-status"></div>
+          </div>
+        </div>
         <div class="panel section">
           <div class="kicker">Client Feedback</div>
           <h2>Reviews</h2>
@@ -676,6 +714,12 @@
                 <div><label for="googleReviewLink">Google Review Link</label><input id="googleReviewLink" name="googleReviewLink" /></div>
                 <div><label for="contractTemplateUrl">Leegality Template ID / URL</label><input id="contractTemplateUrl" name="contractTemplateUrl" /></div>
                 <div class="wide"><label for="paymentTerms">Payment Terms</label><textarea id="paymentTerms" name="paymentTerms" required></textarea></div>
+              </div>
+              <div class="wide" style="margin-top:8px;">
+                <label>Document design</label>
+                <p class="muted" style="margin:0 0 4px;font-size:13px;">Choose how your quotes, invoices, and contracts look. Applies to every PDF you generate.</p>
+                <input type="hidden" name="documentTemplate" id="documentTemplate" value="classic" />
+                <div class="template-grid" id="template-grid"></div>
               </div>
             </div>
           </details>
@@ -858,7 +902,49 @@
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
       function setValue(form, name, value) { const f = form.elements.namedItem(name); if (f) f.value = value ?? ""; }
-      function fillConfig(config) { Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v)); }
+      function fillConfig(config) { Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v)); renderTemplatePicker(config.documentTemplate); }
+
+      // ---- Document design picker ----
+      // Visual swatch colours mirror the server-side themes in document-themes.ts.
+      const TEMPLATE_SWATCHES = {
+        classic: { band: "#9C7A4D", bg: "#F7F2EB" },
+        minimal: { band: "#1A1A1A", bg: "#F7F7F7" },
+        noir: { band: "#1C1A1F", bg: "#F4F4F6" },
+        blush: { band: "#C26B45", bg: "#FBF0EA" },
+      };
+      let documentTemplates = null;
+      let selectedTemplate = "classic";
+      async function ensureTemplates() {
+        if (documentTemplates) return;
+        try {
+          const payload = await getJson("/api/document-templates");
+          documentTemplates = payload?.templates || [];
+        } catch { documentTemplates = []; }
+      }
+      async function renderTemplatePicker(current) {
+        selectedTemplate = current || selectedTemplate || "classic";
+        document.getElementById("documentTemplate").value = selectedTemplate;
+        await ensureTemplates();
+        const grid = document.getElementById("template-grid");
+        if (!grid) return;
+        grid.innerHTML = (documentTemplates || []).map((t) => {
+          const sw = TEMPLATE_SWATCHES[t.key] || TEMPLATE_SWATCHES.classic;
+          return `
+            <div class="template-card ${t.key === selectedTemplate ? "selected" : ""}" data-template="${escapeHtml(t.key)}">
+              <div class="template-swatch" style="background:${sw.bg};"><div class="band" style="background:${sw.band};"></div></div>
+              <strong>${escapeHtml(t.label)}</strong>
+              <span>${escapeHtml(t.description)}</span>
+            </div>`;
+        }).join("");
+      }
+      document.getElementById("template-grid").addEventListener("click", (e) => {
+        const card = e.target.closest("[data-template]");
+        if (!card) return;
+        selectedTemplate = card.getAttribute("data-template");
+        document.getElementById("documentTemplate").value = selectedTemplate;
+        document.querySelectorAll("#template-grid .template-card").forEach((c) =>
+          c.classList.toggle("selected", c.getAttribute("data-template") === selectedTemplate));
+      });
       function formatDate(value) {
         if (!value) return "—";
         try { return new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }); } catch { return value; }
@@ -1238,6 +1324,7 @@
 
       // ---- Reviews ----
       async function loadReviews() {
+        renderGmbState();
         const tbody = document.getElementById("reviews-table-body");
         const statsEl = document.getElementById("reviews-stats");
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>`;
@@ -1249,6 +1336,64 @@
           tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">${escapeHtml(error.message)}</td></tr>`;
         }
       }
+
+      // ---- Google Business Profile review-link setup ----
+      let gmbForceSetup = false;
+      function renderGmbState() {
+        const link = sessionState?.workspace?.config?.googleReviewLink || "";
+        const connected = !!link && !gmbForceSetup;
+        document.getElementById("gmb-connected").style.display = connected ? "" : "none";
+        document.getElementById("gmb-setup").style.display = connected ? "none" : "";
+        if (connected) {
+          document.getElementById("gmb-link").value = link;
+          document.getElementById("gmb-open").href = link;
+        }
+      }
+      document.getElementById("gmb-change").addEventListener("click", () => { gmbForceSetup = true; renderGmbState(); });
+      document.getElementById("gmb-copy").addEventListener("click", (e) =>
+        copyToClipboard(document.getElementById("gmb-link").value, e.currentTarget));
+
+      document.getElementById("gmb-search-btn").addEventListener("click", async () => {
+        const q = document.getElementById("gmb-query").value.trim();
+        const status = document.getElementById("gmb-status");
+        const results = document.getElementById("gmb-results");
+        if (q.length < 3) { status.textContent = "Type your business name and city."; return; }
+        status.textContent = "Searching Google…";
+        results.innerHTML = "";
+        try {
+          const payload = await getJson(`/api/gmb/search?q=${encodeURIComponent(q)}`);
+          if (!payload?.ok) throw new Error(payload?.error || "Search failed");
+          status.textContent = "";
+          if (!payload.candidates.length) { results.innerHTML = `<p class="muted" style="font-size:13px;">No matches. Try adding your city or area.</p>`; return; }
+          results.innerHTML = payload.candidates.map((c) => `
+            <div class="gmb-result">
+              <div class="gmb-result-info">
+                <strong>${escapeHtml(c.name)}</strong>
+                <span class="muted">${escapeHtml(c.address)}${c.rating ? ` · ★ ${c.rating} (${c.userRatingsTotal || 0})` : ""}</span>
+              </div>
+              <button class="button small" type="button" data-gmb-place="${escapeHtml(c.placeId)}">This is me</button>
+            </div>`).join("");
+        } catch (error) { status.textContent = error.message; }
+      });
+      document.getElementById("gmb-query").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); document.getElementById("gmb-search-btn").click(); }
+      });
+      document.getElementById("gmb-results").addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-gmb-place]");
+        if (!btn) return;
+        const status = document.getElementById("gmb-status");
+        status.textContent = "Saving your review link…";
+        try {
+          const payload = await postJson("/api/gmb/select", { placeId: btn.getAttribute("data-gmb-place") });
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          await refreshSession();
+          gmbForceSetup = false;
+          status.textContent = "";
+          document.getElementById("gmb-results").innerHTML = "";
+          document.getElementById("gmb-query").value = "";
+          renderGmbState();
+        } catch (error) { status.textContent = error.message; }
+      });
       function renderReviews(reviews) {
         const tbody = document.getElementById("reviews-table-body");
         const statsEl = document.getElementById("reviews-stats");

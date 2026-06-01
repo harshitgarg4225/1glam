@@ -347,6 +347,7 @@ async function seedSpreadsheet(
     ["review_request_days_after", config.reviewRequestDaysAfter, "Days after event to auto-send a review request (blank = off)"],
     ["review_template", config.reviewTemplate, "Approved WhatsApp template name for automated review requests"],
     ["review_template_lang", config.reviewTemplateLang, "Language code for the review template (e.g. en)"],
+    ["document_template", config.documentTemplate, "Design theme for quotes/invoices/contracts (classic, minimal, noir, blush)"],
   ];
 
   const artistsRows = [[
@@ -582,6 +583,7 @@ async function loadConfigFromSpreadsheet(
       reviewRequestDaysAfter: String(values.review_request_days_after ?? base.reviewRequestDaysAfter),
       reviewTemplate: String(values.review_template ?? base.reviewTemplate),
       reviewTemplateLang: String(values.review_template_lang ?? base.reviewTemplateLang),
+      documentTemplate: String(values.document_template ?? base.documentTemplate),
     });
 
     return parsed.success ? parsed.data : base;
