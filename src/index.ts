@@ -27,7 +27,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces, saveWorkspace } from "./services/database.js";
+import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, saveWorkspace } from "./services/database.js";
 import {
   createRazorpayOrder,
   razorpayConfigured,
@@ -78,6 +78,7 @@ import {
   buildQuotePdfBytes,
   generateContractPdfBytes,
 } from "./services/documents.js";
+import { isDocumentType, verifyDocumentToken } from "./services/document-links.js";
 import {
   checkLeegalityDocumentDetails,
   createLeegalityContract,
@@ -1372,6 +1373,51 @@ app.get("/api/leads/:leadId/quote/preview", async (req, res, next) => {
     }
     const bytes = await buildQuotePdfBytes(workspace, lead);
     streamPdfInline(res, bytes, `quote-${lead.leadId}.pdf`);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Public, client-facing document links (no login, no Google Drive) ----
+// This is the URL the client actually opens from their WhatsApp/Instagram
+// message. The link is HMAC-signed over (type, workspaceId, recordId) so it's
+// unguessable and tamper-proof, and the PDF is regenerated on demand from the
+// workspace's own stored Google tokens — so sharing never depends on a Drive
+// scope or public-sharing permission being configured correctly.
+app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
+  try {
+    const { type, workspaceId, recordId } = req.params;
+    const sig = typeof req.query.sig === "string" ? req.query.sig : "";
+
+    if (!isDocumentType(type) || !verifyDocumentToken(type, workspaceId, recordId, sig)) {
+      return res.status(404).send("Document not found.");
+    }
+
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace || !workspace.googleTokens) {
+      return res.status(404).send("Document not found.");
+    }
+
+    if (type === "quote") {
+      const lead = await getLeadRecord(workspace.email, workspace.googleTokens, recordId);
+      if (!lead) return res.status(404).send("Document not found.");
+      const bytes = await buildQuotePdfBytes(workspace, lead);
+      return streamPdfInline(res, bytes, `quote-${recordId}.pdf`);
+    }
+
+    const booking = await getBookingRecord(workspace.email, workspace.googleTokens, recordId);
+    if (!booking) return res.status(404).send("Document not found.");
+
+    if (type === "invoice") {
+      const bytes = await buildInvoicePdfBytes(workspace, booking);
+      return streamPdfInline(res, bytes, `invoice-${recordId}.pdf`);
+    }
+
+    // contract
+    const lead = await getLeadRecord(workspace.email, workspace.googleTokens, booking.leadId);
+    if (!lead) return res.status(404).send("Document not found.");
+    const bytes = await generateContractPdfBytes(workspace, lead, booking);
+    return streamPdfInline(res, bytes, `contract-${recordId}.pdf`);
   } catch (error) {
     next(error);
   }
