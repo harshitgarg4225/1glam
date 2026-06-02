@@ -313,6 +313,8 @@
       .gallery-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-top: 12px; }
       .gallery-preview img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
       .qr-img { width: 168px; height: 168px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); }
+      .mypage-preview-frame { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); height: 520px; }
+      .mypage-preview-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
       .portfolio-drop { border: 2px dashed var(--line); border-radius: 12px; padding: 28px 18px; text-align: center; cursor: pointer; background: var(--surface); transition: border-color 0.15s, background 0.15s; }
       .portfolio-drop:hover, .portfolio-drop.drag-over { border-color: var(--accent); background: #FBF0EA; }
       .portfolio-drop-icon { font-size: 30px; margin-bottom: 6px; }
@@ -838,7 +840,16 @@
             <div class="filter-bar" style="margin:8px 0 0;">
               <input type="text" id="mypage-link" class="grow" readonly />
               <button class="button secondary" type="button" id="copy-mypage-link">Copy</button>
-              <a class="button secondary" id="preview-mypage-link" target="_blank" rel="noreferrer">Preview</a>
+              <a class="button secondary" id="preview-mypage-link" target="_blank" rel="noreferrer">Open in new tab</a>
+            </div>
+          </div>
+          <div class="mini-card" style="margin-top:14px;">
+            <div class="action-row" style="justify-content:space-between;align-items:center;">
+              <div class="kicker" style="margin:0;">Live preview — exactly what clients see</div>
+              <button class="button secondary small" type="button" id="refresh-mypage-preview">↻ Refresh</button>
+            </div>
+            <div class="mypage-preview-frame">
+              <iframe id="mypage-preview" title="Your booking page preview" loading="lazy"></iframe>
             </div>
           </div>
           <div class="mini-grid" style="margin-top:14px;">
@@ -1549,6 +1560,8 @@
             <td data-label="Actions">
               <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
                 <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Notify team</button>
+                <a href="/api/bookings/${booking.bookingId}/invoice/preview" target="_blank" rel="noreferrer" class="button small secondary">👁 Preview invoice</a>
+                <a href="/api/bookings/${booking.bookingId}/contract/preview" target="_blank" rel="noreferrer" class="button small secondary">👁 Preview contract</a>
                 ${booking.invoiceUrl
                   ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open invoice</a>`
                   : `<button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Create invoice</button>`}
@@ -2062,10 +2075,23 @@
         document.getElementById("mypage-bio").value = bookingUrl;
         document.getElementById("mypage-qr").src =
           `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(bookingUrl)}`;
+        const previewFrame = document.getElementById("mypage-preview");
+        if (previewFrame && previewFrame.dataset.src !== bookingUrl) {
+          previewFrame.dataset.src = bookingUrl;
+          previewFrame.src = bookingUrl;
+        }
         setValue(mypageForm, "aboutText", cfg.aboutText);
         portfolioImages = parsePortfolio(cfg.portfolioImages);
         renderPortfolioGrid();
       }
+
+      document.getElementById("refresh-mypage-preview")?.addEventListener("click", () => {
+        const frame = document.getElementById("mypage-preview");
+        if (frame && frame.dataset.src) {
+          // Cache-bust so edits to the booking page show immediately.
+          frame.src = frame.dataset.src + (frame.dataset.src.includes("?") ? "&" : "?") + "t=" + Date.now();
+        }
+      });
 
       async function copyToClipboard(text, btn) {
         const original = btn.textContent;
@@ -2336,6 +2362,32 @@
           clearLoading(btn);
         }
       });
+
+      // ---- Auto-fill distance + travel time from Google Maps ----
+      // When the artist finishes typing the event location, estimate the drive
+      // from their base city so they don't have to guess. Stays silent on
+      // failure (Maps not configured, no route) — the fields remain manual.
+      const locationInput = document.getElementById("locationText");
+      const distanceInput = document.getElementById("distanceKm");
+      const travelInput = document.getElementById("travelTimeMin");
+      let lastDistanceLookup = "";
+      const autofillDistance = debounce(async () => {
+        const dest = (locationInput?.value || "").trim();
+        if (dest.length < 3 || dest === lastDistanceLookup) return;
+        lastDistanceLookup = dest;
+        // Don't clobber values the artist typed in by hand.
+        if (distanceInput?.value || travelInput?.value) return;
+        try {
+          const res = await fetch(`/api/maps/distance?to=${encodeURIComponent(dest)}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.ok) {
+            if (distanceInput && !distanceInput.value) distanceInput.value = data.distanceKm;
+            if (travelInput && !travelInput.value) travelInput.value = data.travelTimeMin;
+          }
+        } catch { /* keep fields manual on any failure */ }
+      }, 600);
+      locationInput?.addEventListener("blur", autofillDistance);
 
       async function runLeadAction(action, leadId, btn) {
         if (btn) { btn.disabled = true; btn.classList.add("loading"); }

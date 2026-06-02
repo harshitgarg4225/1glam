@@ -18,11 +18,12 @@ type InvoiceStage = {
   amount: number;
 };
 
-export async function generateQuoteDocument(
+// Builds the quote PDF bytes in memory (no Drive upload). Used for both the
+// in-app preview and the Drive-backed shareable document.
+export async function buildQuotePdfBytes(
   workspace: WorkspaceRecord,
-  tokens: Credentials,
   lead: LeadRecord,
-) {
+): Promise<Uint8Array> {
   const quoteNumber = `Q-${lead.leadId}`;
   const quotedAmount = lead.finalApprovedPrice || lead.initialAiPrice;
   const advanceAmount = premiumRound(
@@ -75,8 +76,16 @@ export async function generateQuoteDocument(
   );
 
   drawFooter(page, workspace, regular, theme);
+  return pdf.save();
+}
 
-  const pdfBytes = await pdf.save();
+export async function generateQuoteDocument(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  lead: LeadRecord,
+) {
+  const quoteNumber = `Q-${lead.leadId}`;
+  const pdfBytes = await buildQuotePdfBytes(workspace, lead);
   return uploadPdfToDrive(tokens, {
     fileName: `${safeName(workspace.config.businessName || workspace.name)}-${quoteNumber}.pdf`,
     title: `${workspace.config.businessName || workspace.name} Quote ${quoteNumber}`,
@@ -84,11 +93,12 @@ export async function generateQuoteDocument(
   });
 }
 
-export async function generateInvoiceDocument(
+// Builds the invoice PDF bytes in memory (no Drive upload). Used for both the
+// in-app preview and the Drive-backed shareable document.
+export async function buildInvoicePdfBytes(
   workspace: WorkspaceRecord,
-  tokens: Credentials,
   booking: BookingRecord,
-) {
+): Promise<Uint8Array> {
   const invoiceNumber = `INV-${booking.bookingId}`;
   const stage = resolveInvoiceStage(booking);
   const theme = getDocumentTheme(workspace.config.documentTemplate);
@@ -165,8 +175,16 @@ export async function generateInvoiceDocument(
   }
 
   drawFooter(page, workspace, regular, theme);
+  return pdf.save();
+}
 
-  const pdfBytes = await pdf.save();
+export async function generateInvoiceDocument(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  booking: BookingRecord,
+) {
+  const invoiceNumber = `INV-${booking.bookingId}`;
+  const pdfBytes = await buildInvoicePdfBytes(workspace, booking);
   return uploadPdfToDrive(tokens, {
     fileName: `${safeName(workspace.config.businessName || workspace.name)}-${invoiceNumber}.pdf`,
     title: `${workspace.config.businessName || workspace.name} Invoice ${invoiceNumber}`,

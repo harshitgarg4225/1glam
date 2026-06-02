@@ -19,6 +19,68 @@ export function placesConfigured(): boolean {
   return Boolean(appConfig.googleMapsApiKey);
 }
 
+export type DistanceResult = {
+  distanceKm: number;
+  travelTimeMin: number;
+};
+
+// Estimates driving distance and travel time between the artist's base city and
+// the event location using the Google Distance Matrix API. Reuses the existing
+// Maps API key. Returns null when nothing usable comes back so the caller can
+// degrade gracefully (the fields stay manual).
+export async function estimateDistance(
+  origin: string,
+  destination: string,
+): Promise<DistanceResult | null> {
+  if (!appConfig.googleMapsApiKey) {
+    throw new Error("Distance lookup isn't configured yet. Ask the admin to add a Maps API key.");
+  }
+  const from = origin.trim();
+  const to = destination.trim();
+  if (!from || !to) return null;
+
+  const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
+  url.searchParams.set("origins", from);
+  url.searchParams.set("destinations", to);
+  url.searchParams.set("units", "metric");
+  url.searchParams.set("mode", "driving");
+  url.searchParams.set("key", appConfig.googleMapsApiKey);
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error(`Distance lookup failed (${response.status}).`);
+  }
+
+  const payload = (await response.json()) as {
+    status: string;
+    error_message?: string;
+    rows?: Array<{
+      elements?: Array<{
+        status: string;
+        distance?: { value: number };
+        duration?: { value: number };
+      }>;
+    }>;
+  };
+
+  if (payload.status !== "OK") {
+    throw new Error(
+      payload.error_message ||
+        "Couldn't estimate distance. Make sure the Distance Matrix API is enabled for your key.",
+    );
+  }
+
+  const element = payload.rows?.[0]?.elements?.[0];
+  if (!element || element.status !== "OK" || !element.distance || !element.duration) {
+    return null;
+  }
+
+  return {
+    distanceKm: Math.round((element.distance.value / 1000) * 10) / 10,
+    travelTimeMin: Math.round(element.duration.value / 60),
+  };
+}
+
 // Finds Google Business Profiles matching a free-text query (business name +
 // city) using the Places Text Search API. Reuses the existing Maps API key.
 export async function findBusinessCandidates(query: string): Promise<BusinessCandidate[]> {

@@ -39,7 +39,7 @@ import {
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
-import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured } from "./services/places.js";
+import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance } from "./services/places.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
@@ -61,7 +61,13 @@ import { sendChannelMessage, sendBusinessMessage } from "./services/messaging.js
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
 import { encryptionEnabled } from "./services/crypto.js";
-import { generateInvoiceDocument, generateQuoteDocument } from "./services/documents.js";
+import {
+  generateInvoiceDocument,
+  generateQuoteDocument,
+  buildInvoicePdfBytes,
+  buildQuotePdfBytes,
+  generateContractPdfBytes,
+} from "./services/documents.js";
 import {
   checkLeegalityDocumentDetails,
   createLeegalityContract,
@@ -576,6 +582,37 @@ app.post("/api/gmb/select", async (req, res, next) => {
   }
 });
 
+// Estimates driving distance + travel time from the artist's base city to the
+// event location so the lead form's distance/travel fields can auto-fill.
+app.get("/api/maps/distance", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (!placesConfigured()) {
+      return res.status(400).json({ error: "Distance lookup isn't configured yet. Ask the admin to add a Maps API key." });
+    }
+    const destination = typeof req.query.to === "string" ? req.query.to : "";
+    if (destination.trim().length < 3) {
+      return res.status(400).json({ error: "Enter the event location first." });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const origin = (typeof req.query.from === "string" && req.query.from.trim())
+      || workspace?.config.city
+      || "";
+    if (!origin) {
+      return res.status(400).json({ error: "Set your city in Settings so we can estimate distance." });
+    }
+    const result = await estimateDistance(origin, destination);
+    if (!result) {
+      return res.status(404).json({ error: "Couldn't find a driving route for that location." });
+    }
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Lists the available document design themes for the picker.
 app.get("/api/document-templates", (_req, res) => {
   res.json({ ok: true, templates: DOCUMENT_THEME_LIST });
@@ -1016,6 +1053,89 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
     });
 
     res.json({ ok: true, booking: currentBooking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- In-app document previews (no Google Drive needed) ----
+// These stream the generated PDF straight to the browser so the artist can SEE
+// exactly what their client will receive — invoice, contract, or quote — before
+// anything is sent. They render the PDF in memory and never touch Drive, so they
+// keep working even if Google sharing permissions are misconfigured.
+function streamPdfInline(res: express.Response, bytes: Uint8Array, filename: string) {
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.send(Buffer.from(bytes));
+}
+
+app.get("/api/bookings/:bookingId/invoice/preview", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+    const bytes = await buildInvoicePdfBytes(workspace, booking);
+    streamPdfInline(res, bytes, `invoice-${booking.bookingId}.pdf`);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/bookings/:bookingId/contract/preview", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      booking.leadId,
+    );
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found for booking" });
+    }
+    const bytes = await generateContractPdfBytes(workspace, lead, booking);
+    streamPdfInline(res, bytes, `contract-${booking.bookingId}.pdf`);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/leads/:leadId/quote/preview", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const lead = await getLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+    );
+    if (!workspace || !lead) {
+      return res.status(404).json({ error: "Lead not found" });
+    }
+    const bytes = await buildQuotePdfBytes(workspace, lead);
+    streamPdfInline(res, bytes, `quote-${lead.leadId}.pdf`);
   } catch (error) {
     next(error);
   }
@@ -2119,9 +2239,22 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
     });
   }
 
+  // Google API permission/auth failures ("caller does not have permission",
+  // "insufficient permission", 401/403) usually mean the connected Google
+  // account is missing a scope or the token went stale. Surface a clear,
+  // actionable message with a reconnect hint instead of a generic 500.
+  const message = error instanceof Error ? error.message : "";
+  const googleAuthError =
+    /caller does not have permission|insufficient permission|insufficientPermissions|invalid_grant|Login Required|PERMISSION_DENIED|forbidden|access.{0,12}not.{0,12}configured/i.test(message);
+  if (googleAuthError) {
+    return res.status(403).json({
+      error: "Google access issue — please reconnect your Google account from Settings, and make sure you allow Sheets, Drive and Calendar access.",
+      reconnect: true,
+    });
+  }
+
   // Known, intentionally-thrown business errors carry user-safe messages.
   // Anything else is treated as an internal fault and kept generic.
-  const message = error instanceof Error ? error.message : "";
   const isUserSafe = Boolean(message) && message.length < 200 && !/\b(at |\/home\/|\/usr\/|node_modules|ECONN|ETIMEDOUT|ENOTFOUND)\b/.test(message);
   res.status(500).json({ error: isUserSafe ? message : "Something went wrong on our end. Please try again." });
 });
