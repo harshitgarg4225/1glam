@@ -141,6 +141,22 @@ const publicWriteLimiter = rateLimit({
   message: { error: "Too many requests. Please wait a minute and try again." },
 });
 
+// Throttle authenticated API endpoints — 300 req/min per IP covers normal
+// single-user sessions with headroom for burst, while blocking credential
+// stuffing and naive scrapers. Webhooks and public routes are excluded below.
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please slow down." },
+  skip: (req) =>
+    req.path.startsWith("/webhooks/") ||
+    req.path.startsWith("/api/public/") ||
+    req.path === "/api/health",
+});
+app.use("/api", apiLimiter);
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -190,11 +206,38 @@ app.use(async (req, _res, next) => {
 
 app.use(express.static(path.join(process.cwd(), "public")));
 
-app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
-    codePrivate: true,
+app.get("/api/health", async (_req, res) => {
+  const checks: Record<string, string> = {
+    app: "ok",
+    db: "unconfigured",
+  };
+
+  if (appConfig.databaseUrl) {
+    try {
+      const { Pool } = await import("pg");
+      const pool = new Pool({
+        connectionString: appConfig.databaseUrl,
+        ssl: appConfig.databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+        connectionTimeoutMillis: 2000,
+        max: 1,
+      });
+      const client = await pool.connect();
+      await client.query("SELECT 1");
+      client.release();
+      await pool.end();
+      checks.db = "ok";
+    } catch {
+      checks.db = "error";
+    }
+  }
+
+  const allOk = Object.values(checks).every((v) => v === "ok" || v === "unconfigured");
+  res.status(allOk ? 200 : 503).json({
+    ok: allOk,
+    uptimeSeconds: Math.floor(process.uptime()),
+    encryptionEnabled: encryptionEnabled(),
     oauthConfigured: Boolean(appConfig.googleClientId && appConfig.googleClientSecret),
+    checks,
   });
 });
 
