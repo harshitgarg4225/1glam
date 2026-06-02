@@ -83,6 +83,9 @@
       .brand-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
       .topbar-account { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
       .account-id { font-size: 13px; line-height: 1.5; color: var(--muted); }
+      .credits-pill { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 13px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+      .credits-pill:hover { background: var(--line); }
+      .credits-pill.low { border-color: #E0A23C; background: #FDF4E3; color: #9A6516; }
 
       .tabs {
         display: flex; gap: 0; margin: 0; padding: 0 24px;
@@ -508,6 +511,7 @@
         </div>
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
+          <button id="credits-pill" class="requires-auth credits-pill" type="button" title="Wallet & credits" style="display:none;">💳 <span id="credits-pill-value">—</span></button>
           <a href="/auth/google" id="connect-link" class="button" style="text-decoration:none;">Connect Google Account</a>
           <button id="settings-icon-btn" class="requires-auth icon-btn" type="button" title="Settings" style="display:none;">⚙️</button>
           <button id="logout-button" class="button secondary" type="button" style="display:none;">Log out</button>
@@ -875,6 +879,7 @@
               <div class="muted" style="font-size:12px;">credits available</div>
             </div>
           </div>
+          <div id="wallet-low-banner" style="display:none;margin-top:14px;font-size:13px;background:#FDF4E3;border:1px solid #E0A23C;color:#9A6516;border-radius:10px;padding:11px 13px;font-weight:500;">⚠️ Your credits are running low. Top up below so your messages and AI keep flowing.</div>
           <div id="wallet-test-banner" class="muted" style="display:none;margin-top:14px;font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;">🧪 Test mode — no real money is charged. Use Razorpay test cards to try top-ups.</div>
           <div id="wallet-not-configured" class="muted" style="display:none;margin-top:14px;font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;">Top-ups aren't switched on yet. Add your Razorpay keys (<code>RAZORPAY_KEY_ID</code>, <code>RAZORPAY_KEY_SECRET</code>) to start selling credits.</div>
         </div>
@@ -2113,6 +2118,16 @@
 
       // ---- Wallet & credits ----
       let walletKeyId = "";
+      const LOW_BALANCE = 50;
+      function updateCreditsPill(balance) {
+        const pill = document.getElementById("credits-pill");
+        if (!pill || balance === undefined || balance === null) return;
+        pill.style.display = "inline-flex";
+        document.getElementById("credits-pill-value").textContent = Number(balance).toLocaleString("en-IN");
+        pill.classList.toggle("low", balance <= LOW_BALANCE);
+      }
+      document.getElementById("credits-pill")?.addEventListener("click", () => activateTab("wallet"));
+
       async function loadWallet() {
         const ledgerBody = document.getElementById("wallet-ledger");
         try {
@@ -2120,8 +2135,11 @@
           if (!data?.ok) throw new Error(data?.error || "Failed to load wallet");
           walletKeyId = data.keyId || "";
           document.getElementById("wallet-balance").textContent = data.balanceCredits.toLocaleString("en-IN");
+          updateCreditsPill(data.balanceCredits);
           document.getElementById("wallet-test-banner").style.display = data.configured && data.testMode ? "" : "none";
           document.getElementById("wallet-not-configured").style.display = data.configured ? "none" : "";
+          const lowBanner = document.getElementById("wallet-low-banner");
+          if (lowBanner) lowBanner.style.display = data.lowBalance ? "" : "none";
           renderWalletPacks(data.packs || [], data.configured);
           renderWalletLedger(data.ledger || []);
         } catch (error) {
@@ -2542,6 +2560,7 @@
           </div>`;
         if (payload.workspace) {
           document.body.classList.add("authenticated");
+          updateCreditsPill(payload.workspace.wallet?.balanceCredits ?? 0);
           fillConfig(payload.workspace.config);
           const bookingUrl = `${window.location.origin}/book/${encodeURIComponent(payload.workspace.workspaceId)}`;
           workspaceSummary.innerHTML = `

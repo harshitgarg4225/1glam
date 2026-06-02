@@ -10,7 +10,12 @@ process.env.RAZORPAY_WEBHOOK_SECRET = "razorpay-webhook-secret-for-tests";
 
 const { verifyCheckoutSignature, verifyWebhookSignature, razorpayConfigured, razorpayTestMode } =
   await import("../src/services/razorpay.ts");
-const { CREDIT_PACKS, findPack, USAGE_COSTS } = await import("../src/services/wallet.ts");
+const { CREDIT_PACKS, findPack, USAGE_COSTS, USAGE_LABELS, creditCostFor, isLowBalance, canAfford } =
+  await import("../src/services/wallet.ts");
+
+function fakeWorkspace(balanceCredits: number) {
+  return { wallet: { balanceCredits, ledger: [], processedRefs: [] } } as never;
+}
 
 test("checkout signature verifies a genuine Razorpay signature", () => {
   const orderId = "order_ABC123";
@@ -77,4 +82,25 @@ test("usage costs are all positive integers", () => {
   for (const [kind, cost] of Object.entries(USAGE_COSTS)) {
     assert.ok(Number.isInteger(cost) && cost > 0, `${kind} cost must be a positive integer`);
   }
+});
+
+test("every usage kind has a human label and a cost lookup", () => {
+  for (const kind of Object.keys(USAGE_COSTS) as Array<keyof typeof USAGE_COSTS>) {
+    assert.ok(USAGE_LABELS[kind], `${kind} needs a label`);
+    assert.equal(creditCostFor(kind), USAGE_COSTS[kind]);
+  }
+});
+
+test("low balance threshold flags only depleted wallets", () => {
+  assert.equal(isLowBalance(0), true);
+  assert.equal(isLowBalance(50), true);
+  assert.equal(isLowBalance(51), false);
+  assert.equal(isLowBalance(1000), false);
+});
+
+test("with billing NOT enforced, nobody is ever blocked — even at zero balance", () => {
+  // The default-safe guarantee: existing workspaces keep working until billing
+  // is intentionally turned on (BILLING_ENFORCED is unset in this test).
+  assert.equal(canAfford(fakeWorkspace(0), "whatsappMessage"), true);
+  assert.equal(canAfford(fakeWorkspace(-100), "aiReply"), true);
 });
