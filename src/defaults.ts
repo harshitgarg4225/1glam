@@ -92,5 +92,8 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     reviewTemplate: "",
     reviewTemplateLang: "en",
     documentTemplate: "classic",
+    quoteIntro: "",
+    cancellationPolicy: "",
+    contractTerms: "",
   };
 }

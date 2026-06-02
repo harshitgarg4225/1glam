@@ -359,6 +359,9 @@ async function seedSpreadsheet(
     ["review_template", config.reviewTemplate, "Approved WhatsApp template name for automated review requests"],
     ["review_template_lang", config.reviewTemplateLang, "Language code for the review template (e.g. en)"],
     ["document_template", config.documentTemplate, "Design theme for quotes/invoices/contracts (classic, minimal, noir, blush)"],
+    ["quote_intro", config.quoteIntro, "Opening line shown at the top of every quote"],
+    ["cancellation_policy", config.cancellationPolicy, "Cancellation and rescheduling terms shown on quotes and contracts"],
+    ["contract_terms", config.contractTerms, "Full terms & conditions for the booking contract"],
   ];
 
   const artistsRows = [[
@@ -606,6 +609,9 @@ async function loadConfigFromSpreadsheet(
       reviewTemplate: String(values.review_template ?? base.reviewTemplate),
       reviewTemplateLang: String(values.review_template_lang ?? base.reviewTemplateLang),
       documentTemplate: String(values.document_template ?? base.documentTemplate),
+      quoteIntro: String(values.quote_intro ?? base.quoteIntro),
+      cancellationPolicy: String(values.cancellation_policy ?? base.cancellationPolicy),
+      contractTerms: String(values.contract_terms ?? base.contractTerms),
     });
 
     return parsed.success ? parsed.data : base;

@@ -92,6 +92,9 @@ export const workspaceConfigSchema = z.object({
   reviewTemplate: z.string().optional().default(""),
   reviewTemplateLang: z.string().optional().default("en"),
   documentTemplate: z.string().optional().default("classic"),
+  quoteIntro: z.string().optional().default(""),
+  cancellationPolicy: z.string().optional().default(""),
+  contractTerms: z.string().optional().default(""),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;
