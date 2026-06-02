@@ -96,6 +96,25 @@ export type WorkspaceConfig = PricingRuleConfig & {
   contractTerms: string;
 };
 
+export type WalletLedgerEntry = {
+  id: string;
+  type: "credit" | "debit";
+  credits: number; // positive number of credits moved
+  reason: string;
+  ref?: string; // razorpay payment/event id or usage ref (idempotency key)
+  amountInr?: number; // rupees paid, for top-ups
+  balanceAfter: number;
+  createdAt: string;
+};
+
+export type Wallet = {
+  balanceCredits: number;
+  ledger: WalletLedgerEntry[];
+  // Idempotency keys already applied, so a webhook + checkout callback for the
+  // same payment can never double-credit.
+  processedRefs: string[];
+};
+
 export type StoredGoogleTokens = {
   access_token?: string;
   refresh_token?: string;
@@ -142,6 +161,7 @@ export type WorkspaceRecord = {
   sheetProtected?: boolean;
   googleTokens?: StoredGoogleTokens;
   metaConnections?: Partial<Record<MetaChannel, MetaChannelConnection>>;
+  wallet?: Wallet;
   config: WorkspaceConfig;
 };
 

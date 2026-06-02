@@ -28,6 +28,14 @@ import {
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
 import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces, saveWorkspace } from "./services/database.js";
+import {
+  createRazorpayOrder,
+  razorpayConfigured,
+  razorpayTestMode,
+  verifyCheckoutSignature,
+  verifyWebhookSignature,
+} from "./services/razorpay.js";
+import { CREDIT_PACKS, findPack, getWallet, creditWallet } from "./services/wallet.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
@@ -659,6 +667,138 @@ app.post("/api/gmb/post-reply", async (req, res, next) => {
     if (!posted) {
       return res.status(400).json({ error: "Couldn't post automatically. Copy the reply and post it on Google instead." });
     }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Credits wallet (Razorpay) ----
+// Returns balance, recent ledger, and the buyable credit packs. Includes the
+// Razorpay key id (publishable) so the browser can open Checkout.
+app.get("/api/wallet", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const wallet = getWallet(workspace);
+    res.json({
+      ok: true,
+      balanceCredits: wallet.balanceCredits,
+      ledger: wallet.ledger.slice(0, 50),
+      packs: CREDIT_PACKS,
+      configured: razorpayConfigured(),
+      testMode: razorpayTestMode(),
+      keyId: appConfig.razorpayKeyId,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Creates a Razorpay order for the chosen credit pack. The pack details are
+// stamped into the order notes so the verify + webhook paths know what to credit.
+app.post("/api/wallet/order", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (!razorpayConfigured()) {
+      return res.status(400).json({ error: "Payments aren't set up yet. Ask the admin to add Razorpay keys." });
+    }
+    const pack = findPack(String(req.body?.packId || ""));
+    if (!pack) return res.status(400).json({ error: "Pick a credit pack first." });
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const order = await createRazorpayOrder({
+      amountInr: pack.amountInr,
+      receipt: `cr_${workspace.workspaceId}_${Date.now()}`.slice(0, 40),
+      notes: {
+        workspaceId: workspace.workspaceId,
+        email: workspace.email,
+        packId: pack.id,
+        credits: String(pack.credits),
+      },
+    });
+
+    res.json({
+      ok: true,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: appConfig.razorpayKeyId,
+      pack,
+      prefill: {
+        name: workspace.config.ownerName || workspace.config.businessName,
+        email: workspace.email,
+        contact: workspace.config.ownerWhatsApp || "",
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Confirms a Checkout payment: verifies the signature, then credits the wallet
+// idempotently (the webhook is a backup for the same payment id).
+app.post("/api/wallet/verify", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const orderId = String(req.body?.razorpay_order_id || "");
+    const paymentId = String(req.body?.razorpay_payment_id || "");
+    const signature = String(req.body?.razorpay_signature || "");
+    const pack = findPack(String(req.body?.packId || ""));
+    if (!orderId || !paymentId || !signature || !pack) {
+      return res.status(400).json({ error: "Missing payment details." });
+    }
+    if (!verifyCheckoutSignature({ orderId, paymentId, signature })) {
+      return res.status(400).json({ error: "Payment could not be verified." });
+    }
+    const result = await creditWallet(req.session.profile.email, {
+      credits: pack.credits,
+      reason: `${pack.label} pack top-up`,
+      ref: paymentId,
+      amountInr: pack.amountInr,
+    });
+    if (!result) return res.status(404).json({ error: "Workspace not found" });
+    res.json({ ok: true, balanceCredits: result.wallet.balanceCredits, applied: result.applied });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Razorpay webhook backup: credits the wallet on payment.captured, idempotent
+// by payment id. Uses the raw body captured by the json verify hook for HMAC.
+app.post("/webhooks/razorpay", async (req, res, next) => {
+  try {
+    const signature = String(req.headers["x-razorpay-signature"] || "");
+    const rawBody = (req as express.Request & { rawBody?: Buffer }).rawBody;
+    if (!signature || !rawBody || !verifyWebhookSignature(rawBody, signature)) {
+      return res.status(401).json({ error: "Invalid signature" });
+    }
+    const event = req.body?.event;
+    if (event === "payment.captured" || event === "order.paid") {
+      const payment = req.body?.payload?.payment?.entity;
+      const notes = payment?.notes || {};
+      const email = String(notes.email || "");
+      const credits = Number(notes.credits);
+      const paymentId = String(payment?.id || "");
+      if (email && Number.isFinite(credits) && credits > 0 && paymentId) {
+        await creditWallet(email, {
+          credits,
+          reason: `${notes.packId || "Credit"} pack top-up`,
+          ref: paymentId,
+          amountInr: payment?.amount ? payment.amount / 100 : undefined,
+        });
+      }
+    }
+    // Always 200 on a verified event so Razorpay stops retrying.
     res.json({ ok: true });
   } catch (error) {
     next(error);

@@ -497,6 +497,7 @@
         .view-toggle-btn { padding: 6px 10px; font-size: 12px; }
       }
     </style>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
   <body>
     <main class="shell">
@@ -524,6 +525,7 @@
         <div class="tab-more-wrap">
           <button class="tab-button tab-more-trigger" type="button" id="tab-more-trigger">More ▾</button>
           <div class="tab-more-menu" id="tab-more-menu">
+            <button class="tab-more-item" type="button" data-tab="wallet">💳 Wallet &amp; credits</button>
             <button class="tab-more-item" type="button" data-tab="analytics">📊 Insights</button>
             <button class="tab-more-item" type="button" data-tab="team">👥 Team</button>
             <button class="tab-more-item" type="button" data-tab="channels">🔗 Channels</button>
@@ -854,6 +856,42 @@
                 <th>Actions</th>
               </tr></thead>
               <tbody id="reviews-table-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Wallet & credits -->
+      <section class="tab-panel" data-panel="wallet">
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">💳 Wallet</div>
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+            <div>
+              <h2 style="margin-bottom:4px;">Credits</h2>
+              <p class="muted" style="margin:0;font-size:14px;">Credits power your automated messages, AI replies, and documents.</p>
+            </div>
+            <div style="text-align:right;">
+              <div class="drawer-price-big" id="wallet-balance">—</div>
+              <div class="muted" style="font-size:12px;">credits available</div>
+            </div>
+          </div>
+          <div id="wallet-test-banner" class="muted" style="display:none;margin-top:14px;font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;">🧪 Test mode — no real money is charged. Use Razorpay test cards to try top-ups.</div>
+          <div id="wallet-not-configured" class="muted" style="display:none;margin-top:14px;font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;">Top-ups aren't switched on yet. Add your Razorpay keys (<code>RAZORPAY_KEY_ID</code>, <code>RAZORPAY_KEY_SECRET</code>) to start selling credits.</div>
+        </div>
+
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">Top up</div>
+          <h3 style="margin:4px 0 14px;font-size:16px;">Choose a credit pack</h3>
+          <div id="wallet-packs" class="mini-grid"></div>
+        </div>
+
+        <div class="panel section">
+          <div class="kicker">History</div>
+          <h3 style="margin:4px 0 14px;font-size:16px;">Recent activity</h3>
+          <div class="table-wrap cards-on-mobile">
+            <table>
+              <thead><tr><th>When</th><th>Activity</th><th style="text-align:right;">Credits</th><th style="text-align:right;">Balance</th></tr></thead>
+              <tbody id="wallet-ledger"><tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -1265,7 +1303,7 @@
 
       const tabMoreMenu = document.getElementById("tab-more-menu");
       const tabMoreTrigger = document.getElementById("tab-more-trigger");
-      const MORE_TABS = ["analytics", "team", "channels"];
+      const MORE_TABS = ["wallet", "analytics", "team", "channels"];
 
       function activateTab(name) {
         tabNav.querySelectorAll(".tab-button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
@@ -1279,6 +1317,7 @@
         if (name === "reviews") loadReviews();
         if (name === "analytics") loadAnalytics();
         if (name === "mypage") loadMyPage();
+        if (name === "wallet") loadWallet();
       }
       tabNav.addEventListener("click", (e) => {
         if (e.target.closest("#tab-more-trigger")) {
@@ -2066,6 +2105,98 @@
           await postJson(`/api/reviews/${reviewId}/confirm`, {});
           toast("Review marked confirmed.", "success");
           loadReviews();
+        } catch (error) {
+          toast(error.message, "error");
+          clearLoading(btn);
+        }
+      });
+
+      // ---- Wallet & credits ----
+      let walletKeyId = "";
+      async function loadWallet() {
+        const ledgerBody = document.getElementById("wallet-ledger");
+        try {
+          const data = await getJson("/api/wallet");
+          if (!data?.ok) throw new Error(data?.error || "Failed to load wallet");
+          walletKeyId = data.keyId || "";
+          document.getElementById("wallet-balance").textContent = data.balanceCredits.toLocaleString("en-IN");
+          document.getElementById("wallet-test-banner").style.display = data.configured && data.testMode ? "" : "none";
+          document.getElementById("wallet-not-configured").style.display = data.configured ? "none" : "";
+          renderWalletPacks(data.packs || [], data.configured);
+          renderWalletLedger(data.ledger || []);
+        } catch (error) {
+          ledgerBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">${escapeHtml(error.message)}</td></tr>`;
+        }
+      }
+
+      function renderWalletPacks(packs, configured) {
+        const el = document.getElementById("wallet-packs");
+        el.innerHTML = packs.map((p) => `
+          <div class="mini-card" style="text-align:center;">
+            <div class="kicker" style="text-align:center;">${escapeHtml(p.label)}</div>
+            <div style="font-size:26px;font-weight:700;margin:6px 0;">${p.credits.toLocaleString("en-IN")}<span class="muted" style="font-size:13px;font-weight:400;"> credits</span></div>
+            ${p.bonus ? `<div class="pill success" style="margin-bottom:8px;">${escapeHtml(p.bonus)}</div>` : ""}
+            <button class="button ${configured ? "" : "secondary"}" type="button" data-buy-pack="${escapeHtml(p.id)}" ${configured ? "" : "disabled"} style="width:100%;margin-top:6px;">₹${p.amountInr.toLocaleString("en-IN")}</button>
+          </div>`).join("");
+      }
+
+      function renderWalletLedger(ledger) {
+        const body = document.getElementById("wallet-ledger");
+        if (!ledger.length) {
+          body.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">No activity yet. Top up to get started.</td></tr>`;
+          return;
+        }
+        body.innerHTML = ledger.map((e) => {
+          const sign = e.type === "credit" ? "+" : "−";
+          const color = e.type === "credit" ? "var(--success)" : "var(--text)";
+          return `<tr>
+            <td data-label="When">${escapeHtml(formatDate(e.createdAt))}</td>
+            <td data-label="Activity">${escapeHtml(e.reason)}${e.amountInr ? ` <span class="muted">(₹${e.amountInr.toLocaleString("en-IN")})</span>` : ""}</td>
+            <td data-label="Credits" style="text-align:right;color:${color};font-weight:600;">${sign}${e.credits.toLocaleString("en-IN")}</td>
+            <td data-label="Balance" style="text-align:right;">${e.balanceAfter.toLocaleString("en-IN")}</td>
+          </tr>`;
+        }).join("");
+      }
+
+      document.getElementById("wallet-packs").addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-buy-pack]");
+        if (!btn) return;
+        const packId = btn.getAttribute("data-buy-pack");
+        if (typeof Razorpay === "undefined") { toast("Payment library didn't load. Refresh and try again.", "error"); return; }
+        setLoading(btn, "Starting…");
+        try {
+          const order = await postJson("/api/wallet/order", { packId });
+          if (!order?.ok) throw new Error(order?.error || "Couldn't start payment");
+          clearLoading(btn);
+          const rzp = new Razorpay({
+            key: order.keyId,
+            amount: order.amount,
+            currency: order.currency,
+            order_id: order.orderId,
+            name: sessionState?.workspace?.config?.businessName || "1Glam",
+            description: `${order.pack.label} — ${order.pack.credits} credits`,
+            prefill: order.prefill,
+            theme: { color: "#C26B45" },
+            handler: async (response) => {
+              try {
+                const verify = await postJson("/api/wallet/verify", {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                  packId,
+                });
+                if (verify?.ok) {
+                  toast(`${order.pack.credits} credits added!`, "success");
+                  loadWallet();
+                } else {
+                  toast(verify?.error || "Payment verification failed", "error");
+                }
+              } catch (err) { toast(err.message, "error"); }
+            },
+            modal: { ondismiss: () => toast("Payment cancelled.", "info") },
+          });
+          rzp.on("payment.failed", (resp) => toast(resp.error?.description || "Payment failed", "error"));
+          rzp.open();
         } catch (error) {
           toast(error.message, "error");
           clearLoading(btn);
