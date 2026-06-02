@@ -99,6 +99,9 @@ export type WorkspaceConfig = PricingRuleConfig & {
   coverImageUrl: string;
   headline: string;
   tagline: string;
+  logoUrl: string;
+  gstNumber: string;
+  gstPercentage: number;
 };
 
 export type WalletLedgerEntry = {

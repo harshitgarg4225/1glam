@@ -36,13 +36,15 @@ export async function buildQuotePdfBytes(
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
+  const logo = await embedLogo(pdf, workspace.config.logoUrl);
   drawDocumentFrame(page, workspace, theme);
   drawHeader(page, {
     title: "Luxury Quote",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: quoteNumber,
     docDate: new Date().toLocaleDateString("en-IN"),
-  }, bold, regular, theme);
+    gstNumber: workspace.config.gstNumber,
+  }, bold, regular, theme, logo);
 
   let y = 650;
   y = drawSection(page, "Prepared For", [
@@ -61,9 +63,9 @@ export async function buildQuotePdfBytes(
   y = drawPricingBlock(page, {
     heading: "Quote Summary",
     lines: [
+      ...gstLines(quotedAmount, workspace.config.gstPercentage),
       ["Quoted Amount", inr(quotedAmount)],
       ["Advance To Confirm", inr(advanceAmount)],
-      ["Demand Signal", lead.scarcityTag || "Open"],
       ["Hold Expires", lead.holdExpiresAt ? formatDateTime(lead.holdExpiresAt) : "On request"],
     ],
     y: y - 16,
@@ -113,13 +115,15 @@ export async function buildInvoicePdfBytes(
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
+  const logo = await embedLogo(pdf, workspace.config.logoUrl);
   drawDocumentFrame(page, workspace, theme);
   drawHeader(page, {
     title: "Booking Invoice",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: invoiceNumber,
     docDate: new Date().toLocaleDateString("en-IN"),
-  }, bold, regular, theme);
+    gstNumber: workspace.config.gstNumber,
+  }, bold, regular, theme, logo);
 
   let y = 650;
   y = drawSection(page, "Billed To", [
@@ -138,6 +142,7 @@ export async function buildInvoicePdfBytes(
   y = drawPricingBlock(page, {
     heading: `${stage.label} Invoice`,
     lines: [
+      ...gstLines(stage.amount, workspace.config.gstPercentage),
       ["Invoice Amount", inr(stage.amount)],
       ["Total Booking Value", inr(booking.finalPrice)],
       ["Advance", inr(booking.advanceAmount)],
@@ -210,13 +215,15 @@ export async function generateContractPdfBytes(
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
+  const logo = await embedLogo(pdf, workspace.config.logoUrl);
   drawDocumentFrame(page, workspace, theme);
   drawHeader(page, {
     title: "Booking Agreement",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: contractNumber,
     docDate: new Date().toLocaleDateString("en-IN"),
-  }, bold, regular, theme);
+    gstNumber: workspace.config.gstNumber,
+  }, bold, regular, theme, logo);
 
   let y = 650;
   y = drawSection(page, "Client", [
@@ -354,10 +361,11 @@ function drawDocumentFrame(page: PDFDocument["addPage"] extends (...args: any[])
 
 function drawHeader(
   page: PDFDocument["addPage"] extends (...args: any[]) => infer T ? T : never,
-  input: { title: string; subtitle: string; docNumber: string; docDate: string },
+  input: { title: string; subtitle: string; docNumber: string; docDate: string; gstNumber?: string },
   bold: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   theme: DocumentTheme,
+  logo?: { image: PdfImage; width: number; height: number } | null,
 ) {
   page.drawText(input.title, {
     x: 56,
@@ -373,20 +381,93 @@ function drawHeader(
     font: regular,
     color: theme.subtitle,
   });
+  if (input.gstNumber) {
+    page.drawText(`GSTIN: ${input.gstNumber}`, {
+      x: 56,
+      y: 674,
+      size: 10,
+      font: regular,
+      color: theme.meta,
+    });
+  }
+  // Logo sits in the top-right, vertically aligned with the title.
+  if (logo) {
+    page.drawImage(logo.image, {
+      x: 595 - 56 - logo.width,
+      y: 690,
+      width: logo.width,
+      height: logo.height,
+    });
+  } else {
+    page.drawText(`No. ${input.docNumber}`, {
+      x: 400,
+      y: 720,
+      size: 11,
+      font: bold,
+      color: theme.meta,
+    });
+    page.drawText(input.docDate, {
+      x: 400,
+      y: 702,
+      size: 11,
+      font: regular,
+      color: theme.meta,
+    });
+    return;
+  }
+  // With a logo present, put the doc number/date just under it.
   page.drawText(`No. ${input.docNumber}`, {
-    x: 400,
-    y: 720,
-    size: 11,
+    x: 595 - 56 - logo.width,
+    y: 678,
+    size: 10,
     font: bold,
     color: theme.meta,
   });
   page.drawText(input.docDate, {
-    x: 400,
-    y: 702,
-    size: 11,
+    x: 595 - 56 - logo.width,
+    y: 664,
+    size: 10,
     font: regular,
     color: theme.meta,
   });
+}
+
+type PdfImage = Awaited<ReturnType<PDFDocument["embedPng"]>>;
+
+// Fetches and embeds the artist's logo, scaled to fit a tidy header box. Returns
+// null on any failure so document generation never breaks over a bad logo URL.
+async function embedLogo(
+  pdf: PDFDocument,
+  logoUrl: string,
+): Promise<{ image: PdfImage; width: number; height: number } | null> {
+  if (!logoUrl || !/^https?:\/\//i.test(logoUrl)) return null;
+  try {
+    const res = await fetch(logoUrl);
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    const isPng = contentType.includes("png") || /\.png(\?|$)/i.test(logoUrl);
+    const image = isPng ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+    // Fit within a 120×56 box, preserving aspect ratio.
+    const maxW = 120;
+    const maxH = 56;
+    const scale = Math.min(maxW / image.width, maxH / image.height, 1);
+    return { image, width: image.width * scale, height: image.height * scale };
+  } catch {
+    return null;
+  }
+}
+
+// Builds the optional GST breakdown lines, treating `amount` as GST-inclusive
+// (the common case for Indian service pricing). Returns [] when no rate is set.
+function gstLines(amount: number, gstPercentage: number): [string, string][] {
+  if (!gstPercentage || gstPercentage <= 0) return [];
+  const base = amount / (1 + gstPercentage / 100);
+  const gst = amount - base;
+  return [
+    ["Taxable Value", inr(base)],
+    [`GST @ ${gstPercentage}%`, inr(gst)],
+  ];
 }
 
 function drawSection(
@@ -428,11 +509,13 @@ function drawPricingBlock(
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   theme: DocumentTheme,
 ) {
+  // Height adapts to the number of rows so GST/extra lines never overflow.
+  const blockHeight = 34 + input.lines.length * 20 + 10;
   page.drawRectangle({
     x: 56,
-    y: input.y - 100,
+    y: input.y - blockHeight + 10,
     width: 483,
-    height: 110,
+    height: blockHeight,
     color: theme.blockBg,
     borderColor: theme.blockBorder,
     borderWidth: 1,
@@ -465,7 +548,7 @@ function drawPricingBlock(
     y -= 20;
   }
 
-  return input.y - 100;
+  return input.y - blockHeight + 10;
 }
 
 function drawFooter(

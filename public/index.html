@@ -1118,6 +1118,20 @@
               </div>
               <div class="section-grid" style="margin-top:20px;">
                 <div class="wide">
+                  <label for="logoUrl">Logo URL (shown top-right of every document)</label>
+                  <input id="logoUrl" name="logoUrl" placeholder="https://… a PNG or JPG of your logo" />
+                </div>
+                <div>
+                  <label for="gstNumber">GSTIN (optional)</label>
+                  <input id="gstNumber" name="gstNumber" placeholder="22AAAAA0000A1Z5" />
+                </div>
+                <div>
+                  <label for="gstPercentage">GST rate %</label>
+                  <input id="gstPercentage" name="gstPercentage" type="number" min="0" max="28" placeholder="0 = no GST line" />
+                </div>
+              </div>
+              <div class="section-grid" style="margin-top:20px;">
+                <div class="wide">
                   <label for="quoteIntro">Quote intro / opening line</label>
                   <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Shown at the top of every quote — a warm note about your work, experience, or what's included. Leave blank to skip.</p>
                   <textarea id="quoteIntro" name="quoteIntro" placeholder="e.g. Thank you for choosing Glow by Aisha. Here is your personalised quote for your special day — I look forward to making you glow." style="min-height:72px;"></textarea>

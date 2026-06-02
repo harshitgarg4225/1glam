@@ -100,6 +100,9 @@ export const workspaceConfigSchema = z.object({
   coverImageUrl: z.string().optional().default(""),
   headline: z.string().optional().default(""),
   tagline: z.string().optional().default(""),
+  logoUrl: z.string().optional().default(""),
+  gstNumber: z.string().optional().default(""),
+  gstPercentage: z.coerce.number().min(0).max(28).optional().default(0),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

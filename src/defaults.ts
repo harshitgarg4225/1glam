@@ -100,5 +100,8 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     coverImageUrl: "",
     headline: "",
     tagline: "",
+    logoUrl: "",
+    gstNumber: "",
+    gstPercentage: 0,
   };
 }
