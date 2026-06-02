@@ -41,6 +41,10 @@ export type PublicBusinessProfile = {
   upiId: string;
   aboutText: string;
   portfolioImages: string[];
+  brandColor: string;
+  coverImageUrl: string;
+  headline: string;
+  tagline: string;
   eventTypes: PublicEventType[];
   availability: PublicAvailability;
 };
@@ -194,9 +198,24 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
     upiId: config.upiId || "",
     aboutText: String(config.aboutText || ""),
     portfolioImages: parseImageList(config.portfolioImages),
+    brandColor: sanitizeHexColor(config.brandColor),
+    coverImageUrl: sanitizeUrl(config.coverImageUrl),
+    headline: String(config.headline || ""),
+    tagline: String(config.tagline || ""),
     eventTypes,
     availability: buildAvailability(config),
   };
+}
+
+// Only allow a valid #RGB / #RRGGBB hex so a bad value can't break the page CSS.
+function sanitizeHexColor(raw: unknown): string {
+  const value = String(raw || "").trim();
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value) ? value : "";
+}
+
+function sanitizeUrl(raw: unknown): string {
+  const value = String(raw || "").trim();
+  return /^https?:\/\//i.test(value) ? value : "";
 }
 
 function parseImageList(raw: string): string[] {

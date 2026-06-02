@@ -978,8 +978,28 @@
 
         <form id="mypage-form" class="panel section">
           <div class="kicker">Make it yours</div>
-          <h2>Portfolio &amp; intro</h2>
+          <h2>Branding &amp; intro</h2>
+          <p class="muted" style="margin:-4px 0 14px;font-size:13px;">Changes show instantly in the preview above — hit <strong>Save my page</strong> to publish.</p>
           <div class="section-grid">
+            <div>
+              <label for="mypage-headline">Headline</label>
+              <input type="text" id="mypage-headline" name="headline" placeholder="Book an appointment" maxlength="60" />
+            </div>
+            <div>
+              <label for="mypage-tagline">Tagline</label>
+              <input type="text" id="mypage-tagline" name="tagline" placeholder="Bridal &amp; editorial makeup, Chandigarh" maxlength="80" />
+            </div>
+            <div>
+              <label for="mypage-color">Brand colour</label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="color" id="mypage-color-picker" value="#C26B45" style="width:46px;height:42px;padding:3px;cursor:pointer;flex:0 0 auto;" />
+                <input type="text" id="mypage-color" name="brandColor" placeholder="#C26B45" style="flex:1;" />
+              </div>
+            </div>
+            <div>
+              <label for="mypage-cover">Cover photo URL</label>
+              <input type="text" id="mypage-cover" name="coverImageUrl" placeholder="https://… (a wide hero image)" />
+            </div>
             <div class="wide">
               <label for="mypage-about">About you</label>
               <textarea id="mypage-about" name="aboutText" placeholder="A warm line or two about your style and experience. Shown at the top of your booking page."></textarea>
@@ -2399,16 +2419,33 @@
           previewFrame.src = bookingUrl;
         }
         setValue(mypageForm, "aboutText", cfg.aboutText);
+        setValue(mypageForm, "headline", cfg.headline);
+        setValue(mypageForm, "tagline", cfg.tagline);
+        setValue(mypageForm, "brandColor", cfg.brandColor);
+        setValue(mypageForm, "coverImageUrl", cfg.coverImageUrl);
+        if (cfg.brandColor && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(cfg.brandColor)) {
+          document.getElementById("mypage-color-picker").value = cfg.brandColor;
+        }
         portfolioImages = parsePortfolio(cfg.portfolioImages);
         renderPortfolioGrid();
       }
 
-      document.getElementById("refresh-mypage-preview")?.addEventListener("click", () => {
+      function refreshMyPagePreview() {
         const frame = document.getElementById("mypage-preview");
         if (frame && frame.dataset.src) {
           // Cache-bust so edits to the booking page show immediately.
           frame.src = frame.dataset.src + (frame.dataset.src.includes("?") ? "&" : "?") + "t=" + Date.now();
         }
+      }
+      document.getElementById("refresh-mypage-preview")?.addEventListener("click", refreshMyPagePreview);
+
+      // Keep the colour picker and the hex text field in sync.
+      document.getElementById("mypage-color-picker")?.addEventListener("input", (e) => {
+        document.getElementById("mypage-color").value = e.target.value.toUpperCase();
+      });
+      document.getElementById("mypage-color")?.addEventListener("input", (e) => {
+        const v = e.target.value.trim();
+        if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) document.getElementById("mypage-color-picker").value = v;
       });
 
       async function copyToClipboard(text, btn) {
@@ -2430,9 +2467,14 @@
         try {
           await saveConfigPatch({
             aboutText: document.getElementById("mypage-about").value,
+            headline: document.getElementById("mypage-headline").value,
+            tagline: document.getElementById("mypage-tagline").value,
+            brandColor: document.getElementById("mypage-color").value.trim(),
+            coverImageUrl: document.getElementById("mypage-cover").value.trim(),
             portfolioImages: portfolioImages.join("\n"),
           });
           toast("Your page is updated.", "success");
+          refreshMyPagePreview();
         } catch (error) {
           toast(error.message, "error");
           mypageStatus.textContent = error.message;

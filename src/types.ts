@@ -95,6 +95,10 @@ export type WorkspaceConfig = PricingRuleConfig & {
   cancellationPolicy: string;
   contractTerms: string;
   autoReplyEnabled: string;
+  brandColor: string;
+  coverImageUrl: string;
+  headline: string;
+  tagline: string;
 };
 
 export type WalletLedgerEntry = {

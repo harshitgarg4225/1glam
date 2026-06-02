@@ -96,5 +96,9 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     cancellationPolicy: "",
     contractTerms: "",
     autoReplyEnabled: "No",
+    brandColor: "",
+    coverImageUrl: "",
+    headline: "",
+    tagline: "",
   };
 }
