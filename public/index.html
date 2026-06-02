@@ -385,6 +385,25 @@
       .notify-row-info strong { font-size: 14px; display: block; }
       .notify-row-info span { font-size: 12.5px; color: var(--muted); }
 
+      /* ─── Lead detail drawer (slide-in from right) ─── */
+      .drawer-overlay { position: fixed; inset: 0; background: rgba(28,25,23,0.45); z-index: 8000; display: none; }
+      .drawer-overlay.open { display: block; }
+      .drawer { position: fixed; top: 0; right: 0; height: 100%; width: min(480px, 100%); background: var(--card); box-shadow: -8px 0 40px rgba(0,0,0,0.18); z-index: 8001; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.28s cubic-bezier(.22,.68,0,1.1); }
+      .drawer.open { transform: translateX(0); }
+      .drawer-head { padding: 20px 20px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+      .drawer-head h2 { margin: 0; font-size: 18px; }
+      .drawer-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+      .drawer-section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+      .drawer-section-title { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
+      .drawer-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+      .drawer-row:last-child { border-bottom: none; }
+      .drawer-row-label { font-size: 13px; color: var(--muted); flex-shrink: 0; }
+      .drawer-row-value { font-size: 13px; font-weight: 500; text-align: right; }
+      .drawer-actions { padding: 16px 20px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+      .drawer-actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .drawer-price-big { font-size: 26px; font-weight: 700; color: var(--accent); }
+      .drawer-insight { font-style: italic; font-size: 13px; color: var(--muted); border-left: 3px solid var(--accent); padding-left: 10px; line-height: 1.5; }
+
       /* ─── Card hover elevation ─── */
       .card { transition: box-shadow 0.15s, transform 0.12s; }
       .card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.06); transform: translateY(-1px); }
@@ -963,7 +982,7 @@
           </details>
 
           <details class="collapse">
-            <summary>How your quotes &amp; invoices look</summary>
+            <summary>What goes inside your quotes, invoices &amp; contracts</summary>
             <div class="collapse-body">
               <div class="wide">
                 <label>Document design</label>
@@ -971,7 +990,22 @@
                 <input type="hidden" name="documentTemplate" id="documentTemplate" value="classic" />
                 <div class="template-grid" id="template-grid"></div>
               </div>
-              <div class="section-grid" style="margin-top:14px;">
+              <div class="section-grid" style="margin-top:20px;">
+                <div class="wide">
+                  <label for="quoteIntro">Quote intro / opening line</label>
+                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Shown at the top of every quote — a warm note about your work, experience, or what's included. Leave blank to skip.</p>
+                  <textarea id="quoteIntro" name="quoteIntro" placeholder="e.g. Thank you for choosing Glow by Aisha. Here is your personalised quote for your special day — I look forward to making you glow." style="min-height:72px;"></textarea>
+                </div>
+                <div class="wide">
+                  <label for="cancellationPolicy">Cancellation &amp; rescheduling policy</label>
+                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Shown on quotes and in the contract. Keep it clear and fair — clients read this before signing.</p>
+                  <textarea id="cancellationPolicy" name="cancellationPolicy" placeholder="e.g. Advance is non-refundable if cancelled within 30 days of the event. Rescheduling requests accepted up to 14 days prior subject to availability." style="min-height:72px;"></textarea>
+                </div>
+                <div class="wide">
+                  <label for="contractTerms">Contract terms &amp; conditions</label>
+                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">The main body of your contract — what you agree to deliver, what the client agrees to. This replaces the default text.</p>
+                  <textarea id="contractTerms" name="contractTerms" placeholder="e.g. [Your studio name] agrees to provide professional bridal/event makeup services as per the booking details above. The artist will arrive 15 minutes before the scheduled start time. Client agrees to have a clean, moisturised face ready for the appointment. Any changes to the brief on the day may affect the final look and timing." style="min-height:120px;"></textarea>
+                </div>
                 <div class="wide"><label for="googleReviewLink">Your Google review link</label><input id="googleReviewLink" name="googleReviewLink" placeholder="Set this up under the Reviews tab" /></div>
               </div>
             </div>
@@ -1107,6 +1141,17 @@
         <p class="muted" style="font-size:13px;margin:0 0 14px;">Tap a specialist to open WhatsApp with their booking brief ready to send — straight from your number.</p>
         <div id="notify-team-list"></div>
       </div>
+    </div>
+
+    <!-- Lead detail drawer: slides in from the right when a lead is clicked -->
+    <div class="drawer-overlay" id="lead-drawer-overlay"></div>
+    <div class="drawer" id="lead-drawer" role="dialog" aria-modal="true" aria-label="Lead details">
+      <div class="drawer-head">
+        <h2 id="drawer-client-name">Client details</h2>
+        <button class="modal-close" type="button" id="lead-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="drawer-body" id="lead-drawer-body"></div>
+      <div class="drawer-actions" id="lead-drawer-actions"></div>
     </div>
 
     <script>
@@ -2394,20 +2439,132 @@
         try {
           if (action === "yes") await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
           else if (action === "no") await postJson(`/api/leads/${leadId}/decision`, { decision: "NO" });
-          else if (action === "edit") { const i = document.querySelector(`[data-edit-input="${leadId}"]`); await postJson(`/api/leads/${leadId}/decision`, { decision: "EDIT", approvedPrice: i ? i.value : "" }); }
+          else if (action === "edit") {
+            const i = document.querySelector(`[data-drawer-edit-price]`) || document.querySelector(`[data-edit-input="${leadId}"]`);
+            await postJson(`/api/leads/${leadId}/decision`, { decision: "EDIT", approvedPrice: i ? i.value : "" });
+          }
           else if (action === "confirm") await postJson(`/api/leads/${leadId}/confirm`, {});
           else if (action === "advance") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Advance Paid" });
           else if (action === "full") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
-          else if (action === "reply") { const i = document.querySelector(`[data-reply-input="${leadId}"]`); await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" }); }
+          else if (action === "reply") {
+            const i = document.querySelector(`[data-drawer-reply]`) || document.querySelector(`[data-reply-input="${leadId}"]`);
+            await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" });
+          }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
           else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast("Quote sent to client.", "success"); }
           else toast("Lead updated.", "success");
           await refreshSession();
+          // Re-render the drawer with updated lead data if it's open for this lead.
+          const drawer = document.getElementById("lead-drawer");
+          if (drawer.classList.contains("open") && drawer.dataset.leadId === leadId) {
+            const updated = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
+            if (updated) renderLeadDrawer(updated);
+          }
         } catch (error) {
           toast(error.message, "error");
           if (btn && btn.isConnected) { btn.disabled = false; btn.classList.remove("loading"); }
         }
       }
+
+      // ---- Lead detail drawer ----
+      const leadDrawer = document.getElementById("lead-drawer");
+      const leadDrawerOverlay = document.getElementById("lead-drawer-overlay");
+      const leadDrawerBody = document.getElementById("lead-drawer-body");
+      const leadDrawerActions = document.getElementById("lead-drawer-actions");
+
+      function openLeadDrawer(lead) {
+        renderLeadDrawer(lead);
+        leadDrawer.dataset.leadId = lead.leadId;
+        leadDrawerOverlay.classList.add("open");
+        leadDrawer.classList.add("open");
+        leadDrawer.focus();
+      }
+
+      function closeLeadDrawer() {
+        leadDrawerOverlay.classList.remove("open");
+        leadDrawer.classList.remove("open");
+        delete leadDrawer.dataset.leadId;
+      }
+
+      function renderLeadDrawer(lead) {
+        document.getElementById("drawer-client-name").textContent = lead.clientName || "Client details";
+
+        const wa = lead.clientWhatsApp ? `https://wa.me/${lead.clientWhatsApp.replace(/\D/g, "")}` : "";
+        const ig = lead.clientInstagram ? `https://instagram.com/${lead.clientInstagram.replace(/^@/, "")}` : "";
+        const price = lead.finalApprovedPrice || lead.initialAiPrice;
+        const priceStr = price
+          ? `<div class="drawer-price-big">${formatMoney(price)}${!lead.finalApprovedPrice ? ' <span class="muted" style="font-size:13px;font-weight:400;">suggested</span>' : ""}</div>`
+          : `<div class="muted" style="font-size:14px;font-weight:500;">Not quoted yet</div>`;
+        const primary = primaryActionFor(lead);
+
+        leadDrawerBody.innerHTML = `
+          <div class="drawer-section">
+            <div class="drawer-section-title">Client</div>
+            <div class="drawer-row"><span class="drawer-row-label">Name</span><span class="drawer-row-value">${escapeHtml(lead.clientName)}</span></div>
+            ${wa ? `<div class="drawer-row"><span class="drawer-row-label">WhatsApp</span><span class="drawer-row-value"><a href="${wa}" target="_blank" rel="noreferrer" style="color:var(--accent);">${escapeHtml(lead.clientWhatsApp)}</a></span></div>` : ""}
+            ${ig ? `<div class="drawer-row"><span class="drawer-row-label">Instagram</span><span class="drawer-row-value"><a href="${ig}" target="_blank" rel="noreferrer" style="color:var(--accent);">@${escapeHtml(lead.clientInstagram)}</a></span></div>` : ""}
+            ${lead.source ? `<div class="drawer-row"><span class="drawer-row-label">How they found you</span><span class="drawer-row-value">${escapeHtml(lead.source)}</span></div>` : ""}
+          </div>
+          <div class="drawer-section">
+            <div class="drawer-section-title">Event</div>
+            <div class="drawer-row"><span class="drawer-row-label">Occasion</span><span class="drawer-row-value">${escapeHtml(lead.eventType)}</span></div>
+            <div class="drawer-row"><span class="drawer-row-label">Date</span><span class="drawer-row-value">${escapeHtml(formatDay(lead.eventDate))}${lead.eventTime ? " · " + escapeHtml(lead.eventTime) : ""}</span></div>
+            <div class="drawer-row"><span class="drawer-row-label">Location</span><span class="drawer-row-value">${escapeHtml(lead.locationText)}${lead.outstationFlag === "Yes" ? " · <strong>Outstation</strong>" : ""}</span></div>
+            ${lead.distanceKm ? `<div class="drawer-row"><span class="drawer-row-label">Distance</span><span class="drawer-row-value">${lead.distanceKm} km${lead.travelTimeMin ? " · ~" + lead.travelTimeMin + " min" : ""}</span></div>` : ""}
+          </div>
+          <div class="drawer-section">
+            <div class="drawer-section-title">Quote &amp; status</div>
+            <div style="margin-bottom:10px;">${priceStr}</div>
+            <div class="drawer-row"><span class="drawer-row-label">Status</span><span class="drawer-row-value">${escapeHtml(lead.status)}</span></div>
+            ${lead.profileTier ? `<div class="drawer-row"><span class="drawer-row-label">Client type</span><span class="drawer-row-value">${lead.profileTier === "High" ? "VIP / celebrity" : lead.profileTier === "Mid" ? "Premium" : "Regular"}</span></div>` : ""}
+            ${lead.assignedArtist ? `<div class="drawer-row"><span class="drawer-row-label">Assigned to</span><span class="drawer-row-value">${escapeHtml(lead.assignedArtist)}</span></div>` : ""}
+            ${lead.clientTags ? `<div class="drawer-row"><span class="drawer-row-label">Notes / tags</span><span class="drawer-row-value">${escapeHtml(lead.clientTags)}</span></div>` : ""}
+          </div>
+          ${lead.aiInsight ? `<div class="drawer-section"><div class="drawer-section-title">AI insight</div><div class="drawer-insight">${escapeHtml(lead.aiInsight)}</div></div>` : ""}
+          <div class="drawer-section">
+            <div class="drawer-section-title">Adjust price</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input data-drawer-edit-price type="number" value="${lead.finalApprovedPrice || lead.initialAiPrice || ""}" style="flex:1;" placeholder="Enter amount" />
+              <button class="button small" data-drawer-action="edit" data-drawer-lead-id="${lead.leadId}">Update price</button>
+            </div>
+          </div>
+          <div class="drawer-section">
+            <div class="drawer-section-title">Send a message</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input data-drawer-reply type="text" style="flex:1;" placeholder="Your message to the client…" />
+              <button class="button small secondary" data-drawer-action="reply" data-drawer-lead-id="${lead.leadId}">Send</button>
+            </div>
+          </div>`;
+
+        leadDrawerActions.innerHTML = `
+          <div class="drawer-actions-row">
+            ${primary ? `<button class="button" style="flex:1;" data-drawer-action="${primary.action}" data-drawer-lead-id="${lead.leadId}">${primary.label}</button>` : ""}
+            ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer" class="button secondary">Open quote</a>` : ""}
+            <a href="/api/leads/${lead.leadId}/quote/preview" target="_blank" rel="noreferrer" class="button secondary">👁 Preview quote</a>
+          </div>
+          <div class="drawer-actions-row">
+            <button class="button secondary small" data-drawer-action="quote" data-drawer-lead-id="${lead.leadId}">Generate quote</button>
+            <button class="button secondary small" data-drawer-action="send-quote" data-drawer-lead-id="${lead.leadId}">Send quote</button>
+            ${lead.status !== "Lost" && lead.status !== "Completed" ? `<button class="button secondary small danger" data-drawer-action="no" data-drawer-lead-id="${lead.leadId}">Decline</button>` : ""}
+          </div>`;
+      }
+
+      document.getElementById("lead-drawer-close").addEventListener("click", closeLeadDrawer);
+      leadDrawerOverlay.addEventListener("click", closeLeadDrawer);
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && leadDrawer.classList.contains("open")) closeLeadDrawer(); });
+
+      // Handle drawer action buttons.
+      leadDrawer.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-drawer-action]");
+        if (!btn) return;
+        const action = btn.getAttribute("data-drawer-action");
+        const leadId = btn.getAttribute("data-drawer-lead-id");
+        if (action === "no") {
+          const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
+          if (!confirm(`Decline ${lead?.clientName || "this lead"}? They'll be moved to Lost.`)) return;
+        }
+        runLeadAction(action, leadId, btn);
+      });
 
       leadsBoard.addEventListener("click", (e) => {
         // Copy booking link from empty state
@@ -2446,17 +2603,21 @@
           return;
         }
 
-        // List view: clicking a row opens an action prompt (primary action)
+        // List view: clicking a row opens the detail drawer.
         const listItem = e.target.closest("[data-list-lead-id]");
         if (listItem) {
           const leadId = listItem.getAttribute("data-list-lead-id");
           const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
-          if (!lead) return;
-          const primary = primaryActionFor(lead);
-          if (primary) {
-            const ok = confirm(`${lead.clientName} — ${primary.label}?`);
-            if (ok) runLeadAction(primary.action, leadId, null);
-          }
+          if (lead) openLeadDrawer(lead);
+          return;
+        }
+
+        // Board view: clicking the card body (not the ⋮ menu or action buttons) opens the drawer.
+        const card = e.target.closest("[data-card-lead-id]");
+        if (card && !e.target.closest(".card-menu-wrap") && !e.target.closest("button[data-action]") && !e.target.closest("select")) {
+          const leadId = card.getAttribute("data-card-lead-id");
+          const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
+          if (lead) openLeadDrawer(lead);
         }
       });
       leadsBoard.addEventListener("change", async (e) => {

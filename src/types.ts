@@ -91,6 +91,9 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reviewTemplate: string;
   reviewTemplateLang: string;
   documentTemplate: string;
+  quoteIntro: string;
+  cancellationPolicy: string;
+  contractTerms: string;
 };
 
 export type StoredGoogleTokens = {

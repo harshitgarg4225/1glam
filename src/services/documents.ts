@@ -69,9 +69,15 @@ export async function buildQuotePdfBytes(
     y: y - 16,
   }, bold, regular, theme);
 
+  const quoteParts = [
+    workspace.config.quoteIntro,
+    workspace.config.paymentTerms,
+    workspace.config.cancellationPolicy,
+  ].filter(Boolean).join("\n\n");
+
   drawParagraph(
     page,
-    workspace.config.paymentTerms,
+    quoteParts || "Payment terms as agreed.",
     { x: 56, y: y - 30, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
   );
 
@@ -239,13 +245,17 @@ export async function generateContractPdfBytes(
     y: y - 16,
   }, bold, regular, theme);
 
+  const contractBody = [
+    workspace.config.contractTerms ||
+      `${workspace.config.businessName || workspace.config.ownerName} agrees to provide professional makeup services for the booking described above.`,
+    workspace.config.paymentTerms,
+    workspace.config.cancellationPolicy,
+    "By signing this agreement, the client confirms the booking details and accepts the terms above.",
+  ].filter(Boolean).join("\n\n");
+
   drawParagraph(
     page,
-    [
-      `${workspace.config.businessName || workspace.config.ownerName} agrees to provide professional makeup services for the booking described above.`,
-      workspace.config.paymentTerms,
-      "By signing this agreement, the client confirms the booking details and accepts the quoted payment terms.",
-    ].join(" "),
+    contractBody,
     { x: 56, y: y - 32, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
   );
 
