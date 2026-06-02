@@ -35,7 +35,7 @@ import {
   verifyCheckoutSignature,
   verifyWebhookSignature,
 } from "./services/razorpay.js";
-import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalance } from "./services/wallet.js";
+import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford } from "./services/wallet.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
@@ -49,6 +49,7 @@ import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js"
 import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance } from "./services/places.js";
 import { getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply } from "./services/gmb.js";
+import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
@@ -2346,6 +2347,41 @@ app.post("/webhooks/meta", async (req, res, next) => {
             await meterUsage(workspace.email, "aiReply");
           }
 
+          // AI auto-reply (opt-in). Sends the drafted reply to the client only
+          // when the owner has enabled it, the reply passes the price/commitment
+          // guardrail, a channel is connected, and billing (if enforced) allows.
+          let autoSentReply = "";
+          if (
+            workspace.config.autoReplyEnabled === "Yes" &&
+            conversation.reply &&
+            replyIsSafeToAutoSend(conversation.reply, lead.ownerDecision)
+          ) {
+            const ctx = resolveLeadMessagingContext(workspace, lead);
+            const messageKind = channel === "Instagram" ? "instagramMessage" : "whatsappMessage";
+            if (ctx && canAfford(workspace, messageKind)) {
+              try {
+                await sendBusinessMessage({
+                  workspace,
+                  connection: ctx.connection,
+                  channel: ctx.channel,
+                  actorId: ctx.actorId,
+                  message: conversation.reply,
+                });
+                autoSentReply = conversation.reply;
+                await logInteractionForWorkspace(workspace.email, tokens, {
+                  leadId: lead.leadId,
+                  direction: "Outbound",
+                  channel: ctx.channel,
+                  actor: ctx.actorId,
+                  message: conversation.reply,
+                  aiSummary: "AI auto-reply sent",
+                });
+              } catch (sendError) {
+                captureException(sendError, { scope: "auto-reply", leadId: lead.leadId });
+              }
+            }
+          }
+
           await updateLeadRecord(workspace.email, tokens, lead.leadId, (current) => ({
             ...current,
             aiInsight: conversation.ownerSummary || current.aiInsight,
@@ -2364,7 +2400,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
               ? conversation.openQuestions
               : inferOpenQuestions(lead),
             lastInboundMessage: inboundText,
-            lastOutboundMessage: "",
+            lastOutboundMessage: autoSentReply,
           });
         }
       } else if (!leadCreated) {

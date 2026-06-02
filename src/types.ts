@@ -94,6 +94,7 @@ export type WorkspaceConfig = PricingRuleConfig & {
   quoteIntro: string;
   cancellationPolicy: string;
   contractTerms: string;
+  autoReplyEnabled: string;
 };
 
 export type WalletLedgerEntry = {
