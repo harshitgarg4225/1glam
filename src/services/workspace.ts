@@ -362,6 +362,7 @@ async function seedSpreadsheet(
     ["quote_intro", config.quoteIntro, "Opening line shown at the top of every quote"],
     ["cancellation_policy", config.cancellationPolicy, "Cancellation and rescheduling terms shown on quotes and contracts"],
     ["contract_terms", config.contractTerms, "Full terms & conditions for the booking contract"],
+    ["auto_reply_enabled", config.autoReplyEnabled, "When Yes, AI auto-replies to inbound client messages (within guardrails)"],
   ];
 
   const artistsRows = [[
@@ -612,6 +613,7 @@ async function loadConfigFromSpreadsheet(
       quoteIntro: String(values.quote_intro ?? base.quoteIntro),
       cancellationPolicy: String(values.cancellation_policy ?? base.cancellationPolicy),
       contractTerms: String(values.contract_terms ?? base.contractTerms),
+      autoReplyEnabled: String(values.auto_reply_enabled ?? base.autoReplyEnabled),
     });
 
     return parsed.success ? parsed.data : base;

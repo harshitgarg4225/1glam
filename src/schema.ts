@@ -95,6 +95,7 @@ export const workspaceConfigSchema = z.object({
   quoteIntro: z.string().optional().default(""),
   cancellationPolicy: z.string().optional().default(""),
   contractTerms: z.string().optional().default(""),
+  autoReplyEnabled: z.string().optional().default("No"),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

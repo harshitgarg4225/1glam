@@ -95,5 +95,6 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     quoteIntro: "",
     cancellationPolicy: "",
     contractTerms: "",
+    autoReplyEnabled: "No",
   };
 }
