@@ -4,9 +4,14 @@ import { z } from "zod";
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
+  APP_ENV: z.enum(["development", "staging", "production"]).optional(),
+  NODE_ENV: z.string().optional(),
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
-  SESSION_SECRET: z.string().min(8, "SESSION_SECRET must be at least 8 characters"),
+  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters — generate with: openssl rand -hex 32"),
   DATABASE_URL: z.string().optional().default(""),
+  TOKEN_ENCRYPTION_KEY: z.string().optional().default(""),
+  SENTRY_DSN: z.string().optional().default(""),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   GOOGLE_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(""),
   GOOGLE_REDIRECT_PATH: z.string().default("/auth/google/callback"),
@@ -46,11 +51,28 @@ const envSchema = z.object({
 
 const parsed = envSchema.parse(process.env);
 
+// Resolve the deployment environment. Prefer the explicit APP_ENV; fall back to
+// NODE_ENV ("production" → production), else development. "staging" and
+// "production" are both treated as deployed environments that require full config.
+function resolveAppEnv(): "development" | "staging" | "production" {
+  if (parsed.APP_ENV) return parsed.APP_ENV;
+  if (parsed.NODE_ENV === "production") return "production";
+  if (parsed.NODE_ENV === "staging") return "staging";
+  return "development";
+}
+
+const appEnv = resolveAppEnv();
+
 export const appConfig = {
+  appEnv,
+  isDeployed: appEnv === "staging" || appEnv === "production",
   port: parsed.PORT,
   baseUrl: parsed.APP_BASE_URL,
   sessionSecret: parsed.SESSION_SECRET,
   databaseUrl: parsed.DATABASE_URL,
+  tokenEncryptionKey: parsed.TOKEN_ENCRYPTION_KEY,
+  sentryDsn: parsed.SENTRY_DSN,
+  logLevel: parsed.LOG_LEVEL,
   googleClientId: parsed.GOOGLE_CLIENT_ID,
   googleClientSecret: parsed.GOOGLE_CLIENT_SECRET,
   googleRedirectPath: parsed.GOOGLE_REDIRECT_PATH,
@@ -78,3 +100,42 @@ export const appConfig = {
   googleScopes: parsed.GOOGLE_OAUTH_SCOPES.split(",").map((scope) => scope.trim()).filter(Boolean),
   workspaceDbPath: path.join(process.cwd(), "data", "workspaces.json"),
 };
+
+// Pure guard used at boot. In a deployed environment (staging/production) we must
+// NOT silently fall back to the ephemeral JSON file or store tokens in plaintext —
+// a missing DATABASE_URL would mean data loss on the next container restart, and a
+// missing TOKEN_ENCRYPTION_KEY would leave OAuth tokens unencrypted at rest.
+// Returns the list of fatal problems (empty = ok) so it's trivially testable.
+export function findDeploymentConfigErrors(cfg: {
+  appEnv: string;
+  databaseUrl: string;
+  tokenEncryptionKey: string;
+}): string[] {
+  const errors: string[] = [];
+  const deployed = cfg.appEnv === "staging" || cfg.appEnv === "production";
+  if (!deployed) return errors;
+
+  if (!cfg.databaseUrl) {
+    errors.push(
+      "DATABASE_URL is required in staging/production — without it the app would store data on an ephemeral disk and lose everything on restart.",
+    );
+  }
+  if (!cfg.tokenEncryptionKey) {
+    errors.push(
+      "TOKEN_ENCRYPTION_KEY is required in staging/production — without it Google/Meta OAuth tokens would be stored unencrypted at rest.",
+    );
+  }
+  return errors;
+}
+
+// Throws a clear, actionable error if the deployed environment is misconfigured.
+// Call this once at boot, before binding the port.
+export function assertDeploymentConfig(): void {
+  const errors = findDeploymentConfigErrors(appConfig);
+  if (errors.length) {
+    throw new Error(
+      `Refusing to start in "${appConfig.appEnv}" with an unsafe configuration:\n` +
+        errors.map((e) => `  • ${e}`).join("\n"),
+    );
+  }
+}

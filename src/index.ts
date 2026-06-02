@@ -8,7 +8,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
-import { appConfig } from "./config.js";
+import { appConfig, assertDeploymentConfig } from "./config.js";
 import { createLeadSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema } from "./api-schema.js";
 import { workspaceConfigSchema } from "./schema.js";
 import {
@@ -27,7 +27,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces } from "./services/database.js";
+import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces, saveWorkspace } from "./services/database.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
@@ -59,6 +59,8 @@ import {
 import { generateConversationReply } from "./services/grok.js";
 import { sendChannelMessage, sendBusinessMessage } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
+import { logger, captureException } from "./services/logger.js";
+import { encryptionEnabled } from "./services/crypto.js";
 import { generateInvoiceDocument, generateQuoteDocument } from "./services/documents.js";
 import {
   checkLeegalityDocumentDetails,
@@ -67,6 +69,7 @@ import {
   verifyLeegalityWebhookRequest,
 } from "./services/contracts.js";
 import { sheetNames } from "./services/sheet-definitions.js";
+import type { MetaChannel, WorkspaceRecord } from "./types.js";
 import {
   addPortfolioImage,
   disconnectMetaConnection,
@@ -260,6 +263,9 @@ app.post("/api/public/:workspaceId/book", publicWriteLimiter, async (req, res, n
     const result = await createPublicBookingRequest(String(req.params.workspaceId), parsed);
     res.json({ ok: true, ...result });
   } catch (error) {
+    if (error instanceof Error && error.message === "Booking page not found") {
+      return res.status(404).json({ error: error.message });
+    }
     next(error);
   }
 });
@@ -341,6 +347,9 @@ app.get("/auth/google/callback", async (req, res, next) => {
     const tokens = await exchangeCodeForTokens(code);
     const profile = await fetchGoogleProfile(tokens);
 
+    await new Promise<void>((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve())),
+    );
     req.session.googleTokens = tokens;
     req.session.profile = profile;
 
@@ -351,6 +360,47 @@ app.get("/auth/google/callback", async (req, res, next) => {
     next(error);
   }
 });
+
+// Dev-only login + seed. Triple-gated: only mounts when APP_ENV=development AND
+// DEV_LOGIN=1. Used to drive the authenticated UI locally without Google OAuth.
+// Never available in staging/production.
+if (appConfig.appEnv === "development" && process.env.DEV_LOGIN === "1") {
+  app.get("/dev/login", async (req, res, next) => {
+    try {
+      const profile = { email: "aisha@glowbyaisha.test", name: "Aisha Khan" };
+      const existing = await getWorkspaceByEmail(profile.email);
+      if (!existing) {
+        const { buildDefaultConfig } = await import("./defaults.js");
+        const config = buildDefaultConfig(profile);
+        config.businessName = "Glow by Aisha";
+        config.city = "Mumbai";
+        config.ownerWhatsApp = "+919812345678";
+        config.instagramHandle = "glowbyaisha";
+        await saveWorkspace({
+          workspaceId: "dev-aisha",
+          email: profile.email,
+          name: profile.name,
+          spreadsheetId: "dev-sheet",
+          spreadsheetUrl: "https://example.com",
+          spreadsheetName: "Glow by Aisha",
+          confirmedCalendarId: "dev-confirmed",
+          tentativeCalendarId: "dev-tentative",
+          tentativeCalendarName: "Tentative",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          config,
+        });
+      }
+      req.session.profile = profile;
+      req.session.save((err) => {
+        if (err) return next(err);
+        res.type("text").send("dev login ok");
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+}
 
 app.get("/auth/meta/callback", async (req, res, next) => {
   try {
@@ -400,6 +450,19 @@ app.get("/auth/instagram/callback", (_req, res) => {
   res.redirect("/?instagram_login_ready=1");
 });
 
+function scrubWorkspaceTokens(workspace: WorkspaceRecord | null): WorkspaceRecord | null {
+  if (!workspace) return null;
+  const { googleTokens: _gt, ...rest } = workspace;
+  if (!rest.metaConnections) return rest as WorkspaceRecord;
+  const scrubbed: typeof rest.metaConnections = {};
+  for (const [ch, conn] of Object.entries(rest.metaConnections)) {
+    if (!conn) continue;
+    const { accessToken: _at, pageAccessToken: _pt, ...safeConn } = conn;
+    scrubbed[ch as MetaChannel] = safeConn as typeof conn;
+  }
+  return { ...rest, metaConnections: scrubbed } as WorkspaceRecord;
+}
+
 app.get("/api/session", async (req, res, next) => {
   try {
     if (!req.session.profile) {
@@ -414,7 +477,7 @@ app.get("/api/session", async (req, res, next) => {
     return res.json({
       authenticated: true,
       profile: req.session.profile,
-      workspace,
+      workspace: scrubWorkspaceTokens(workspace),
       dashboard,
     });
   } catch (error) {
@@ -514,8 +577,7 @@ app.post("/api/gmb/select", async (req, res, next) => {
 });
 
 // Lists the available document design themes for the picker.
-app.get("/api/document-templates", (req, res) => {
-  if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+app.get("/api/document-templates", (_req, res) => {
   res.json({ ok: true, templates: DOCUMENT_THEME_LIST });
 });
 
@@ -1616,10 +1678,11 @@ app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
 
 app.post("/webhooks/wati", async (req, res, next) => {
   try {
-    const parsed = normalizeWatiPayload(req.body as Record<string, unknown>);
-    if (appConfig.watiWebhookSecret && parsed.secret !== appConfig.watiWebhookSecret) {
+    const rawSecret = String((req.body as Record<string, unknown>)?.secret ?? "");
+    if (!appConfig.watiWebhookSecret || rawSecret !== appConfig.watiWebhookSecret) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
+    const parsed = normalizeWatiPayload(req.body as Record<string, unknown>);
 
     const workspaceTokens = await getWorkspaceCredentials(parsed.workspaceEmail);
 
@@ -1658,10 +1721,11 @@ app.post("/webhooks/wati", async (req, res, next) => {
 
 app.post("/webhooks/manychat", async (req, res, next) => {
   try {
-    const parsed = normalizeManychatPayload(req.body as Record<string, unknown>);
-    if (appConfig.manychatWebhookSecret && parsed.secret !== appConfig.manychatWebhookSecret) {
+    const rawSecret = String((req.body as Record<string, unknown>)?.secret ?? "");
+    if (!appConfig.manychatWebhookSecret || rawSecret !== appConfig.manychatWebhookSecret) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
+    const parsed = normalizeManychatPayload(req.body as Record<string, unknown>);
 
     const workspaceTokens = await getWorkspaceCredentials(parsed.workspaceEmail);
 
@@ -2043,8 +2107,8 @@ app.get("/legal/data-deletion", (_req, res) => {
 });
 
 app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  // Always log the full error server-side for debugging.
-  console.error(`[error] ${req.method} ${req.path}`, error);
+  // Always log the full error server-side for debugging (structured + captured).
+  captureException(error, { method: req.method, path: req.path });
 
   // Validation errors are safe to surface and help the user fix their input.
   if (error instanceof ZodError) {
@@ -2062,8 +2126,17 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
   res.status(500).json({ error: isUserSafe ? message : "Something went wrong on our end. Please try again." });
 });
 
+// Fail closed: refuse to boot a deployed environment without a database and a
+// token-encryption key, rather than silently using ephemeral/plaintext storage.
+assertDeploymentConfig();
+
 app.listen(appConfig.port, () => {
-  console.log(`1Glam app listening on ${appConfig.baseUrl}`);
+  logger.info("1Glam app listening", {
+    baseUrl: appConfig.baseUrl,
+    env: appConfig.appEnv,
+    persistence: appConfig.databaseUrl ? "postgres" : "file",
+    tokenEncryption: encryptionEnabled() ? "on" : "off",
+  });
   startReminderScheduler();
 });
 

@@ -1,9 +1,14 @@
-import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
 import { listActiveBookings, markBookingReminderSent, recordReviewRequest } from "./booking.js";
-import { listWorkspaces } from "./database.js";
+import { listWorkspaces, withDistributedLock } from "./database.js";
 import { logInteractionForWorkspace } from "./integrations.js";
+import { logger, captureException } from "./logger.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
+import { appConfig } from "../config.js";
+
+// Stable advisory-lock keys so only one instance runs each daily job.
+const REMINDER_LOCK_KEY = 918_273_001;
+const REVIEW_LOCK_KEY = 918_273_002;
 
 export function startReminderScheduler() {
   const now = new Date();
@@ -16,17 +21,23 @@ export function startReminderScheduler() {
   const msUntilFirst = nextRun.getTime() - now.getTime();
 
   const tick = () => {
-    runReminderJob().catch((err) => console.error("[reminders] job failed:", err));
-    runReviewRequestJob().catch((err) => console.error("[reviews] job failed:", err));
+    // Each job is guarded by a distributed lock: with multiple instances, only
+    // the one that acquires the lock sends; the rest skip, so no double-sends.
+    withDistributedLock(REMINDER_LOCK_KEY, runReminderJob)
+      .then((r) => { if (!r.ran) logger.info("[reminders] skipped — another instance holds the lock"); })
+      .catch((err) => captureException(err, { job: "reminders" }));
+    withDistributedLock(REVIEW_LOCK_KEY, runReviewRequestJob)
+      .then((r) => { if (!r.ran) logger.info("[reviews] skipped — another instance holds the lock"); })
+      .catch((err) => captureException(err, { job: "reviews" }));
     setTimeout(tick, 24 * 60 * 60 * 1000);
   };
 
   setTimeout(tick, msUntilFirst);
-  console.log(`[reminders] scheduler started. First run at ${nextRun.toISOString()}`);
+  logger.info("[reminders] scheduler started", { firstRun: nextRun.toISOString() });
 }
 
 async function runReminderJob() {
-  console.log("[reminders] running daily job");
+  logger.info("[reminders] running daily job");
   const workspaces = await listWorkspaces();
 
   for (const workspace of workspaces) {
@@ -82,19 +93,16 @@ async function runReminderJob() {
               aiSummary: `Automated ${day}-day pre-event reminder`,
             });
           } catch (err) {
-            console.error(
-              `[reminders] send failed for booking ${booking.bookingId} (T-${day}):`,
-              err,
-            );
+            captureException(err, { bookingId: booking.bookingId, day });
           }
         }
       }
     } catch (err) {
-      console.error(`[reminders] workspace ${workspace.email} failed:`, err);
+      captureException(err, { workspace: workspace.email });
     }
   }
 
-  console.log("[reminders] daily job complete");
+  logger.info("[reminders] daily job complete");
 }
 
 // Automated post-event review requests. For each booking whose event was N days
@@ -161,11 +169,11 @@ async function runReviewRequestJob() {
             aiSummary: `Automated post-event review request (T+${daysAfter})`,
           });
         } catch (err) {
-          console.error(`[reviews] send failed for booking ${booking.bookingId}:`, err);
+          captureException(err, { bookingId: booking.bookingId });
         }
       }
     } catch (err) {
-      console.error(`[reviews] workspace ${workspace.email} failed:`, err);
+      captureException(err, { workspace: workspace.email });
     }
   }
 }

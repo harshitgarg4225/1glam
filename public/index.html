@@ -90,6 +90,17 @@
         background: var(--card);
         border-radius: 0;
       }
+      /* On phones, keep tabs to a single swipeable row instead of wrapping
+         into three cramped rows. */
+      @media (max-width: 720px) {
+        .tabs {
+          flex-wrap: nowrap; overflow-x: auto; padding: 0 12px;
+          -webkit-overflow-scrolling: touch; scrollbar-width: none;
+        }
+        .tabs::-webkit-scrollbar { display: none; }
+        .tab-button { padding: 13px 14px; flex: 0 0 auto; }
+        .tab-more-wrap { margin-left: 0; }
+      }
       .tab-button {
         appearance: none; border: none; background: transparent;
         color: var(--muted); cursor: pointer;
@@ -184,6 +195,26 @@
       td { font-size: 14px; }
       tr:last-child td { border-bottom: none; }
 
+      /* On phones, turn data tables into stacked cards so nothing is cut off. */
+      @media (max-width: 720px) {
+        .table-wrap.cards-on-mobile { overflow: visible; border: none; background: transparent; }
+        .table-wrap.cards-on-mobile table { min-width: 0; }
+        .table-wrap.cards-on-mobile thead { display: none; }
+        .table-wrap.cards-on-mobile tr {
+          display: block; background: var(--card); border: 1px solid var(--line);
+          border-radius: var(--radius); padding: 6px 4px; margin-bottom: 12px;
+        }
+        .table-wrap.cards-on-mobile td {
+          display: block; border-bottom: 1px solid var(--line); padding: 8px 14px;
+        }
+        .table-wrap.cards-on-mobile td:last-child { border-bottom: none; }
+        .table-wrap.cards-on-mobile td[data-label]::before {
+          content: attr(data-label); display: block;
+          font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+          color: var(--muted); font-weight: 600; margin-bottom: 4px;
+        }
+      }
+
       .pill { display: inline-flex; align-items: center; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 500; background: var(--surface); color: var(--muted); }
       .pill.success { background: var(--success-soft); color: var(--success); }
       .pill.warning { background: var(--warning-soft); color: var(--warning); }
@@ -247,6 +278,10 @@
 
       .requires-auth { display: none; }
       body.authenticated .requires-auth { display: block; }
+      /* The nav is flex, not block — keep it flex when authenticated so the
+         tab-bar lays out in a row (and can scroll on mobile) instead of
+         wrapping its buttons as inline blocks. */
+      body.authenticated nav.tabs.requires-auth { display: flex; }
       body.authenticated #landing { display: none; }
 
       details.collapse {
@@ -430,6 +465,9 @@
       .analytics-metric-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 8px; }
       .analytics-metric-value { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
 
+      .icon-btn { background: transparent; border: 1px solid transparent; border-radius: 8px; cursor: pointer; font-size: 18px; padding: 5px 8px; color: var(--text); transition: background 0.15s, border-color 0.15s; line-height: 1; }
+      .icon-btn:hover { background: var(--surface); border-color: var(--line); }
+
       @media (max-width: 640px) {
         .board:not(.list-mode) .board-col { flex: 0 0 calc(100vw - 72px); }
         .toast-shelf { bottom: 16px; right: 12px; left: 12px; }
@@ -448,7 +486,8 @@
         </div>
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
-          <a href="/auth/google" id="connect-link"><button class="button" type="button">Connect Google Account</button></a>
+          <a href="/auth/google" id="connect-link" class="button" style="text-decoration:none;">Connect Google Account</a>
+          <button id="settings-icon-btn" class="requires-auth icon-btn" type="button" title="Settings" style="display:none;">⚙️</button>
           <button id="logout-button" class="button secondary" type="button" style="display:none;">Log out</button>
         </div>
       </header>
@@ -459,15 +498,14 @@
         <button class="tab-button" type="button" data-tab="bookings">Bookings</button>
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
         <button class="tab-button" type="button" data-tab="conversations">Messages</button>
+        <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
         <button class="tab-button" type="button" data-tab="mypage">My Page</button>
         <div class="tab-more-wrap">
           <button class="tab-button tab-more-trigger" type="button" id="tab-more-trigger">More ▾</button>
           <div class="tab-more-menu" id="tab-more-menu">
-            <button class="tab-more-item" type="button" data-tab="reviews">⭐ Reviews</button>
             <button class="tab-more-item" type="button" data-tab="analytics">📊 Insights</button>
             <button class="tab-more-item" type="button" data-tab="team">👥 Team</button>
             <button class="tab-more-item" type="button" data-tab="channels">🔗 Channels</button>
-            <button class="tab-more-item" type="button" data-tab="setup">⚙️ Settings</button>
           </div>
         </div>
       </nav>
@@ -501,71 +539,79 @@
           <div class="kicker">Overview</div>
           <h2>At a glance</h2>
           <div class="stat-grid">
-            <div class="stat"><strong id="stat-leads">0</strong> Active leads</div>
+            <div class="stat"><strong id="stat-leads">0</strong> Open requests</div>
             <div class="stat"><strong id="stat-bookings">0</strong> Confirmed bookings</div>
-            <div class="stat"><strong id="stat-awaiting">0</strong> Awaiting clients</div>
+            <div class="stat"><strong id="stat-awaiting">0</strong> Waiting on client</div>
           </div>
           <div id="snapshot-content" class="lead stack" style="font-size:16px;">
-            Sign in to see live leads, approvals, and confirmed bookings.
+            Sign in to see your live requests, approvals, and confirmed bookings.
           </div>
           <div class="workspace stack" id="workspace-summary"></div>
         </div>
       </section>
 
-      <!-- Leads (pipeline) -->
+      <!-- Requests -->
       <section class="tab-panel" data-panel="leads">
-        <div class="panel section" style="margin-bottom:20px;">
-          <div class="kicker">New Enquiry</div>
-          <h2>Create Lead</h2>
-          <form id="lead-form">
-            <div class="section-grid">
-              <div><label for="clientName">Client Name</label><input id="clientName" name="clientName" required /></div>
-              <div><label for="clientWhatsApp">Client WhatsApp</label><input id="clientWhatsApp" name="clientWhatsApp" required /></div>
-              <div><label for="clientInstagram">Client Instagram</label><input id="clientInstagram" name="clientInstagram" /></div>
-              <div>
-                <label for="source">Source</label>
-                <select id="source" name="source"><option>Instagram</option><option>WhatsApp</option><option>Manual</option></select>
-              </div>
-              <div>
-                <label for="eventType">Event Type</label>
-                <select id="eventType" name="eventType"><option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option></select>
-              </div>
-              <div><label for="eventDate">Event Date</label><input id="eventDate" name="eventDate" type="date" required /></div>
-              <div><label for="eventTime">Event Time</label><input id="eventTime" name="eventTime" type="time" /></div>
-              <div class="wide"><label for="locationText">Location / Venue</label><input id="locationText" name="locationText" required /></div>
-            </div>
-            <details class="collapse" style="margin-top:14px;">
-              <summary>Advanced — pricing &amp; travel (optional)</summary>
-              <div class="collapse-body">
-                <div class="section-grid">
-                  <div><label for="distanceKm">Distance (km)</label><input id="distanceKm" name="distanceKm" type="number" placeholder="Auto from Google Maps" /></div>
-                  <div><label for="travelTimeMin">Travel Time (min)</label><input id="travelTimeMin" name="travelTimeMin" type="number" placeholder="Auto from Google Maps" /></div>
-                  <div>
-                    <label for="profileTier">Profile Tier</label>
-                    <select id="profileTier" name="profileTier"><option>Low</option><option selected>Mid</option><option>High</option></select>
-                  </div>
-                  <div><label for="followers">Followers</label><input id="followers" name="followers" type="number" value="0" /></div>
-                  <div class="wide"><label for="clientTags">Client Tags</label><input id="clientTags" name="clientTags" placeholder="LUXURY_BRIDE,HIGH_INTENT" /></div>
-                </div>
-              </div>
-            </details>
-            <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Create Lead</button></div>
-            <div class="status" id="lead-status"></div>
-          </form>
-        </div>
-
         <div class="panel section">
-          <div class="kicker">Pipeline</div>
-          <h2>Leads</h2>
-          <div class="filter-bar">
-            <input type="search" id="lead-search" class="grow" placeholder="Search client, location, tag..." />
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">Client requests</div>
+              <h2>Your requests</h2>
+            </div>
+            <button class="button secondary" type="button" id="toggle-add-client">➕ Add a client</button>
+          </div>
+
+          <details class="collapse" id="add-client-collapse" style="margin-top:16px;">
+            <summary>➕ Add a client manually</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin:0 0 14px;font-size:13px;">Most requests arrive on their own through your booking link. Use this only to add someone who reached out by phone or in person.</p>
+              <form id="lead-form">
+                <div class="section-grid">
+                  <div><label for="clientName">Client name</label><input id="clientName" name="clientName" required /></div>
+                  <div><label for="clientWhatsApp">Their WhatsApp number</label><input id="clientWhatsApp" name="clientWhatsApp" required placeholder="+91…" /></div>
+                  <div><label for="clientInstagram">Their Instagram (optional)</label><input id="clientInstagram" name="clientInstagram" /></div>
+                  <div>
+                    <label for="source">How they found you</label>
+                    <select id="source" name="source"><option>Instagram</option><option>WhatsApp</option><option value="Manual">In person / phone</option></select>
+                  </div>
+                  <div>
+                    <label for="eventType">Occasion</label>
+                    <select id="eventType" name="eventType"><option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option></select>
+                  </div>
+                  <div><label for="eventDate">Event date</label><input id="eventDate" name="eventDate" type="date" required /></div>
+                  <div><label for="eventTime">Time (optional)</label><input id="eventTime" name="eventTime" type="time" /></div>
+                  <div class="wide"><label for="locationText">Where is the event?</label><input id="locationText" name="locationText" required placeholder="Venue or area, city" /></div>
+                </div>
+                <details class="collapse" style="margin-top:14px;">
+                  <summary>More details (optional)</summary>
+                  <div class="collapse-body">
+                    <div class="section-grid">
+                      <div><label for="distanceKm">Distance (km)</label><input id="distanceKm" name="distanceKm" type="number" placeholder="Auto from Google Maps" /></div>
+                      <div><label for="travelTimeMin">Travel time (min)</label><input id="travelTimeMin" name="travelTimeMin" type="number" placeholder="Auto from Google Maps" /></div>
+                      <div>
+                        <label for="profileTier">Client type</label>
+                        <select id="profileTier" name="profileTier"><option value="Low">Regular</option><option value="Mid" selected>Premium</option><option value="High">VIP / celebrity</option></select>
+                      </div>
+                      <div><label for="followers">Their Instagram followers</label><input id="followers" name="followers" type="number" value="0" /></div>
+                      <div class="wide"><label for="clientTags">Notes / tags</label><input id="clientTags" name="clientTags" placeholder="e.g. luxury bride, very keen" /></div>
+                    </div>
+                  </div>
+                </details>
+                <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Add client</button></div>
+                <div class="status" id="lead-status"></div>
+              </form>
+            </div>
+          </details>
+
+          <div class="filter-bar" style="margin-top:18px;">
+            <input type="search" id="lead-search" class="grow" placeholder="Search by name, place…" />
             <select id="lead-filter-event">
-              <option value="">All event types</option>
+              <option value="">All occasions</option>
               <option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option>
             </select>
             <select id="lead-filter-source">
               <option value="">All sources</option>
-              <option>Instagram</option><option>WhatsApp</option><option>Manual</option>
+              <option>Instagram</option><option>WhatsApp</option><option value="Manual">In person / phone</option>
             </select>
             <div class="view-toggle">
               <button class="view-toggle-btn active" type="button" id="view-board-btn">⊞ Board</button>
@@ -574,7 +620,7 @@
             <span class="muted" id="lead-count"></span>
           </div>
           <div class="board" id="leads-board"></div>
-          <p class="muted" style="margin-top:12px;font-size:13px;">Drag a card to a new column to move it through the pipeline, or use the actions inside each card.</p>
+          <p class="muted" style="margin-top:12px;font-size:13px;">Drag a card between columns to move a client along, or tap the actions inside each card.</p>
         </div>
       </section>
 
@@ -595,12 +641,12 @@
             </select>
             <span class="muted" id="booking-count"></span>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap cards-on-mobile">
             <table>
               <thead>
-                <tr><th>Booking</th><th>Client</th><th>Event</th><th>Financials</th><th>Status</th><th>Docs</th></tr>
+                <tr><th>Client</th><th>Event</th><th>Payment</th><th>Status</th><th>Actions</th></tr>
               </thead>
-              <tbody id="bookings-body"><tr><td colspan="6" class="muted">No bookings yet.</td></tr></tbody>
+              <tbody id="bookings-body"><tr><td colspan="5" class="muted">No bookings yet.</td></tr></tbody>
             </table>
           </div>
           <div class="status" id="document-status" style="margin-top:12px;"></div>
@@ -628,8 +674,8 @@
       <!-- Conversations -->
       <section class="tab-panel" data-panel="conversations">
         <div class="panel section">
-          <div class="kicker">Client History</div>
-          <h2>Conversations</h2>
+          <div class="kicker">Client history</div>
+          <h2>Messages</h2>
           <div class="filter-bar">
             <input type="search" id="convo-search" class="grow" placeholder="Search by client or message..." />
             <button class="button small secondary" type="button" id="convo-refresh">Refresh</button>
@@ -642,38 +688,56 @@
       <!-- Team -->
       <section class="tab-panel" data-panel="team">
         <div class="panel section" style="margin-bottom:20px;">
-          <div class="kicker">Your Artists</div>
-          <h2 id="team-form-title">Add Team Member</h2>
-          <p class="muted" style="margin:-4px 0 14px;font-size:13.5px;">Add your hair & makeup specialists with their WhatsApp numbers. When a booking is confirmed, brief them in one tap from the <strong>Bookings</strong> tab — or turn on auto-alerts in <strong>Settings</strong> so they're notified automatically.</p>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">Your specialists</div>
+              <h2 id="team-form-title">Your team</h2>
+            </div>
+            <button class="button secondary" type="button" id="toggle-add-team">➕ Add a specialist</button>
+          </div>
+          <p class="muted" style="margin:8px 0 0;font-size:13.5px;">Add your hair &amp; makeup specialists with their WhatsApp numbers. When a booking is confirmed, brief them in one tap from the <strong>Bookings</strong> tab — or turn on auto-alerts in <strong>Settings</strong> so they're notified automatically.</p>
+
+          <details class="collapse" id="add-team-collapse" style="margin-top:16px;">
+            <summary>➕ Add a specialist</summary>
+            <div class="collapse-body">
           <form id="team-form">
             <input type="hidden" name="artistId" id="team-artist-id" />
             <div class="section-grid">
               <div><label for="team-name">Name</label><input id="team-name" name="name" required /></div>
-              <div><label for="team-whatsApp">WhatsApp</label><input id="team-whatsApp" name="whatsApp" /></div>
-              <div><label for="team-email">Email</label><input id="team-email" name="email" type="email" /></div>
-              <div><label for="team-city">City</label><input id="team-city" name="city" /></div>
+              <div><label for="team-whatsApp">WhatsApp number</label><input id="team-whatsApp" name="whatsApp" placeholder="+91…" /></div>
+              <div><label for="team-email">Email (optional)</label><input id="team-email" name="email" type="email" /></div>
+              <div><label for="team-city">City (optional)</label><input id="team-city" name="city" /></div>
               <div>
-                <label for="team-skillLevel">Skill Level</label>
-                <select id="team-skillLevel" name="skillLevel"><option>Junior</option><option selected>Senior</option><option>Lead</option></select>
+                <label for="team-skillLevel">Experience</label>
+                <select id="team-skillLevel" name="skillLevel"><option>Junior</option><option selected>Senior</option><option value="Lead">Lead artist</option></select>
               </div>
-              <div><label for="team-priceMultiplier">Price Multiplier</label><input id="team-priceMultiplier" name="priceMultiplier" type="number" step="0.05" value="1" /></div>
-              <div>
-                <label for="team-luxuryEligible">Luxury Eligible</label>
-                <select id="team-luxuryEligible" name="luxuryEligible"><option>Yes</option><option>No</option></select>
-              </div>
-              <div><label for="team-primaryCalendarId">Primary Calendar ID</label><input id="team-primaryCalendarId" name="primaryCalendarId" placeholder="optional" /></div>
             </div>
+            <details class="collapse" style="margin-top:12px;">
+              <summary>Advanced (optional)</summary>
+              <div class="collapse-body">
+                <div class="section-grid">
+                  <div><label for="team-priceMultiplier">Price multiplier</label><input id="team-priceMultiplier" name="priceMultiplier" type="number" step="0.05" value="1" /></div>
+                  <div>
+                    <label for="team-luxuryEligible">Can take luxury jobs?</label>
+                    <select id="team-luxuryEligible" name="luxuryEligible"><option>Yes</option><option>No</option></select>
+                  </div>
+                  <div><label for="team-primaryCalendarId">Google Calendar ID</label><input id="team-primaryCalendarId" name="primaryCalendarId" placeholder="optional" /></div>
+                </div>
+              </div>
+            </details>
             <div class="action-row" style="margin-top:14px;">
-              <button class="button" type="submit" id="team-save-btn">Add Artist</button>
+              <button class="button" type="submit" id="team-save-btn">Add specialist</button>
               <button class="button secondary" type="button" id="team-reset-btn">Clear</button>
             </div>
             <div class="status" id="team-status"></div>
           </form>
+            </div>
+          </details>
         </div>
 
         <div class="panel section">
-          <div class="kicker">Directory</div>
-          <h2>Team</h2>
+          <div class="kicker">Everyone you work with</div>
+          <h2>Your specialists</h2>
           <div id="team-list"><p class="muted">Loading team…</p></div>
         </div>
       </section>
@@ -756,8 +820,9 @@
       <!-- Channels -->
       <section class="tab-panel" data-panel="channels">
         <div class="panel section">
-          <div class="kicker">Meta Integrations</div>
-          <h2>Channels</h2>
+          <div class="kicker">Instagram &amp; WhatsApp</div>
+          <h2>Connect your channels</h2>
+          <p class="muted" style="margin:-4px 0 16px;font-size:14px;">Link your Instagram and WhatsApp so new enquiries arrive automatically and you can reply from one place.</p>
           <div class="workspace" id="meta-summary"></div>
         </div>
       </section>
@@ -822,115 +887,129 @@
       <!-- Settings -->
       <section class="tab-panel" data-panel="setup">
         <form id="config-form" class="panel section">
-          <div class="kicker">Settings</div>
-          <h2>Business settings</h2>
+          <div class="kicker">Manage your workspace</div>
+          <h2>Settings</h2>
+          <p class="muted" style="margin:-4px 0 18px;font-size:14px;">Just fill in the first three sections to start taking bookings. The rest is optional and already set up with sensible defaults.</p>
 
           <details class="collapse" open>
-            <summary>Business &amp; Contact</summary>
+            <summary>Your business</summary>
             <div class="collapse-body">
               <div class="section-grid">
-                <div><label for="businessName">Business Name</label><input id="businessName" name="businessName" required /></div>
-                <div><label for="ownerName">Owner Name</label><input id="ownerName" name="ownerName" required /></div>
-                <div><label for="ownerEmail">Owner Email</label><input id="ownerEmail" name="ownerEmail" type="email" required /></div>
-                <div><label for="ownerWhatsApp">Owner WhatsApp</label><input id="ownerWhatsApp" name="ownerWhatsApp" required /></div>
+                <div><label for="businessName">Business name</label><input id="businessName" name="businessName" required placeholder="e.g. Glow by Aisha" /></div>
+                <div><label for="ownerName">Your name</label><input id="ownerName" name="ownerName" required /></div>
+                <div><label for="ownerEmail">Your email</label><input id="ownerEmail" name="ownerEmail" type="email" required /></div>
+                <div><label for="ownerWhatsApp">Your WhatsApp number</label><input id="ownerWhatsApp" name="ownerWhatsApp" required placeholder="+91…" /></div>
                 <div><label for="city">City</label><input id="city" name="city" required /></div>
-                <div><label for="instagramHandle">Instagram Handle</label><input id="instagramHandle" name="instagramHandle" /></div>
+                <div><label for="instagramHandle">Instagram handle (optional)</label><input id="instagramHandle" name="instagramHandle" placeholder="glowbyaisha" /></div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse" open>
+            <summary>Your prices</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin:0 0 14px;font-size:13px;">Your starting price for each occasion. You can always adjust the final price for any client before sending a quote.</p>
+              <div class="section-grid">
+                <div><label for="basePriceBridal">Bridal (₹)</label><input id="basePriceBridal" name="basePriceBridal" type="number" required /></div>
+                <div><label for="basePriceEngagement">Engagement (₹)</label><input id="basePriceEngagement" name="basePriceEngagement" type="number" required /></div>
+                <div><label for="basePriceReception">Reception (₹)</label><input id="basePriceReception" name="basePriceReception" type="number" required /></div>
+                <div><label for="basePriceParty">Party (₹)</label><input id="basePriceParty" name="basePriceParty" type="number" required /></div>
+                <div><label for="travelWithinCity">Travel charge — within city (₹)</label><input id="travelWithinCity" name="travelWithinCity" type="number" required /></div>
+                <div><label for="travelOutstation">Travel charge — outstation (₹)</label><input id="travelOutstation" name="travelOutstation" type="number" required /></div>
+                <div><label for="advancePercentage">Advance to lock a date (%)</label><input id="advancePercentage" name="advancePercentage" type="number" required /></div>
+                <div><label for="upiId">Your UPI ID (for advances)</label><input id="upiId" name="upiId" placeholder="yourname@bank" /></div>
+                <div class="wide"><label for="paymentTerms">Payment terms (shown on quotes &amp; invoices)</label><textarea id="paymentTerms" name="paymentTerms" required></textarea></div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse" open>
+            <summary>Your booking page</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Controls the public link clients use to request a date. They can only pick dates that fit these rules.
+              </p>
+              <div class="section-grid">
+                <div>
+                  <label for="bookingPageEnabled">Accept online bookings?</label>
+                  <select id="bookingPageEnabled" name="bookingPageEnabled"><option>Yes</option><option>No</option></select>
+                </div>
+                <div><label for="bookingLeadTimeDays">Least notice you need (days)</label><input id="bookingLeadTimeDays" name="bookingLeadTimeDays" type="number" min="0" /></div>
+                <div><label for="bookingMaxAdvanceDays">How far ahead clients can book (days)</label><input id="bookingMaxAdvanceDays" name="bookingMaxAdvanceDays" type="number" min="1" /></div>
+                <div><label for="bookingMaxPerDay">Max bookings per day (0 = no limit)</label><input id="bookingMaxPerDay" name="bookingMaxPerDay" type="number" min="0" /></div>
+                <div><label for="bookingWeeklyOffDays">Your weekly days off</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
+                <div class="wide"><label for="bookingBlockedDates">Dates you're not available</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
+                <div class="wide"><label for="bookingTimeSlots">Time slots you offer (leave empty to let clients type a time)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
+                <div><label for="bookingWaitlistEnabled">If a day is full…</label><select id="bookingWaitlistEnabled" name="bookingWaitlistEnabled"><option value="No">Don't accept more</option><option value="Yes">Add to a waitlist</option></select></div>
+                <div>
+                  <label for="notifyTeamOnBooking">Auto-alert your team on a new booking?</label>
+                  <select id="notifyTeamOnBooking" name="notifyTeamOnBooking"><option>Yes</option><option>No</option></select>
+                </div>
+                <div><label for="reminderDaysBefore">Remind clients this many days before</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
+                <div><label for="reviewRequestDaysAfter">Ask for a review this many days after</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
               </div>
             </div>
           </details>
 
           <details class="collapse">
-            <summary>Calendars, Payments &amp; Documents</summary>
+            <summary>How your quotes &amp; invoices look</summary>
             <div class="collapse-body">
-              <div class="section-grid">
-                <div><label for="confirmedCalendarId">Confirmed Calendar ID</label><input id="confirmedCalendarId" name="confirmedCalendarId" required /></div>
-                <div><label for="tentativeCalendarId">Tentative Calendar ID</label><input id="tentativeCalendarId" name="tentativeCalendarId" required /></div>
-                <div><label for="upiId">UPI ID</label><input id="upiId" name="upiId" /></div>
-                <div><label for="googleReviewLink">Google Review Link</label><input id="googleReviewLink" name="googleReviewLink" /></div>
-                <div><label for="contractTemplateUrl">Leegality Template ID / URL</label><input id="contractTemplateUrl" name="contractTemplateUrl" /></div>
-                <div class="wide"><label for="paymentTerms">Payment Terms</label><textarea id="paymentTerms" name="paymentTerms" required></textarea></div>
-              </div>
-              <div class="wide" style="margin-top:8px;">
+              <div class="wide">
                 <label>Document design</label>
-                <p class="muted" style="margin:0 0 4px;font-size:13px;">Choose how your quotes, invoices, and contracts look. Applies to every PDF you generate.</p>
+                <p class="muted" style="margin:0 0 8px;font-size:13px;">Pick a style for your quotes, invoices, and contracts. It applies to every PDF you create.</p>
                 <input type="hidden" name="documentTemplate" id="documentTemplate" value="classic" />
                 <div class="template-grid" id="template-grid"></div>
               </div>
-            </div>
-          </details>
-
-          <details class="collapse">
-            <summary>Pricing &amp; Scarcity</summary>
-            <div class="collapse-body">
-              <div class="section-grid">
-                <div><label for="basePriceBridal">Bridal Price</label><input id="basePriceBridal" name="basePriceBridal" type="number" required /></div>
-                <div><label for="basePriceEngagement">Engagement Price</label><input id="basePriceEngagement" name="basePriceEngagement" type="number" required /></div>
-                <div><label for="basePriceReception">Reception Price</label><input id="basePriceReception" name="basePriceReception" type="number" required /></div>
-                <div><label for="basePriceParty">Party Price</label><input id="basePriceParty" name="basePriceParty" type="number" required /></div>
-                <div><label for="travelWithinCity">Within-City Travel</label><input id="travelWithinCity" name="travelWithinCity" type="number" required /></div>
-                <div><label for="travelOutstation">Outstation Travel</label><input id="travelOutstation" name="travelOutstation" type="number" required /></div>
-                <div><label for="holdExpiryHours">Hold Expiry (hours)</label><input id="holdExpiryHours" name="holdExpiryHours" type="number" required /></div>
-                <div><label for="advancePercentage">Advance Percentage</label><input id="advancePercentage" name="advancePercentage" type="number" required /></div>
-                <div><label for="scarcityThresholdSoft">Soft Scarcity Threshold</label><input id="scarcityThresholdSoft" name="scarcityThresholdSoft" type="number" required /></div>
-                <div><label for="scarcityThresholdHard">Hard Scarcity Threshold</label><input id="scarcityThresholdHard" name="scarcityThresholdHard" type="number" required /></div>
+              <div class="section-grid" style="margin-top:14px;">
+                <div class="wide"><label for="googleReviewLink">Your Google review link</label><input id="googleReviewLink" name="googleReviewLink" placeholder="Set this up under the Reviews tab" /></div>
               </div>
             </div>
           </details>
 
           <details class="collapse">
-            <summary>Availability &amp; Booking Page</summary>
+            <summary>WhatsApp message templates (advanced, optional)</summary>
             <div class="collapse-body">
-              <p class="muted" style="margin-bottom:14px;font-size:14px;">
-                Controls your public booking page. Clients can only request dates that fit these rules.
+              <p class="muted" style="margin-bottom:14px;font-size:13.5px;">
+                You don't need any of this to get started. WhatsApp only lets businesses send automated messages using <strong>pre-approved templates</strong> (created in Meta Business Manager). If you add the matching template names below, your quotes, reminders and review requests will send reliably at any time. Leave them blank and 1Glam sends normal text instead (which WhatsApp only delivers within 24 hours of the client's last message). The one-tap <strong>Notify team</strong> and <strong>WhatsApp</strong> buttons always work with no setup.
               </p>
               <div class="section-grid">
-                <div>
-                  <label for="bookingPageEnabled">Accept Online Bookings</label>
-                  <select id="bookingPageEnabled" name="bookingPageEnabled"><option>Yes</option><option>No</option></select>
-                </div>
-                <div><label for="bookingLeadTimeDays">Minimum Notice (days)</label><input id="bookingLeadTimeDays" name="bookingLeadTimeDays" type="number" min="0" /></div>
-                <div><label for="bookingMaxAdvanceDays">Booking Window (days ahead)</label><input id="bookingMaxAdvanceDays" name="bookingMaxAdvanceDays" type="number" min="1" /></div>
-                <div><label for="bookingMaxPerDay">Max Bookings / Day (0 = no limit)</label><input id="bookingMaxPerDay" name="bookingMaxPerDay" type="number" min="0" /></div>
-                <div><label for="bookingWeeklyOffDays">Weekly Days Off</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
-                <div class="wide"><label for="bookingBlockedDates">Blocked Dates</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
-                <div class="wide"><label for="bookingTimeSlots">Available Time Slots (leave empty for free text)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
-                <div><label for="bookingWaitlistEnabled">Enable Waitlist When Full</label><select id="bookingWaitlistEnabled" name="bookingWaitlistEnabled"><option value="No">No — reject when full</option><option value="Yes">Yes — add to waitlist</option></select></div>
-                <div><label for="bookingConfirmTemplate">Booking Request Template</label><input id="bookingConfirmTemplate" name="bookingConfirmTemplate" placeholder="booking_confirmation" /></div>
-                <div><label for="bookingConfirmTemplateLang">Request Template Language</label><input id="bookingConfirmTemplateLang" name="bookingConfirmTemplateLang" placeholder="en" /></div>
-                <div><label for="approvalTemplate">Approval Notification Template</label><input id="approvalTemplate" name="approvalTemplate" placeholder="booking_approved" /></div>
-                <div><label for="approvalTemplateLang">Approval Template Language</label><input id="approvalTemplateLang" name="approvalTemplateLang" placeholder="en" /></div>
-                <div>
-                  <label for="notifyTeamOnBooking">Auto-notify Team on Booking</label>
-                  <select id="notifyTeamOnBooking" name="notifyTeamOnBooking"><option>Yes</option><option>No</option></select>
-                </div>
-                <div><label for="teamNotifyTemplate">Team Alert Template</label><input id="teamNotifyTemplate" name="teamNotifyTemplate" placeholder="team_booking_alert" /></div>
-                <div><label for="teamNotifyTemplateLang">Team Alert Template Language</label><input id="teamNotifyTemplateLang" name="teamNotifyTemplateLang" placeholder="en" /></div>
-                <div><label for="quoteTemplate">Quote Send Template</label><input id="quoteTemplate" name="quoteTemplate" placeholder="send_quote" /></div>
-                <div><label for="quoteTemplateLang">Quote Template Language</label><input id="quoteTemplateLang" name="quoteTemplateLang" placeholder="en" /></div>
-                <div><label for="invoiceTemplate">Invoice Send Template</label><input id="invoiceTemplate" name="invoiceTemplate" placeholder="send_invoice" /></div>
-                <div><label for="invoiceTemplateLang">Invoice Template Language</label><input id="invoiceTemplateLang" name="invoiceTemplateLang" placeholder="en" /></div>
-                <div><label for="contractTemplate">Contract Send Template</label><input id="contractTemplate" name="contractTemplate" placeholder="send_contract" /></div>
-                <div><label for="contractTemplateLang">Contract Template Language</label><input id="contractTemplateLang" name="contractTemplateLang" placeholder="en" /></div>
-                <div><label for="collectionTemplate">Payment Reminder Template</label><input id="collectionTemplate" name="collectionTemplate" placeholder="payment_reminder" /></div>
-                <div><label for="collectionTemplateLang">Payment Reminder Language</label><input id="collectionTemplateLang" name="collectionTemplateLang" placeholder="en" /></div>
-                <div><label for="reminderTemplate">Pre-Event Reminder Template</label><input id="reminderTemplate" name="reminderTemplate" placeholder="event_reminder" /></div>
-                <div><label for="reminderTemplateLang">Reminder Template Language</label><input id="reminderTemplateLang" name="reminderTemplateLang" placeholder="en" /></div>
-                <div><label for="reminderDaysBefore">Remind X Days Before Event</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
-                <div><label for="reviewRequestDaysAfter">Auto Review Request (days after event)</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
-                <div><label for="reviewTemplate">Review Request Template</label><input id="reviewTemplate" name="reviewTemplate" placeholder="review_request" /></div>
-                <div><label for="reviewTemplateLang">Review Template Language</label><input id="reviewTemplateLang" name="reviewTemplateLang" placeholder="en" /></div>
+                <div><label for="bookingConfirmTemplate">Booking request template</label><input id="bookingConfirmTemplate" name="bookingConfirmTemplate" placeholder="booking_confirmation" /></div>
+                <div><label for="bookingConfirmTemplateLang">Language</label><input id="bookingConfirmTemplateLang" name="bookingConfirmTemplateLang" placeholder="en" /></div>
+                <div><label for="approvalTemplate">Approval template</label><input id="approvalTemplate" name="approvalTemplate" placeholder="booking_approved" /></div>
+                <div><label for="approvalTemplateLang">Language</label><input id="approvalTemplateLang" name="approvalTemplateLang" placeholder="en" /></div>
+                <div><label for="teamNotifyTemplate">Team alert template</label><input id="teamNotifyTemplate" name="teamNotifyTemplate" placeholder="team_booking_alert" /></div>
+                <div><label for="teamNotifyTemplateLang">Language</label><input id="teamNotifyTemplateLang" name="teamNotifyTemplateLang" placeholder="en" /></div>
+                <div><label for="quoteTemplate">Quote template</label><input id="quoteTemplate" name="quoteTemplate" placeholder="send_quote" /></div>
+                <div><label for="quoteTemplateLang">Language</label><input id="quoteTemplateLang" name="quoteTemplateLang" placeholder="en" /></div>
+                <div><label for="invoiceTemplate">Invoice template</label><input id="invoiceTemplate" name="invoiceTemplate" placeholder="send_invoice" /></div>
+                <div><label for="invoiceTemplateLang">Language</label><input id="invoiceTemplateLang" name="invoiceTemplateLang" placeholder="en" /></div>
+                <div><label for="contractTemplate">Contract template</label><input id="contractTemplate" name="contractTemplate" placeholder="send_contract" /></div>
+                <div><label for="contractTemplateLang">Language</label><input id="contractTemplateLang" name="contractTemplateLang" placeholder="en" /></div>
+                <div><label for="collectionTemplate">Payment reminder template</label><input id="collectionTemplate" name="collectionTemplate" placeholder="payment_reminder" /></div>
+                <div><label for="collectionTemplateLang">Language</label><input id="collectionTemplateLang" name="collectionTemplateLang" placeholder="en" /></div>
+                <div><label for="reminderTemplate">Pre-event reminder template</label><input id="reminderTemplate" name="reminderTemplate" placeholder="event_reminder" /></div>
+                <div><label for="reminderTemplateLang">Language</label><input id="reminderTemplateLang" name="reminderTemplateLang" placeholder="en" /></div>
+                <div><label for="reviewTemplate">Review request template</label><input id="reviewTemplate" name="reviewTemplate" placeholder="review_request" /></div>
+                <div><label for="reviewTemplateLang">Language</label><input id="reviewTemplateLang" name="reviewTemplateLang" placeholder="en" /></div>
               </div>
-              <p class="muted" style="margin-top:12px;font-size:13px;">
-                WhatsApp only allows automated business-initiated messages via an <strong>approved template</strong>. Create templates in Meta Business Manager.<br>
-                <strong>Booking Request Template</strong> — sent when client submits the booking page. Variables: {{1}} client name, {{2}} event type, {{3}} event date.<br>
-                <strong>Approval Notification Template</strong> — sent when you click Approve on a lead. Variables: {{1}} client name, {{2}} event date, {{3}} quoted price.<br>
-                <strong>Team Alert Template</strong> — auto-sent to your assigned specialist (or whole active team if none is assigned) the moment a booking is confirmed. Variables: {{1}} artist name, {{2}} event type, {{3}} event date, {{4}} venue. Turn off with "Auto-notify Team on Booking". No template? Use the one-tap <strong>Notify team</strong> button on each booking — it works instantly with no setup.<br>
-                <strong>Quote / Invoice / Contract Send Templates</strong> — used when you tap "Send" on a quote, invoice, or contract. Variables: {{1}} client name, {{2}} event type, {{3}} event date, {{4}} document link. <strong>Payment Reminder Template</strong> — used for advance/balance reminders. Variables: {{1}} client name, {{2}} advance/balance, {{3}} amount, {{4}} event date.<br>
-                <em>These are optional. If you leave them blank, the message is sent as normal text — which WhatsApp only delivers within 24 hours of the client's last message. Set a template to send reliably any time.</em><br>
-                <strong>Pre-Event Reminder Template</strong> — auto-sent at 8 AM UTC each day. Variables: {{1}} client name, {{2}} event date, {{3}} event time. Set "Remind X Days Before" to control when (e.g. 7,1 = one week and one day before).<br>
-                <strong>Review Request Template</strong> — auto-sent the set number of days after the event. Variables: {{1}} client name, {{2}} business name, {{3}} Google review link. Leave "Auto Review Request" blank to turn it off.<br>
-                Clients also get a "Confirm on WhatsApp" button on the booking page, which works without any template.
+              <p class="muted" style="margin-top:12px;font-size:12.5px;">
+                Template variables — Booking request: {{1}} client, {{2}} occasion, {{3}} date · Approval: {{1}} client, {{2}} date, {{3}} price · Team alert: {{1}} specialist, {{2}} occasion, {{3}} date, {{4}} venue · Quote/Invoice/Contract: {{1}} client, {{2}} occasion, {{3}} date, {{4}} link · Payment reminder: {{1}} client, {{2}} advance/balance, {{3}} amount, {{4}} date · Pre-event reminder: {{1}} client, {{2}} date, {{3}} time · Review: {{1}} client, {{2}} business, {{3}} review link.
               </p>
+            </div>
+          </details>
+
+          <details class="collapse">
+            <summary>Advanced — you usually don't need this</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:13px;">These were set up automatically when you signed in. Only change them if you know what you're doing.</p>
+              <div class="section-grid">
+                <div><label for="confirmedCalendarId">Confirmed bookings calendar (managed automatically)</label><input id="confirmedCalendarId" name="confirmedCalendarId" readonly /></div>
+                <div><label for="tentativeCalendarId">Tentative holds calendar (managed automatically)</label><input id="tentativeCalendarId" name="tentativeCalendarId" readonly /></div>
+                <div><label for="contractTemplateUrl">Leegality contract template ID / URL</label><input id="contractTemplateUrl" name="contractTemplateUrl" /></div>
+                <div><label for="holdExpiryHours">How long a tentative hold lasts (hours)</label><input id="holdExpiryHours" name="holdExpiryHours" type="number" /></div>
+                <div><label for="scarcityThresholdSoft">Soft scarcity threshold</label><input id="scarcityThresholdSoft" name="scarcityThresholdSoft" type="number" /></div>
+                <div><label for="scarcityThresholdHard">Hard scarcity threshold</label><input id="scarcityThresholdHard" name="scarcityThresholdHard" type="number" /></div>
+              </div>
             </div>
           </details>
 
@@ -998,7 +1077,7 @@
           <input type="hidden" name="qrImageUrl" value="" />
           <input type="hidden" name="portfolioImages" value="" />
           <input type="hidden" name="aboutText" value="" />
-          <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save Owner Configuration</button></div>
+          <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save settings</button></div>
           <div class="status" id="form-status"></div>
         </form>
       </section>
@@ -1085,12 +1164,11 @@
 
       const tabMoreMenu = document.getElementById("tab-more-menu");
       const tabMoreTrigger = document.getElementById("tab-more-trigger");
-      const MORE_TABS = ["reviews", "analytics", "team", "channels", "setup"];
+      const MORE_TABS = ["analytics", "team", "channels"];
 
       function activateTab(name) {
         tabNav.querySelectorAll(".tab-button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
         tabMoreMenu.querySelectorAll(".tab-more-item").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
-        // Keep the "More" trigger highlighted when one of its tabs is showing.
         tabMoreTrigger.classList.toggle("active", MORE_TABS.includes(name));
         tabMoreMenu.classList.remove("open");
         document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.getAttribute("data-panel") === name));
@@ -1114,6 +1192,11 @@
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".tab-more-wrap")) tabMoreMenu.classList.remove("open");
       });
+      document.getElementById("settings-icon-btn")?.addEventListener("click", () => activateTab("setup"));
+
+      function debounce(fn, ms = 200) {
+        let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+      }
 
       function escapeHtml(value) {
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -1191,9 +1274,12 @@
       function renderSnapshot(leads, bookings) {
         const awaiting = leads.filter((l) => l.status === "Awaiting Client").length;
         const revenue = bookings.reduce((s, b) => s + Number(b.finalPrice || 0), 0);
+        const waitingLine = awaiting > 0
+          ? `${awaiting} ${awaiting === 1 ? "client is" : "clients are"} yet to reply. `
+          : "";
         snapshotContent.innerHTML = `
-          <p class="lead" style="font-size:16px;">${awaiting} leads are waiting on clients. ${bookings.length} confirmed bookings are already reflected in Google Calendar.</p>
-          <p class="lead" style="font-size:16px;">Confirmed revenue in the sheet: <strong>${formatMoney(revenue)}</strong></p>`;
+          <p class="lead" style="font-size:16px;">${waitingLine}You have ${bookings.length} confirmed ${bookings.length === 1 ? "booking" : "bookings"} in your calendar.</p>
+          ${revenue > 0 ? `<p class="lead" style="font-size:16px;">Confirmed earnings so far: <strong>${formatMoney(revenue)}</strong></p>` : ""}`;
       }
 
       function assignOptions(current) {
@@ -1286,7 +1372,7 @@
                     <button class="card-menu-item" data-action="send-quote" data-lead-id="${lead.leadId}" type="button">📤 Send quote</button>
                     ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer" class="card-menu-item">🔗 Open quote</a>` : ""}
                     <div class="card-menu-sep"></div>
-                    <button class="card-menu-item danger" data-action="no" data-lead-id="${lead.leadId}" type="button">✕ Decline lead</button>
+                    <button class="card-menu-item danger" data-action="no" data-lead-id="${lead.leadId}" type="button">✕ Decline request</button>
                   </div>
                 </div>
               </div>
@@ -1296,8 +1382,13 @@
               ${escapeHtml(lead.locationText)}${lead.outstationFlag === "Yes" ? " · <strong>Outstation</strong>" : ""}
             </div>
             <div class="card-price" style="margin-top:6px;">
-              ${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)}
-              <span class="muted" style="font-weight:400;font-size:12px;">est. ${formatMoney(lead.initialAiPrice)}</span>
+              ${
+                lead.finalApprovedPrice
+                  ? formatMoney(lead.finalApprovedPrice)
+                  : lead.initialAiPrice
+                  ? `${formatMoney(lead.initialAiPrice)} <span class="muted" style="font-weight:400;font-size:12px;">suggested</span>`
+                  : `<span class="muted" style="font-weight:500;font-size:13px;">Not quoted yet</span>`
+              }
             </div>
             ${lead.aiInsight ? `<p class="card-meta" style="font-style:italic;margin:6px 0 0;border-left:2px solid var(--line);padding-left:8px;line-height:1.5;">${escapeHtml(lead.aiInsight)}</p>` : ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0;">${quoteChip}${payChip}</div>
@@ -1362,7 +1453,13 @@
                 <div class="lead-list-sub">${escapeHtml(lead.eventType)} · ${escapeHtml(formatDay(lead.eventDate))}${lead.locationText ? " · " + escapeHtml(lead.locationText) : ""}</div>
               </div>
               <div class="lead-list-right">
-                <div class="lead-list-price">${formatMoney(lead.finalApprovedPrice || lead.initialAiPrice)}</div>
+                <div class="lead-list-price">${
+                  lead.finalApprovedPrice
+                    ? formatMoney(lead.finalApprovedPrice)
+                    : lead.initialAiPrice
+                    ? formatMoney(lead.initialAiPrice)
+                    : `<span class="muted" style="font-size:12px;font-weight:500;">Not quoted</span>`
+                }</div>
                 <div style="display:flex;align-items:center;gap:6px;">${daysStr}<span class="status-dot ${dot}"></span></div>
               </div>
             </div>`;
@@ -1428,21 +1525,28 @@
         const bookings = filteredBookings();
         document.getElementById("booking-count").textContent = `${bookings.length} shown`;
         if (!bookings.length) {
-          bookingsBody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📅</div><h3>No bookings yet</h3><p>When you confirm a lead, it appears here as a confirmed booking with invoicing and contract tools.</p></div></td></tr>`;
+          bookingsBody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📅</div><h3>No bookings yet</h3><p>When you confirm a request, it appears here with invoice and contract tools.</p></div></td></tr>`;
           return;
         }
         bookingsBody.innerHTML = bookings.map((booking) => `
           <tr>
-            <td><strong>${escapeHtml(booking.bookingId)}</strong><br><span class="muted">${formatDate(booking.bookedAt)}</span></td>
-            <td>${escapeHtml(booking.clientName)}<br><span class="muted">${escapeHtml(booking.clientWhatsApp)}</span><br><span class="muted" style="font-size:12px;">💇 ${booking.assignedArtist ? escapeHtml(booking.assignedArtist) : "<em>Unassigned</em>"}</span></td>
-            <td>${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(formatDay(booking.eventDate))}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
-            <td>${formatMoney(booking.finalPrice)}<br><span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br><span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span></td>
-            <td>
-              <span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span><br>
-              ${booking.contractStatus ? `<span class="pill ${booking.contractStatus === "Signed" ? "success" : booking.contractStatus === "Sent" ? "warning" : ""}" style="margin-top:4px;font-size:10px;">${escapeHtml(booking.contractStatus)}</span>` : ""}
+            <td data-label="Client">
+              <strong>${escapeHtml(booking.clientName)}</strong><br>
+              <span class="muted">${escapeHtml(booking.clientWhatsApp)}</span><br>
+              <span class="muted" style="font-size:12px;">💇 ${booking.assignedArtist ? escapeHtml(booking.assignedArtist) : "<em>No specialist assigned</em>"}</span>
+            </td>
+            <td data-label="Event">${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(formatDay(booking.eventDate))}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
+            <td data-label="Payment">
+              <strong>${formatMoney(booking.finalPrice)}</strong><br>
+              <span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br>
+              <span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span>
+            </td>
+            <td data-label="Status">
+              <span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span>
+              ${booking.contractStatus ? `<br><span class="pill ${booking.contractStatus === "Signed" ? "success" : booking.contractStatus === "Sent" ? "warning" : ""}" style="margin-top:4px;font-size:10px;">${escapeHtml(booking.contractStatus)}</span>` : ""}
               ${booking.contractSentAt ? `<br><span class="muted" style="font-size:11px;">Sent ${formatDate(booking.contractSentAt)}</span>` : ""}
             </td>
-            <td>
+            <td data-label="Actions">
               <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
                 <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Notify team</button>
                 ${booking.invoiceUrl
@@ -1513,13 +1617,13 @@
               <div class="upcoming-body">
                 <div class="upcoming-client">${escapeHtml(b.clientName)} · <span class="muted">${escapeHtml(b.eventType)}</span></div>
                 <div class="upcoming-meta">
-                  ${b.eventTime ? "🕒 " + escapeHtml(b.eventTime) + " · " : ""}💇 ${b.assignedArtist ? escapeHtml(b.assignedArtist) : "<em>Unassigned</em>"}
+                  ${b.eventTime ? "🕒 " + escapeHtml(b.eventTime) + " · " : ""}💇 ${b.assignedArtist ? escapeHtml(b.assignedArtist) : "<em>No specialist assigned</em>"}
                 </div>
                 ${b.venue ? `<div class="upcoming-meta">📍 ${mapHref ? `<a href="${mapHref}" target="_blank" rel="noreferrer">${escapeHtml(b.venue)}</a>` : escapeHtml(b.venue)}</div>` : ""}
               </div>
               <div class="upcoming-right">
                 <span class="${paid}" style="font-size:11px;">${escapeHtml(b.paymentStatus || b.status)}</span>
-                <span class="upcoming-amt">${formatMoney(b.finalPrice)}</span>
+                ${Number(b.finalPrice || 0) > 0 ? `<span class="upcoming-amt">${formatMoney(b.finalPrice)}</span>` : ""}
               </div>
             </div>`;
         }).join("")}</div>`;
@@ -1594,26 +1698,29 @@
       function renderTeam() {
         const list = document.getElementById("team-list");
         if (!teamArtists.length) {
-          list.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>No team members yet</h3><p>Add your first artist using the form above to start building your team roster.</p></div>`;
+          list.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>No specialists yet</h3><p>Tap “Add a specialist” above to add the hair &amp; makeup artists you work with.</p></div>`;
           return;
         }
-        list.innerHTML = `<div class="mini-grid">${teamArtists.map((a) => `
+        list.innerHTML = `<div class="mini-grid">${teamArtists.map((a) => {
+          const wa = a.whatsApp ? a.whatsApp.replace(/\D/g, "") : "";
+          return `
           <div class="mini-card">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
               <strong>${escapeHtml(a.name)}</strong>
               <span class="pill ${a.active === "No" ? "danger" : "success"}">${a.active === "No" ? "inactive" : "active"}</span>
             </div>
             <p class="card-meta" style="margin:8px 0;">
-              ${escapeHtml(a.skillLevel || "")}${a.city ? " · " + escapeHtml(a.city) : ""}<br>
-              ${a.whatsApp ? "WA: " + escapeHtml(a.whatsApp) + "<br>" : ""}
-              ${a.email ? escapeHtml(a.email) + "<br>" : ""}
-              Multiplier ×${escapeHtml(a.priceMultiplier)} · Luxury: ${escapeHtml(a.luxuryEligible)}
+              ${escapeHtml(a.skillLevel || "Specialist")}${a.city ? " · " + escapeHtml(a.city) : ""}
+              ${a.whatsApp ? "<br>📱 " + escapeHtml(a.whatsApp) : "<br><span style='color:var(--danger);'>No WhatsApp number</span>"}
+              ${a.email ? "<br>" + escapeHtml(a.email) : ""}
             </p>
-            <div class="action-row">
+            <div class="action-row" style="flex-wrap:wrap;gap:6px;">
+              ${wa ? `<a class="button tiny secondary" href="https://wa.me/${wa}" target="_blank" rel="noreferrer" style="text-decoration:none;">💬 Message</a>` : ""}
               <button class="button tiny secondary" data-team-edit="${a.artistId}">Edit</button>
-              ${a.active === "No" ? "" : `<button class="button tiny secondary" data-team-deactivate="${a.artistId}">Deactivate</button>`}
+              ${a.active === "No" ? "" : `<button class="button tiny secondary" data-team-deactivate="${a.artistId}">Remove</button>`}
             </div>
-          </div>`).join("")}</div>`;
+          </div>`;
+        }).join("")}</div>`;
       }
       const teamForm = document.getElementById("team-form");
       const teamStatus = document.getElementById("team-status");
@@ -1624,11 +1731,12 @@
         teamStatus.textContent = "";
         try {
           await postJson("/api/team", Object.fromEntries(new FormData(teamForm).entries()));
-          toast("Team member saved.", "success");
+          toast("Specialist saved.", "success");
           teamForm.reset();
           document.getElementById("team-artist-id").value = "";
-          document.getElementById("team-form-title").textContent = "Add Team Member";
-          document.getElementById("team-save-btn").textContent = "Add Artist";
+          document.getElementById("team-save-btn").textContent = "Add specialist";
+          const tc = document.getElementById("add-team-collapse");
+          if (tc) tc.open = false;
           await loadTeam();
         } catch (error) {
           toast(error.message, "error");
@@ -1637,11 +1745,14 @@
           clearLoading(btn);
         }
       });
+      document.getElementById("toggle-add-team")?.addEventListener("click", () => {
+        const tc = document.getElementById("add-team-collapse");
+        if (tc) { tc.open = !tc.open; if (tc.open) tc.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      });
       document.getElementById("team-reset-btn").addEventListener("click", () => {
         teamForm.reset();
         document.getElementById("team-artist-id").value = "";
-        document.getElementById("team-form-title").textContent = "Add Team Member";
-        document.getElementById("team-save-btn").textContent = "Add Artist";
+        document.getElementById("team-save-btn").textContent = "Add specialist";
         teamStatus.textContent = "";
       });
       document.getElementById("team-list").addEventListener("click", async (e) => {
@@ -1658,13 +1769,15 @@
           setValue(teamForm, "priceMultiplier", a.priceMultiplier);
           setValue(teamForm, "luxuryEligible", a.luxuryEligible);
           setValue(teamForm, "primaryCalendarId", a.primaryCalendarId);
-          document.getElementById("team-form-title").textContent = "Edit Team Member";
-          document.getElementById("team-save-btn").textContent = "Save Changes";
-          window.scrollTo({ top: 0, behavior: "smooth" });
+          document.getElementById("team-save-btn").textContent = "Save changes";
+          const tc = document.getElementById("add-team-collapse");
+          if (tc) { tc.open = true; tc.scrollIntoView({ behavior: "smooth", block: "start" }); }
           return;
         }
         const deId = e.target.closest("[data-team-deactivate]")?.getAttribute("data-team-deactivate");
         if (deId) {
+          const a = teamArtists.find((x) => x.artistId === deId);
+          if (!confirm(`Remove ${a ? a.name : "this specialist"} from your team? You can add them again anytime.`)) return;
           try { await postJson(`/api/team/${deId}/deactivate`, {}); await loadTeam(); }
           catch (error) { teamStatus.textContent = error.message; }
         }
@@ -2038,14 +2151,14 @@
             </div>
           </details>`).join("");
       }
-      document.getElementById("convo-search").addEventListener("input", renderConversations);
+      document.getElementById("convo-search").addEventListener("input", debounce(renderConversations));
       document.getElementById("convo-refresh").addEventListener("click", () => loadConversations(true));
 
       // ---- Filters ----
       ["lead-search", "lead-filter-event", "lead-filter-source"].forEach((id) =>
-        document.getElementById(id).addEventListener("input", renderLeads));
+        document.getElementById(id).addEventListener("input", debounce(renderLeads)));
       ["booking-search", "booking-filter-event", "booking-filter-payment"].forEach((id) =>
-        document.getElementById(id).addEventListener("input", renderBookings));
+        document.getElementById(id).addEventListener("input", debounce(renderBookings)));
 
       // ---- View toggle (Board / List) ----
       document.getElementById("view-board-btn").addEventListener("click", () => {
@@ -2059,6 +2172,12 @@
         document.getElementById("view-list-btn").classList.add("active");
         document.getElementById("view-board-btn").classList.remove("active");
         renderLeads();
+      });
+
+      // "Add a client" button opens the manual-add form and scrolls to it.
+      document.getElementById("toggle-add-client")?.addEventListener("click", () => {
+        const c = document.getElementById("add-client-collapse");
+        if (c) { c.open = !c.open; if (c.open) c.scrollIntoView({ behavior: "smooth", block: "start" }); }
       });
 
       // ---- Session ----
@@ -2082,7 +2201,7 @@
             ${extraControl}</div>`;
         }
         metaSummary.innerHTML = `<div class="mini-grid">${block("Instagram", "instagram", instagram)}${block("WhatsApp", "whatsapp", whatsapp)}</div>
-          <p class="muted" style="margin-top:14px;">Each MUA connects only her own Meta assets. Data stays isolated per workspace, and disconnect/deletion flows are available for compliance.</p>`;
+          <p class="muted" style="margin-top:14px;">Connecting Instagram and WhatsApp lets new enquiries flow in automatically and lets you reply right from here. Only you can see your own account — your data stays private to you.</p>`;
       }
 
       async function refreshSession() {
@@ -2102,6 +2221,8 @@
         }
         logoutButton.style.display = "inline-flex";
         connectLink.style.display = "none";
+        const settingsIconBtn = document.getElementById("settings-icon-btn");
+        if (settingsIconBtn) settingsIconBtn.style.display = "inline-flex";
         const _initial = (payload.profile.name || "?")[0].toUpperCase();
         loginState.innerHTML = `
           <div style="display:flex;align-items:center;gap:10px;">
@@ -2116,14 +2237,14 @@
           fillConfig(payload.workspace.config);
           const bookingUrl = `${window.location.origin}/book/${encodeURIComponent(payload.workspace.workspaceId)}`;
           workspaceSummary.innerHTML = `
-            <p class="lead" style="font-size:16px;margin:0 0 10px;">Your workspace is live. Google Sheets is the source of truth, and bookings sync directly into your own calendar.</p>
+            <p class="lead" style="font-size:16px;margin:0 0 10px;">You're all set up. Bookings sync straight into your own Google Calendar, and a full copy of everything stays in your Google account.</p>
             <div class="workspace-links">
-              <a href="${escapeHtml(payload.workspace.spreadsheetUrl)}" target="_blank" rel="noreferrer">Open Sheet</a>
+              <a href="${escapeHtml(payload.workspace.spreadsheetUrl)}" target="_blank" rel="noreferrer">Open my data (Google Sheet)</a>
               <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noreferrer">Open Calendar</a>
             </div>
             <div class="mini-card" style="margin-top:14px;">
               <div class="kicker">Your public booking page</div>
-              <p class="muted" style="margin:6px 0 10px;font-size:13px;">Share this link on Instagram, WhatsApp, or your website. Requests land straight in your Leads pipeline.</p>
+              <p class="muted" style="margin:6px 0 10px;font-size:13px;">Share this link on Instagram, WhatsApp, or your website. Requests land straight in your Requests tab.</p>
               <div class="filter-bar">
                 <input type="text" id="booking-link" class="grow" readonly value="${escapeHtml(bookingUrl)}" />
                 <button class="button secondary" type="button" id="copy-booking-link">Copy</button>
@@ -2200,11 +2321,13 @@
         leadStatus.textContent = "";
         try {
           await postJson("/api/leads", Object.fromEntries(new FormData(leadForm).entries()));
-          toast("Lead created.", "success");
+          toast("Client added.", "success");
           leadForm.reset();
           leadForm.elements.namedItem("source").value = "Instagram";
           leadForm.elements.namedItem("eventType").value = "Bridal";
           leadForm.elements.namedItem("profileTier").value = "Mid";
+          const c = document.getElementById("add-client-collapse");
+          if (c) c.open = false;
           await refreshSession();
         } catch (error) {
           toast(error.message, "error");
@@ -2226,7 +2349,7 @@
           else if (action === "reply") { const i = document.querySelector(`[data-reply-input="${leadId}"]`); await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" }); }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
           else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast("Quote sent to client.", "success"); }
-          toast("Lead updated.", "success");
+          else toast("Lead updated.", "success");
           await refreshSession();
         } catch (error) {
           toast(error.message, "error");
@@ -2338,7 +2461,17 @@
 
       // ─── Notify team: one-tap WhatsApp briefs (zero setup) ───
       const notifyTeamModal = document.getElementById("notify-team-modal");
-      function closeTeamNotify() { notifyTeamModal.classList.remove("open"); }
+      function closeTeamNotify() {
+        notifyTeamModal.classList.remove("open");
+        document.removeEventListener("keydown", modalEscHandler);
+      }
+      function modalEscHandler(e) { if (e.key === "Escape") closeTeamNotify(); }
+      function openModalWithFocus() {
+        notifyTeamModal.classList.add("open");
+        document.addEventListener("keydown", modalEscHandler);
+        const firstFocusable = notifyTeamModal.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+        if (firstFocusable) firstFocusable.focus();
+      }
       document.getElementById("notify-team-close").addEventListener("click", closeTeamNotify);
       notifyTeamModal.addEventListener("click", (e) => { if (e.target === notifyTeamModal) closeTeamNotify(); });
 
@@ -2388,7 +2521,7 @@
               </div>`;
           }).join("");
         }
-        notifyTeamModal.classList.add("open");
+        openModalWithFocus();
       }
       document.getElementById("notify-team-list").addEventListener("click", (e) => {
         if (e.target.closest("[data-notify-sent]")) {
