@@ -95,6 +95,13 @@ export type WorkspaceConfig = PricingRuleConfig & {
   cancellationPolicy: string;
   contractTerms: string;
   autoReplyEnabled: string;
+  brandColor: string;
+  coverImageUrl: string;
+  headline: string;
+  tagline: string;
+  logoUrl: string;
+  gstNumber: string;
+  gstPercentage: number;
 };
 
 export type WalletLedgerEntry = {

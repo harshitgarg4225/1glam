@@ -96,6 +96,13 @@ export const workspaceConfigSchema = z.object({
   cancellationPolicy: z.string().optional().default(""),
   contractTerms: z.string().optional().default(""),
   autoReplyEnabled: z.string().optional().default("No"),
+  brandColor: z.string().optional().default(""),
+  coverImageUrl: z.string().optional().default(""),
+  headline: z.string().optional().default(""),
+  tagline: z.string().optional().default(""),
+  logoUrl: z.string().optional().default(""),
+  gstNumber: z.string().optional().default(""),
+  gstPercentage: z.coerce.number().min(0).max(28).optional().default(0),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

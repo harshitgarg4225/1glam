@@ -363,6 +363,13 @@ async function seedSpreadsheet(
     ["cancellation_policy", config.cancellationPolicy, "Cancellation and rescheduling terms shown on quotes and contracts"],
     ["contract_terms", config.contractTerms, "Full terms & conditions for the booking contract"],
     ["auto_reply_enabled", config.autoReplyEnabled, "When Yes, AI auto-replies to inbound client messages (within guardrails)"],
+    ["brand_color", config.brandColor, "Accent colour for your booking page (hex, e.g. #C26B45)"],
+    ["cover_image_url", config.coverImageUrl, "Cover photo shown at the top of your booking page (URL)"],
+    ["headline", config.headline, "Headline shown on your booking page"],
+    ["tagline", config.tagline, "Short tagline under your business name"],
+    ["logo_url", config.logoUrl, "Logo shown on your quotes, invoices & contracts (PNG/JPG URL)"],
+    ["gst_number", config.gstNumber, "Your GSTIN — shown on documents if you're GST registered"],
+    ["gst_percentage", config.gstPercentage, "GST rate to itemise on documents (e.g. 18). 0 = no GST line"],
   ];
 
   const artistsRows = [[
@@ -614,6 +621,13 @@ async function loadConfigFromSpreadsheet(
       cancellationPolicy: String(values.cancellation_policy ?? base.cancellationPolicy),
       contractTerms: String(values.contract_terms ?? base.contractTerms),
       autoReplyEnabled: String(values.auto_reply_enabled ?? base.autoReplyEnabled),
+      brandColor: String(values.brand_color ?? base.brandColor),
+      coverImageUrl: String(values.cover_image_url ?? base.coverImageUrl),
+      headline: String(values.headline ?? base.headline),
+      tagline: String(values.tagline ?? base.tagline),
+      logoUrl: String(values.logo_url ?? base.logoUrl),
+      gstNumber: String(values.gst_number ?? base.gstNumber),
+      gstPercentage: Number(values.gst_percentage ?? base.gstPercentage) || 0,
     });
 
     return parsed.success ? parsed.data : base;
