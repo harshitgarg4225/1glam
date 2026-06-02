@@ -791,6 +791,51 @@
             <div class="status" id="gmb-status"></div>
           </div>
         </div>
+
+        <!-- AI Review Assistant -->
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">✨ AI Review Assistant</div>
+          <h2>Reply to a review in seconds</h2>
+          <p class="muted" style="margin-bottom:6px;font-size:14px;">
+            Paste a Google review below and your AI assistant writes a warm, on-brand reply in your voice — two options to choose from. Copy it, then post on Google in one tap.
+          </p>
+          <p class="muted" id="gmb-mode-note" style="margin-bottom:16px;font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;"></p>
+
+          <div class="section-grid">
+            <div class="wide">
+              <label for="review-input">The review</label>
+              <textarea id="review-input" placeholder="Paste the client's Google review here…" style="min-height:90px;"></textarea>
+            </div>
+            <div>
+              <label for="review-name">Reviewer's name (optional)</label>
+              <input type="text" id="review-name" placeholder="e.g. Priya" />
+            </div>
+            <div>
+              <label for="review-rating">Star rating</label>
+              <select id="review-rating">
+                <option value="5">★★★★★ (5)</option>
+                <option value="4">★★★★ (4)</option>
+                <option value="3">★★★ (3)</option>
+                <option value="2">★★ (2)</option>
+                <option value="1">★ (1)</option>
+              </select>
+            </div>
+            <div>
+              <label for="review-tone">Tone</label>
+              <select id="review-tone">
+                <option>Warm and grateful</option>
+                <option>Professional and polished</option>
+                <option>Friendly and casual</option>
+                <option>Heartfelt and personal</option>
+              </select>
+            </div>
+          </div>
+          <div class="action-row" style="margin-top:14px;">
+            <button class="button" type="button" id="draft-reply-btn">✨ Draft my reply</button>
+            <a class="button secondary" id="open-google-reviews" target="_blank" rel="noreferrer" style="display:none;">Open Google to post</a>
+          </div>
+          <div id="review-replies" style="margin-top:16px;display:flex;flex-direction:column;gap:12px;"></div>
+        </div>
         <div class="panel section">
           <div class="kicker">Client Feedback</div>
           <h2>Reviews</h2>
@@ -1844,6 +1889,7 @@
       // ---- Reviews ----
       async function loadReviews() {
         renderGmbState();
+        refreshGmbMode();
         const tbody = document.getElementById("reviews-table-body");
         const statsEl = document.getElementById("reviews-stats");
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>`;
@@ -1924,6 +1970,66 @@
           clearLoading(btn);
         }
       });
+
+      // ---- AI Review Assistant ----
+      async function refreshGmbMode() {
+        const noteEl = document.getElementById("gmb-mode-note");
+        const openBtn = document.getElementById("open-google-reviews");
+        const link = sessionState?.workspace?.config?.googleReviewLink || "";
+        if (link) { openBtn.href = link; openBtn.style.display = ""; }
+        try {
+          const payload = await getJson("/api/gmb/status");
+          if (payload?.ok && noteEl) {
+            const s = payload.status;
+            noteEl.innerHTML = (s.mode === "auto" ? "🟢 " : "💡 ") + escapeHtml(s.note);
+          }
+        } catch { /* non-critical */ }
+      }
+
+      document.getElementById("draft-reply-btn").addEventListener("click", async () => {
+        const btn = document.getElementById("draft-reply-btn");
+        const repliesEl = document.getElementById("review-replies");
+        const reviewText = document.getElementById("review-input").value.trim();
+        if (reviewText.length < 3) { toast("Paste the review first.", "error"); return; }
+        setLoading(btn, "Writing…");
+        repliesEl.innerHTML = "";
+        try {
+          const payload = await postJson("/api/gmb/draft-reply", {
+            reviewText,
+            reviewerName: document.getElementById("review-name").value.trim(),
+            rating: document.getElementById("review-rating").value,
+            tone: document.getElementById("review-tone").value,
+          });
+          if (!payload?.ok) throw new Error(payload?.error || "Couldn't draft a reply");
+          const sentimentPill = payload.sentiment === "negative"
+            ? `<span class="pill danger">Needs care</span>`
+            : payload.sentiment === "neutral" ? `<span class="pill warning">Neutral</span>` : `<span class="pill success">Positive</span>`;
+          repliesEl.innerHTML =
+            `<div style="display:flex;align-items:center;gap:8px;"><span class="muted" style="font-size:13px;">AI suggestions</span>${sentimentPill}</div>` +
+            payload.replies.map((reply, i) => `
+              <div class="mini-card">
+                <div class="kicker">Option ${i + 1}</div>
+                <p style="margin:8px 0;line-height:1.55;white-space:pre-wrap;" data-reply-text>${escapeHtml(reply)}</p>
+                <div class="action-row">
+                  <button class="button small secondary" type="button" data-copy-reply>Copy reply</button>
+                  <a class="button small secondary" href="${escapeHtml(sessionState?.workspace?.config?.googleReviewLink || "https://business.google.com/reviews")}" target="_blank" rel="noreferrer">Open Google to post</a>
+                </div>
+              </div>`).join("");
+        } catch (error) {
+          toast(error.message, "error");
+          repliesEl.innerHTML = `<p class="muted" style="font-size:13px;">${escapeHtml(error.message)}</p>`;
+        } finally {
+          clearLoading(btn);
+        }
+      });
+
+      document.getElementById("review-replies").addEventListener("click", (e) => {
+        const copyBtn = e.target.closest("[data-copy-reply]");
+        if (!copyBtn) return;
+        const text = copyBtn.closest(".mini-card").querySelector("[data-reply-text]").textContent;
+        copyToClipboard(text, copyBtn);
+      });
+
       function renderReviews(reviews) {
         const tbody = document.getElementById("reviews-table-body");
         const statsEl = document.getElementById("reviews-stats");

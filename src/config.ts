@@ -20,6 +20,10 @@ const envSchema = z.object({
   MANYCHAT_WEBHOOK_SECRET: z.string().optional().default(""),
   XAI_API_KEY: z.string().optional().default(""),
   XAI_MODEL: z.string().default("grok-4.20-reasoning"),
+  // Google Business Profile API is allowlist-gated (zero quota by default).
+  // Flip to "1" only after the GCP project is approved AND artists grant the
+  // business.manage scope — until then the GMB agent runs in assisted mode.
+  GMB_API_ENABLED: z.string().optional().default(""),
   META_APP_ID: z.string().optional().default(""),
   META_APP_SECRET: z.string().optional().default(""),
   META_REDIRECT_PATH: z.string().default("/auth/meta/callback"),
@@ -82,6 +86,7 @@ export const appConfig = {
   manychatWebhookSecret: parsed.MANYCHAT_WEBHOOK_SECRET,
   xaiApiKey: parsed.XAI_API_KEY,
   xaiModel: parsed.XAI_MODEL,
+  gmbApiEnabled: parsed.GMB_API_ENABLED === "1" || parsed.GMB_API_ENABLED === "true",
   metaAppId: parsed.META_APP_ID,
   metaAppSecret: parsed.META_APP_SECRET,
   metaRedirectPath: parsed.META_REDIRECT_PATH,
