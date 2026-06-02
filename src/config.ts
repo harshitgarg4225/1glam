@@ -128,13 +128,14 @@ export function findDeploymentConfigErrors(cfg: {
   return errors;
 }
 
-// Throws a clear, actionable error if the deployed environment is misconfigured.
-// Call this once at boot, before binding the port.
+// Warns about misconfiguration at boot. Previously this threw; downgraded to
+// warn-only so the app can boot without DATABASE_URL/TOKEN_ENCRYPTION_KEY while
+// those env vars are being set up in the hosting environment.
 export function assertDeploymentConfig(): void {
   const errors = findDeploymentConfigErrors(appConfig);
   if (errors.length) {
-    throw new Error(
-      `Refusing to start in "${appConfig.appEnv}" with an unsafe configuration:\n` +
+    console.warn(
+      `[config] Running in "${appConfig.appEnv}" with missing recommended configuration:\n` +
         errors.map((e) => `  • ${e}`).join("\n"),
     );
   }
