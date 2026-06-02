@@ -151,6 +151,111 @@ export async function generateConversationReply(input: {
   };
 }
 
+export type GrokReviewReplies = {
+  sentiment: "positive" | "neutral" | "negative";
+  replies: string[];
+};
+
+// Drafts on-brand replies to a Google review in the artist's voice. Returns two
+// ready-to-post options plus a sentiment read. Falls back to sensible non-AI
+// templates when Grok is unavailable so the feature always works.
+export async function generateReviewReplies(input: {
+  brandName: string;
+  ownerName: string;
+  city: string;
+  signOff?: string;
+  tone: string;
+  reviewerName?: string;
+  rating?: number;
+  reviewText: string;
+}): Promise<GrokReviewReplies> {
+  if (!appConfig.xaiApiKey) {
+    return fallbackReviewReplies(input);
+  }
+
+  const systemPrompt =
+    "You write Google review replies for a luxury Indian makeup artist business. " +
+    "Return strict JSON only with keys: sentiment, replies. " +
+    "sentiment must be one of positive, neutral, negative. " +
+    "replies must be an array of exactly two distinct reply options. " +
+    "Each reply: warm, gracious, personal, on-brand, 2-4 sentences, no hashtags, no emojis unless natural. " +
+    "Address the reviewer by name when provided. Thank them specifically for what they mention. " +
+    "For negative reviews, be empathetic, take responsibility gracefully, and invite them to connect privately — never defensive. " +
+    "Match the requested tone. End in the brand's voice; use the sign-off only if it fits naturally.";
+
+  try {
+    const response = await fetch("https://api.x.ai/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${appConfig.xaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: appConfig.xaiModel,
+        input: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(input, null, 2) },
+        ],
+      }),
+    });
+
+    if (!response.ok) return fallbackReviewReplies(input);
+    const payload = (await response.json()) as { output_text?: string };
+    const parsed = payload.output_text ? safeParseJson(payload.output_text) : null;
+    if (!parsed) return fallbackReviewReplies(input);
+
+    const replies = Array.isArray(parsed.replies)
+      ? parsed.replies.map((value) => String(value).trim()).filter(Boolean)
+      : [];
+    if (!replies.length) return fallbackReviewReplies(input);
+
+    return {
+      sentiment: normalizeSentiment(parsed.sentiment),
+      replies: replies.slice(0, 3),
+    };
+  } catch {
+    return fallbackReviewReplies(input);
+  }
+}
+
+function normalizeSentiment(value: unknown): "positive" | "neutral" | "negative" {
+  const v = String(value ?? "").toLowerCase();
+  if (v === "negative") return "negative";
+  if (v === "neutral") return "neutral";
+  return "positive";
+}
+
+function fallbackReviewReplies(input: {
+  brandName: string;
+  ownerName: string;
+  signOff?: string;
+  rating?: number;
+  reviewerName?: string;
+}): GrokReviewReplies {
+  const who = input.reviewerName ? input.reviewerName.split(/\s+/)[0] : "";
+  const hi = who ? `Thank you so much, ${who}!` : "Thank you so much!";
+  const signOff = input.signOff ? ` — ${input.signOff}` : ` — Team ${input.brandName}`;
+  const negative = (input.rating ?? 5) <= 3;
+
+  if (negative) {
+    return {
+      sentiment: "negative",
+      replies: [
+        `${who ? `Hi ${who}, ` : ""}thank you for sharing this honest feedback. I’m truly sorry your experience didn’t meet the standard we hold ourselves to. I’d love to understand what happened and make it right — please reach out to us directly so we can connect personally.${signOff}`,
+        `${who ? `${who}, ` : ""}I really appreciate you taking the time to tell us this, and I’m sorry we let you down. Your experience matters to us deeply. Could we connect privately so I can listen and put things right?${signOff}`,
+      ],
+    };
+  }
+
+  return {
+    sentiment: "positive",
+    replies: [
+      `${hi} It was an absolute joy creating your look, and it means the world that you took the time to share this. We can’t wait to glam you up again.${signOff}`,
+      `${hi} Reviews like yours make our day. Thank you for trusting ${input.brandName} for your special moment — see you again soon!${signOff}`,
+    ],
+  };
+}
+
 function safeParseJson(input: string) {
   const trimmed = input.trim();
   const direct = tryParse(trimmed);

@@ -40,6 +40,7 @@ import {
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance } from "./services/places.js";
+import { getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply } from "./services/gmb.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import {
@@ -577,6 +578,88 @@ app.post("/api/gmb/select", async (req, res, next) => {
       req.session.googleTokens,
     );
     res.json({ ok: true, googleReviewLink, workspace: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- GMB review agent ----
+// Reports whether the agent is running in assisted (AI-draft) or auto (API)
+// mode, so the UI can explain what's happening to the artist.
+app.get("/api/gmb/status", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    res.json({ ok: true, status: getGmbStatus(workspace) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Drafts two AI reply options for a review in the artist's brand voice.
+app.post("/api/gmb/draft-reply", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const reviewText = typeof req.body?.reviewText === "string" ? req.body.reviewText.trim() : "";
+    if (reviewText.length < 3) {
+      return res.status(400).json({ error: "Paste the review text first." });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const rating = Number(req.body?.rating);
+    const result = await draftReviewReplies(workspace, {
+      reviewText,
+      rating: Number.isFinite(rating) && rating > 0 ? rating : undefined,
+      reviewerName: typeof req.body?.reviewerName === "string" ? req.body.reviewerName.trim() : undefined,
+      tone: typeof req.body?.tone === "string" ? req.body.tone : undefined,
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Auto mode only: lists live reviews from Google Business Profile. Returns
+// apiAvailable:false (so the UI shows assisted mode) until the project is
+// allowlisted and the artist has granted the business.manage scope.
+app.get("/api/gmb/reviews", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const result = await listGmbReviews(workspace, req.session.googleTokens);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Auto mode only: posts a reply to a live Google review.
+app.post("/api/gmb/post-reply", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const reviewName = typeof req.body?.reviewName === "string" ? req.body.reviewName.trim() : "";
+    const comment = typeof req.body?.comment === "string" ? req.body.comment.trim() : "";
+    if (!reviewName || !comment) {
+      return res.status(400).json({ error: "A review and a reply are both required." });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const posted = await postGmbReply(workspace, req.session.googleTokens, reviewName, comment);
+    if (!posted) {
+      return res.status(400).json({ error: "Couldn't post automatically. Copy the reply and post it on Google instead." });
+    }
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
