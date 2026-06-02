@@ -35,7 +35,7 @@ import {
   verifyCheckoutSignature,
   verifyWebhookSignature,
 } from "./services/razorpay.js";
-import { CREDIT_PACKS, findPack, getWallet, creditWallet } from "./services/wallet.js";
+import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalance } from "./services/wallet.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
@@ -627,7 +627,12 @@ app.post("/api/gmb/draft-reply", async (req, res, next) => {
       reviewerName: typeof req.body?.reviewerName === "string" ? req.body.reviewerName.trim() : undefined,
       tone: typeof req.body?.tone === "string" ? req.body.tone : undefined,
     });
-    res.json({ ok: true, ...result });
+    // Only meter when real AI ran (the fallback has no API cost).
+    let balanceCredits: number | null = null;
+    if (appConfig.xaiApiKey) {
+      balanceCredits = await meterUsage(req.session.profile.email, "aiReviewReply");
+    }
+    res.json({ ok: true, ...result, balanceCredits, lowBalance: balanceCredits !== null && isLowBalance(balanceCredits) });
   } catch (error) {
     next(error);
   }
@@ -687,10 +692,12 @@ app.get("/api/wallet", async (req, res, next) => {
     res.json({
       ok: true,
       balanceCredits: wallet.balanceCredits,
+      lowBalance: isLowBalance(wallet.balanceCredits),
       ledger: wallet.ledger.slice(0, 50),
       packs: CREDIT_PACKS,
       configured: razorpayConfigured(),
       testMode: razorpayTestMode(),
+      enforced: appConfig.billingEnforced,
       keyId: appConfig.razorpayKeyId,
     });
   } catch (error) {
@@ -973,6 +980,11 @@ app.post("/api/leads", async (req, res, next) => {
       req.session.googleTokens,
       parsed,
     );
+
+    // Lead creation runs AI enrichment (profile tier, tags, insight, reply).
+    if (appConfig.xaiApiKey) {
+      await meterUsage(req.session.profile.email, "aiLeadEnrichment");
+    }
 
     res.json({ ok: true, ...result });
   } catch (error) {
@@ -2328,6 +2340,11 @@ app.post("/webhooks/meta", async (req, res, next) => {
             latestMessage: inboundText,
             memorySummary: extractSummaryFromMemory(memory),
           });
+
+          // Meter the AI reply when real AI ran (not the templated fallback).
+          if (appConfig.xaiApiKey) {
+            await meterUsage(workspace.email, "aiReply");
+          }
 
           await updateLeadRecord(workspace.email, tokens, lead.leadId, (current) => ({
             ...current,

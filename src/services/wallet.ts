@@ -1,6 +1,12 @@
 import crypto from "node:crypto";
+import { appConfig } from "../config.js";
 import { updateWorkspaceByEmail } from "./database.js";
+import { logger } from "./logger.js";
 import type { Wallet, WalletLedgerEntry, WorkspaceRecord } from "../types.js";
+
+// Credits at or below this are "running low" — surfaced in the UI so the artist
+// can top up before anything stops working.
+export const LOW_BALANCE_THRESHOLD = 50;
 
 // Credit packs the artist can buy. 1 credit ≈ ₹1; bigger packs include a bonus.
 // Tune freely — these are sensible test-mode defaults.
@@ -117,4 +123,48 @@ export async function debitWallet(
     };
   });
   return updated ? getWallet(updated) : null;
+}
+
+export const USAGE_LABELS: Record<UsageKind, string> = {
+  whatsappMessage: "WhatsApp message",
+  instagramMessage: "Instagram message",
+  aiReply: "AI conversation reply",
+  aiLeadEnrichment: "AI lead intelligence",
+  aiReviewReply: "AI review reply",
+  documentGeneration: "Document generated",
+};
+
+export function creditCostFor(kind: UsageKind): number {
+  return USAGE_COSTS[kind];
+}
+
+export function isLowBalance(balanceCredits: number): boolean {
+  return balanceCredits <= LOW_BALANCE_THRESHOLD;
+}
+
+// True when the workspace can run this action. Always true unless billing is
+// enforced AND the balance can't cover the cost.
+export function canAfford(workspace: WorkspaceRecord, kind: UsageKind): boolean {
+  if (!appConfig.billingEnforced) return true;
+  return getWallet(workspace).balanceCredits >= creditCostFor(kind);
+}
+
+// Records usage for a metered action. Never throws — a billing hiccup must not
+// break a real message send or AI call. Returns the new balance (or null).
+export async function meterUsage(
+  email: string,
+  kind: UsageKind,
+  ref?: string,
+): Promise<number | null> {
+  try {
+    const wallet = await debitWallet(email, {
+      credits: creditCostFor(kind),
+      reason: USAGE_LABELS[kind],
+      ref,
+    });
+    return wallet ? wallet.balanceCredits : null;
+  } catch (error) {
+    logger.warn("Usage metering failed", { email, kind, error: String(error) });
+    return null;
+  }
 }

@@ -28,6 +28,10 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional().default(""),
   RAZORPAY_KEY_SECRET: z.string().optional().default(""),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().default(""),
+  // When "1", metered actions (messages, AI) are blocked once credits run out.
+  // Default off: usage is still tracked, but nothing is blocked — so existing
+  // workspaces are never cut off before you intentionally turn billing on.
+  BILLING_ENFORCED: z.string().optional().default(""),
   META_APP_ID: z.string().optional().default(""),
   META_APP_SECRET: z.string().optional().default(""),
   META_REDIRECT_PATH: z.string().default("/auth/meta/callback"),
@@ -94,6 +98,7 @@ export const appConfig = {
   razorpayKeyId: parsed.RAZORPAY_KEY_ID,
   razorpayKeySecret: parsed.RAZORPAY_KEY_SECRET,
   razorpayWebhookSecret: parsed.RAZORPAY_WEBHOOK_SECRET,
+  billingEnforced: parsed.BILLING_ENFORCED === "1" || parsed.BILLING_ENFORCED === "true",
   metaAppId: parsed.META_APP_ID,
   metaAppSecret: parsed.META_APP_SECRET,
   metaRedirectPath: parsed.META_REDIRECT_PATH,

@@ -1,9 +1,11 @@
 import { appConfig } from "../config.js";
 import { buildAppSecretProof } from "./meta.js";
+import { meterUsage } from "./wallet.js";
 import type { MetaChannelConnection, WorkspaceRecord } from "../types.js";
 
-export async function sendChannelMessage(input: {
-  workspace: WorkspaceRecord;
+// Actually dispatches the message to the channel. No metering here so the two
+// public senders below can each meter exactly once without double-counting.
+async function dispatchChannelMessage(input: {
   connection: MetaChannelConnection;
   channel: "Instagram" | "WhatsApp";
   actorId: string;
@@ -12,8 +14,22 @@ export async function sendChannelMessage(input: {
   if (input.channel === "Instagram") {
     return sendInstagramMessage(input.connection, input.actorId, input.message);
   }
-
   return sendWhatsAppMessage(input.connection, input.actorId, input.message);
+}
+
+export async function sendChannelMessage(input: {
+  workspace: WorkspaceRecord;
+  connection: MetaChannelConnection;
+  channel: "Instagram" | "WhatsApp";
+  actorId: string;
+  message: string;
+}) {
+  const result = await dispatchChannelMessage(input);
+  await meterUsage(
+    input.workspace.email,
+    input.channel === "Instagram" ? "instagramMessage" : "whatsappMessage",
+  );
+  return result;
 }
 
 // Sends an owner-initiated message the WhatsApp-compliant way. Business-initiated
@@ -39,16 +55,20 @@ export async function sendBusinessMessage(input: {
       String(input.template?.lang || "en"),
       input.template?.params ?? [],
     );
+    await meterUsage(input.workspace.email, "whatsappMessage");
     return { via: "template" };
   }
 
-  await sendChannelMessage({
-    workspace: input.workspace,
+  await dispatchChannelMessage({
     connection: input.connection,
     channel: input.channel,
     actorId: input.actorId,
     message: input.message,
   });
+  await meterUsage(
+    input.workspace.email,
+    input.channel === "Instagram" ? "instagramMessage" : "whatsappMessage",
+  );
   return { via: "freetext" };
 }
 
