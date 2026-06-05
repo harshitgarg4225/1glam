@@ -854,6 +854,39 @@ app.post("/api/ai/train-tone", async (req, res, next) => {
   }
 });
 
+// Sends a test customer message through the full AI reply pipeline using the
+// owner's trained tone so they can verify how the AI sounds before going live.
+app.post("/api/ai/preview-tone", async (req, res, next) => {
+  try {
+    const workspace = await getWorkspaceByEmail(req.session.profile!.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { customerMessage } = req.body as { customerMessage?: string };
+    if (!customerMessage?.trim()) {
+      return res.status(400).json({ error: "customerMessage is required" });
+    }
+
+    const result = await generateConversationReply({
+      ownerName: workspace.config.ownerName,
+      brandName: workspace.config.businessName,
+      city: workspace.config.city,
+      channel: "WhatsApp",
+      clientName: "Test Client",
+      leadStatus: "New Lead",
+      eventType: "Bridal",
+      eventDate: "TBD",
+      locationText: workspace.config.city,
+      latestMessage: customerMessage.trim(),
+      language: workspace.config.aiLanguage,
+      signOff: workspace.config.aiSignOff,
+      toneProfile: workspace.config.aiToneProfile,
+    });
+
+    res.json({ reply: result.reply });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ---- Credits wallet (Razorpay) ----
 // Returns balance, recent ledger, and the buyable credit packs. Includes the
 // Razorpay key id (publishable) so the browser can open Checkout.

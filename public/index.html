@@ -1124,6 +1124,19 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                     <label for="aiToneProfile">Your AI voice profile (editable)</label>
                     <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">This is how the AI now understands your style. Tweak it freely — it's used on every reply.</p>
                     <textarea id="aiToneProfile" name="aiToneProfile" rows="3"></textarea>
+                    <div style="margin-top:14px;border-top:1px dashed var(--line,#eee);padding-top:12px;">
+                      <label style="font-size:13px;">Preview your voice</label>
+                      <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Type a test message as if you're a new client, and see exactly how the AI replies in your tone.</p>
+                      <textarea id="preview-tone-input" rows="2" placeholder="Hi! I saw your work on Instagram, can you do bridal makeup for Feb 2025?" style="width:100%;box-sizing:border-box;"></textarea>
+                      <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+                        <button type="button" id="preview-tone-btn" class="button secondary" style="font-size:13px;">👁 Preview reply</button>
+                        <span id="preview-tone-status" class="muted" style="font-size:12.5px;"></span>
+                      </div>
+                      <div id="preview-tone-result" style="display:none;margin-top:10px;background:var(--surface,#f9f9f9);border:1px solid var(--line,#e5e5e5);border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:11px;color:#aaa;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">AI reply preview</div>
+                        <div id="preview-tone-text" style="white-space:pre-wrap;font-size:14px;line-height:1.6;"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2394,6 +2407,29 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           await refreshSession();
         } catch (err) {
           statusEl.textContent = err.message || "Couldn't learn your tone. Try again.";
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      document.getElementById("preview-tone-btn")?.addEventListener("click", async () => {
+        const inputEl = document.getElementById("preview-tone-input");
+        const statusEl = document.getElementById("preview-tone-status");
+        const resultBox = document.getElementById("preview-tone-result");
+        const textEl = document.getElementById("preview-tone-text");
+        const btn = document.getElementById("preview-tone-btn");
+        const msg = (inputEl?.value || "").trim();
+        if (!msg) { statusEl.textContent = "Type a test customer message first."; return; }
+        btn.disabled = true;
+        statusEl.textContent = "Generating reply…";
+        resultBox.style.display = "none";
+        try {
+          const res = await postJson("/api/ai/preview-tone", { customerMessage: msg });
+          textEl.textContent = res.reply || "";
+          resultBox.style.display = "block";
+          statusEl.textContent = "";
+        } catch (err) {
+          statusEl.textContent = err.message || "Couldn't generate preview. Try again.";
         } finally {
           btn.disabled = false;
         }
