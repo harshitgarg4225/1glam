@@ -6,6 +6,7 @@ import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
@@ -2835,49 +2836,60 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
   res.status(500).json({ error: isUserSafe ? message : "Something went wrong on our end. Please try again." });
 });
 
-// Fail closed: refuse to boot a deployed environment without a database and a
-// token-encryption key, rather than silently using ephemeral/plaintext storage.
-assertDeploymentConfig();
+// Exported so integration tests can boot the fully-wired app on an ephemeral
+// port without the side effects below (listen, schedulers, signal handlers).
+export { app };
 
-const server = app.listen(appConfig.port, () => {
-  logger.info("1Glam app listening", {
-    baseUrl: appConfig.baseUrl,
-    env: appConfig.appEnv,
-    persistence: appConfig.databaseUrl ? "postgres" : "file",
-    tokenEncryption: encryptionEnabled() ? "on" : "off",
+// Only start the server, schedulers, and signal handlers when run directly
+// (node dist/index.js) — not when imported by a test.
+const isMainModule =
+  Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMainModule) {
+  // Fail closed: refuse to boot a deployed environment without a database and a
+  // token-encryption key, rather than silently using ephemeral/plaintext storage.
+  assertDeploymentConfig();
+
+  const server = app.listen(appConfig.port, () => {
+    logger.info("1Glam app listening", {
+      baseUrl: appConfig.baseUrl,
+      env: appConfig.appEnv,
+      persistence: appConfig.databaseUrl ? "postgres" : "file",
+      tokenEncryption: encryptionEnabled() ? "on" : "off",
+    });
+    startReminderScheduler();
   });
-  startReminderScheduler();
-});
 
-// Graceful shutdown: on a deploy/restart Railway sends SIGTERM. Stop accepting
-// new connections, let in-flight requests finish, close the DB pool, then exit.
-// A hard 10s timeout guarantees we never hang the platform's shutdown.
-let shuttingDown = false;
-async function shutdown(signal: string) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info("shutdown_initiated", { signal });
+  // Graceful shutdown: on a deploy/restart Railway sends SIGTERM. Stop accepting
+  // new connections, let in-flight requests finish, close the DB pool, then exit.
+  // A hard 10s timeout guarantees we never hang the platform's shutdown.
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info("shutdown_initiated", { signal });
 
-  const forceExit = setTimeout(() => {
-    logger.error("shutdown_forced", { signal });
-    process.exit(1);
-  }, 10_000);
-  forceExit.unref();
+    const forceExit = setTimeout(() => {
+      logger.error("shutdown_forced", { signal });
+      process.exit(1);
+    }, 10_000);
+    forceExit.unref();
 
-  server.close(async () => {
-    try {
-      await closePool();
-    } catch (error) {
-      captureException(error, { phase: "shutdown_close_pool" });
-    }
-    clearTimeout(forceExit);
-    logger.info("shutdown_complete", { signal });
-    process.exit(0);
-  });
+    server.close(async () => {
+      try {
+        await closePool();
+      } catch (error) {
+        captureException(error, { phase: "shutdown_close_pool" });
+      }
+      clearTimeout(forceExit);
+      logger.info("shutdown_complete", { signal });
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
 }
-
-process.on("SIGTERM", () => void shutdown("SIGTERM"));
-process.on("SIGINT", () => void shutdown("SIGINT"));
 
 function mergeTags(existing: string, incoming: string) {
   const values = [...existing.split(","), ...incoming.split(",")]

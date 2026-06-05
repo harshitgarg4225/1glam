@@ -1,13 +1,30 @@
 import { appConfig } from "../config.js";
+import * as Sentry from "@sentry/node";
 
 // Lightweight structured logger. Emits one JSON object per line so log
 // aggregators (Railway, Datadog, etc.) can parse fields out of the box, while
 // staying dependency-free. In development it prints a compact human-readable
 // line instead of JSON.
 //
-// captureException() is the single seam for error tracking: today it emits a
-// structured "error" log; if SENTRY_DSN is set we tag the record so a future
-// Sentry transport can be dropped in without touching call sites.
+// captureException() is the single seam for error tracking: it always emits a
+// structured "error" log, and additionally forwards to Sentry when SENTRY_DSN
+// is configured. Sentry is initialised lazily and is a no-op otherwise, so it
+// adds zero cost and zero config burden until you opt in.
+
+let sentryReady = false;
+if (appConfig.sentryDsn) {
+  try {
+    Sentry.init({
+      dsn: appConfig.sentryDsn,
+      environment: appConfig.appEnv,
+      tracesSampleRate: 0,
+    });
+    sentryReady = true;
+  } catch {
+    // Bad DSN shouldn't take the app down — fall back to log-only.
+    sentryReady = false;
+  }
+}
 
 type Level = "debug" | "info" | "warn" | "error";
 const LEVELS: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
@@ -51,6 +68,9 @@ export function captureException(error: unknown, context?: Record<string, unknow
     ...context,
     errorName: err.name,
     stack: err.stack,
-    sentry: appConfig.sentryDsn ? "configured" : undefined,
+    sentry: sentryReady ? "sent" : undefined,
   });
+  if (sentryReady) {
+    Sentry.captureException(err, context ? { extra: context } : undefined);
+  }
 }
