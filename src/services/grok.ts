@@ -1,4 +1,5 @@
 import { appConfig } from "../config.js";
+import { fetchWithTimeout } from "./http.js";
 
 export type GrokLeadIntelligence = {
   profileTier: "Low" | "Mid" | "High";
@@ -40,7 +41,7 @@ export async function enrichLeadWithGrok(input: {
 
   const userPrompt = JSON.stringify(input, null, 2);
 
-  const response = await fetch("https://api.x.ai/v1/responses", {
+  const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -116,7 +117,7 @@ export async function generateConversationReply(input: {
     "If an invoiceUrl exists for a confirmed booking, you may guide the client to payment. " +
     "If a contractUrl exists, you may guide the client to sign it.";
 
-  const response = await fetch("https://api.x.ai/v1/responses", {
+  const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -184,7 +185,7 @@ export async function generateReviewReplies(input: {
     "Match the requested tone. End in the brand's voice; use the sign-off only if it fits naturally.";
 
   try {
-    const response = await fetch("https://api.x.ai/v1/responses", {
+    const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -1,5 +1,6 @@
 import express from "express";
 import session from "express-session";
+import helmet from "helmet";
 import connectPgSimple from "connect-pg-simple";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
@@ -27,7 +28,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, saveWorkspace } from "./services/database.js";
+import { closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, saveWorkspace } from "./services/database.js";
 import {
   createRazorpayOrder,
   razorpayConfigured,
@@ -112,6 +113,69 @@ declare module "express-session" {
 
 const app = express();
 
+// Security headers. CSP is tuned to the app's real dependencies: it serves
+// inline scripts/styles (so 'unsafe-inline' is required), loads Razorpay
+// Checkout, embeds the Google Calendar iframe and the same-origin booking-page
+// preview, and renders arbitrary https logo/cover images and QR codes. HSTS,
+// nosniff, frame-ancestors (anti-clickjacking) and referrer policy come from
+// helmet's defaults.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "'unsafe-inline'", "https://checkout.razorpay.com"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:", "https:"],
+        "font-src": ["'self'", "data:"],
+        "connect-src": ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com"],
+        "frame-src": [
+          "'self'",
+          "https://calendar.google.com",
+          "https://api.razorpay.com",
+          "https://*.razorpay.com",
+        ],
+        "frame-ancestors": ["'self'"],
+        "object-src": ["'none'"],
+        "base-uri": ["'self'"],
+        // Let the browser upgrade any stray http subresource to https in prod.
+        "upgrade-insecure-requests": appConfig.baseUrl.startsWith("https://") ? [] : null,
+      },
+    },
+    // Booking-page links are shared cross-site (WhatsApp/IG); COEP would block
+    // third-party images/embeds, so leave it off.
+    crossOriginEmbedderPolicy: false,
+    // Allow the booking page's images/QR to be loaded by link-preview crawlers.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
+
+// Per-request access log with a correlation id. Logs once on response finish so
+// each line carries method, path, status and latency — enough to trace a single
+// request through the aggregator. Health checks are skipped to avoid noise.
+app.use((req, res, next) => {
+  const requestId = (req.headers["x-request-id"] as string) || nanoid(10);
+  res.setHeader("x-request-id", requestId);
+  (req as express.Request & { requestId?: string }).requestId = requestId;
+
+  if (req.path === "/api/health") return next();
+
+  const start = process.hrtime.bigint();
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const level = res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
+    logger[level]("http_request", {
+      requestId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs),
+    });
+  });
+  next();
+});
+
 // Image uploads (payment screenshots, portfolio) — images only, max 10 MB.
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -159,12 +223,13 @@ app.use("/api", apiLimiter);
 
 app.use(
   express.json({
+    limit: "1mb",
     verify: (req, _res, buf) => {
       (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
     },
   }),
 );
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 const PgSession = connectPgSimple(session);
 const sessionStore = appConfig.databaseUrl
   ? new PgSession({
@@ -2593,7 +2658,11 @@ app.get("/legal/data-deletion", (_req, res) => {
 
 app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   // Always log the full error server-side for debugging (structured + captured).
-  captureException(error, { method: req.method, path: req.path });
+  captureException(error, {
+    method: req.method,
+    path: req.path,
+    requestId: (req as express.Request & { requestId?: string }).requestId,
+  });
 
   // Validation errors are safe to surface and help the user fix their input.
   if (error instanceof ZodError) {
@@ -2628,7 +2697,7 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
 // token-encryption key, rather than silently using ephemeral/plaintext storage.
 assertDeploymentConfig();
 
-app.listen(appConfig.port, () => {
+const server = app.listen(appConfig.port, () => {
   logger.info("1Glam app listening", {
     baseUrl: appConfig.baseUrl,
     env: appConfig.appEnv,
@@ -2637,6 +2706,36 @@ app.listen(appConfig.port, () => {
   });
   startReminderScheduler();
 });
+
+// Graceful shutdown: on a deploy/restart Railway sends SIGTERM. Stop accepting
+// new connections, let in-flight requests finish, close the DB pool, then exit.
+// A hard 10s timeout guarantees we never hang the platform's shutdown.
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info("shutdown_initiated", { signal });
+
+  const forceExit = setTimeout(() => {
+    logger.error("shutdown_forced", { signal });
+    process.exit(1);
+  }, 10_000);
+  forceExit.unref();
+
+  server.close(async () => {
+    try {
+      await closePool();
+    } catch (error) {
+      captureException(error, { phase: "shutdown_close_pool" });
+    }
+    clearTimeout(forceExit);
+    logger.info("shutdown_complete", { signal });
+    process.exit(0);
+  });
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
 
 function mergeTags(existing: string, incoming: string) {
   const values = [...existing.split(","), ...incoming.split(",")]

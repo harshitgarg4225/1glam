@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { fetchWithTimeout } from "./http.js";
 import { appConfig } from "../config.js";
 import type { MetaChannel, MetaChannelConnection } from "../types.js";
 
@@ -59,7 +60,7 @@ export async function exchangeMetaCode(code: string) {
   url.searchParams.set("redirect_uri", appConfig.metaRedirectUrl);
   url.searchParams.set("code", code);
 
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString());
   if (!response.ok) {
     throw new Error("Meta token exchange failed");
   }
@@ -84,7 +85,7 @@ export async function exchangeForLongLivedToken(shortLivedToken: string) {
   url.searchParams.set("client_secret", appConfig.metaAppSecret);
   url.searchParams.set("fb_exchange_token", shortLivedToken);
 
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString());
   if (!response.ok) {
     throw new Error(`Long-lived token exchange failed: ${await response.text()}`);
   }
@@ -122,7 +123,7 @@ export async function subscribePageToWebhooks(pageId: string, pageAccessToken: s
   url.searchParams.set("access_token", pageAccessToken);
   url.searchParams.set("appsecret_proof", buildAppSecretProof(pageAccessToken));
 
-  const response = await fetch(url.toString(), { method: "POST" });
+  const response = await fetchWithTimeout(url.toString(), { method: "POST" });
   if (!response.ok) {
     throw new Error(`Page webhook subscription failed: ${await response.text()}`);
   }
@@ -134,7 +135,7 @@ export async function subscribeWabaToWebhooks(wabaId: string, accessToken: strin
   url.searchParams.set("access_token", accessToken);
   url.searchParams.set("appsecret_proof", buildAppSecretProof(accessToken));
 
-  const response = await fetch(url.toString(), { method: "POST" });
+  const response = await fetchWithTimeout(url.toString(), { method: "POST" });
   if (!response.ok) {
     throw new Error(`WABA webhook subscription failed: ${await response.text()}`);
   }
@@ -333,7 +334,7 @@ async function graphGet(path: string, accessToken: string) {
   if (proof) {
     url.searchParams.set("appsecret_proof", proof);
   }
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString());
   if (!response.ok) {
     return null;
   }
@@ -343,7 +344,7 @@ async function graphGet(path: string, accessToken: string) {
 async function instagramGraphGet(path: string, accessToken: string) {
   const url = new URL(`https://graph.instagram.com/${path}`);
   url.searchParams.set("access_token", accessToken);
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString());
   if (!response.ok) {
     const message = await response.text();
     throw new Error(`Instagram token lookup failed: ${message}`);

@@ -1,4 +1,5 @@
 import { appConfig } from "../config.js";
+import { fetchWithTimeout } from "./http.js";
 import { buildAppSecretProof } from "./meta.js";
 import { meterUsage } from "./wallet.js";
 import type { MetaChannelConnection, WorkspaceRecord } from "../types.js";
@@ -89,7 +90,7 @@ async function sendInstagramMessage(
       url.searchParams.set("appsecret_proof", proof);
     }
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -108,7 +109,7 @@ async function sendInstagramMessage(
     throw new Error("Instagram access token is missing");
   }
 
-  const response = await fetch("https://graph.instagram.com/v25.0/me/messages", {
+  const response = await fetchWithTimeout("https://graph.instagram.com/v25.0/me/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -150,7 +151,7 @@ export async function sendWhatsAppTemplate(
     ? [{ type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) }]
     : [];
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -192,7 +193,7 @@ async function sendWhatsAppMessage(
     url.searchParams.set("appsecret_proof", proof);
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

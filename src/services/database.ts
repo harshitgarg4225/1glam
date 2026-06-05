@@ -41,6 +41,16 @@ function getPool() {
   return pool;
 }
 
+// Closes the Postgres pool during graceful shutdown so in-flight queries drain
+// and connections are released cleanly. No-op when running in file mode.
+export async function closePool(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
+    postgresReady = null;
+  }
+}
+
 async function ensurePostgres() {
   if (!hasPostgres()) return;
   if (postgresReady) return postgresReady;

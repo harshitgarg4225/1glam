@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { fetchWithTimeout } from "./http.js";
 import { appConfig } from "../config.js";
 
 // Thin Razorpay client over fetch + node:crypto — no SDK dependency. Handles
@@ -33,7 +34,7 @@ export async function createRazorpayOrder(input: {
     `${appConfig.razorpayKeyId}:${appConfig.razorpayKeySecret}`,
   ).toString("base64");
 
-  const response = await fetch("https://api.razorpay.com/v1/orders", {
+  const response = await fetchWithTimeout("https://api.razorpay.com/v1/orders", {
     method: "POST",
     headers: {
       Authorization: `Basic ${auth}`,

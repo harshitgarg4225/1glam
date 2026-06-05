@@ -1,4 +1,5 @@
 import { appConfig } from "../config.js";
+import { fetchWithTimeout } from "./http.js";
 import { createGoogleClients } from "./google.js";
 import { generateReviewReplies, type GrokReviewReplies } from "./grok.js";
 import type { Credentials } from "google-auth-library";
@@ -76,7 +77,7 @@ async function resolvePrimaryLocation(tokens: Credentials): Promise<AccountLocat
   const { auth } = createGoogleClients(tokens);
   const headers = await auth.getRequestHeaders();
 
-  const accountsRes = await fetch(
+  const accountsRes = await fetchWithTimeout(
     "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
     { headers },
   );
@@ -85,7 +86,7 @@ async function resolvePrimaryLocation(tokens: Credentials): Promise<AccountLocat
   const account = accountsJson.accounts?.[0]?.name;
   if (!account) return null;
 
-  const locationsRes = await fetch(
+  const locationsRes = await fetchWithTimeout(
     `https://mybusinessbusinessinformation.googleapis.com/v1/${account}/locations?readMask=name`,
     { headers },
   );
@@ -110,7 +111,7 @@ export async function listGmbReviews(
 
     const { auth } = createGoogleClients(tokens);
     const headers = await auth.getRequestHeaders();
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://mybusiness.googleapis.com/v4/${target.account}/${target.location}/reviews`,
       { headers },
     );
@@ -152,7 +153,7 @@ export async function postGmbReply(
   try {
     const { auth } = createGoogleClients(tokens);
     const headers = await auth.getRequestHeaders();
-    const res = await fetch(`https://mybusiness.googleapis.com/v4/${reviewName}/reply`, {
+    const res = await fetchWithTimeout(`https://mybusiness.googleapis.com/v4/${reviewName}/reply`, {
       method: "PUT",
       headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({ comment }),

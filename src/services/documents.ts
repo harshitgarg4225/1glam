@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { fetchWithTimeout } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
 import { buildPublicDocumentUrl } from "./document-links.js";
@@ -393,7 +394,7 @@ async function embedLogo(
 ): Promise<{ image: PdfImage; width: number; height: number } | null> {
   if (!logoUrl || !/^https?:\/\//i.test(logoUrl)) return null;
   try {
-    const res = await fetch(logoUrl);
+    const res = await fetchWithTimeout(logoUrl);
     if (!res.ok) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     const contentType = (res.headers.get("content-type") || "").toLowerCase();
