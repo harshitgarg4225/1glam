@@ -68,7 +68,7 @@ import {
   verifyMetaWebhook,
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
-import { generateConversationReply } from "./services/grok.js";
+import { generateConversationReply, deriveToneProfile } from "./services/grok.js";
 import { sendChannelMessage, sendBusinessMessage } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
@@ -802,6 +802,53 @@ app.post("/api/gmb/post-reply", async (req, res, next) => {
       return res.status(400).json({ error: "Couldn't post automatically. Copy the reply and post it on Google instead." });
     }
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- AI voice training ----
+// Learns the owner's writing tone from sample messages they select/paste (e.g.
+// 10 past client replies), distils a reusable style guide, and saves both the
+// samples and the derived profile so every future AI reply sounds like them.
+app.post("/api/ai/train-tone", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    // Accept either an array of messages or a single newline-separated blob.
+    const raw = req.body?.samples;
+    const samples: string[] = Array.isArray(raw)
+      ? raw.map((s: unknown) => String(s))
+      : String(raw || "").split(/\n{2,}|\r?\n/);
+    const cleaned = samples.map((s) => s.trim()).filter(Boolean);
+    if (cleaned.length < 3) {
+      return res.status(400).json({ error: "Add at least 3 sample messages so the AI has enough to learn from." });
+    }
+
+    const profile = await deriveToneProfile({
+      samples: cleaned,
+      language: workspace.config.aiLanguage,
+      signOff: workspace.config.aiSignOff,
+    });
+    if (!profile) {
+      return res.status(502).json({ error: "Couldn't analyse your tone right now. Please try again in a moment." });
+    }
+
+    const updated = await updateWorkspaceConfig(
+      req.session.profile.email,
+      {
+        ...workspace.config,
+        aiToneSamples: cleaned.join("\n\n"),
+        aiToneProfile: profile,
+      },
+      req.session.googleTokens,
+    );
+
+    res.json({ ok: true, toneProfile: updated.config.aiToneProfile });
   } catch (error) {
     next(error);
   }
@@ -2513,6 +2560,9 @@ app.post("/webhooks/meta", async (req, res, next) => {
             holdExpiresAt: lead.holdExpiresAt,
             latestMessage: inboundText,
             memorySummary: extractSummaryFromMemory(memory),
+            language: workspace.config.aiLanguage,
+            signOff: workspace.config.aiSignOff,
+            toneProfile: workspace.config.aiToneProfile,
           });
 
           // Meter the AI reply when real AI ran (not the templated fallback).

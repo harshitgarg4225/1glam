@@ -96,6 +96,8 @@ export const workspaceConfigSchema = z.object({
   cancellationPolicy: z.string().optional().default(""),
   contractTerms: z.string().optional().default(""),
   autoReplyEnabled: z.string().optional().default("No"),
+  aiToneSamples: z.string().optional().default(""),
+  aiToneProfile: z.string().optional().default(""),
   brandColor: z.string().optional().default(""),
   coverImageUrl: z.string().optional().default(""),
   headline: z.string().optional().default(""),
