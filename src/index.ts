@@ -275,6 +275,20 @@ app.use(async (req, _res, next) => {
 
 app.use(express.static(path.join(process.cwd(), "public")));
 
+// Defense-in-depth auth guard for the whole /api surface. Individual handlers
+// still do their own (and often stricter, e.g. googleTokens) checks; this is a
+// backstop so a newly-added authenticated endpoint can never accidentally ship
+// without protection. Only the genuinely public endpoints are allowlisted.
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/document-templates", "/api/logout"]);
+app.use((req, res, next) => {
+  if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
+  if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
+  if (!req.session.profile) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+});
+
 app.get("/api/health", async (_req, res) => {
   const checks: Record<string, string> = {
     app: "ok",
