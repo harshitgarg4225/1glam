@@ -314,21 +314,13 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
 
   const bookingId = buildId("B");
   const advanceAmount = roundToPremiumNumber(
-    (lead.record.finalApprovedPrice * workspace.config.advancePercentage) / 100,
+    (lead.record.finalApprovedPrice * (Number(workspace.config.advancePercentage) || 30)) / 100,
   );
   const balanceDue = Math.max(0, lead.record.finalApprovedPrice - advanceAmount);
   const confirmedEventId = await createConfirmedCalendarEvent(workspace, tokens, {
     ...lead.record,
     bookingId,
   });
-
-  if (lead.record.tentativeCalendarEventId) {
-    await deleteCalendarEvent(
-      tokens,
-      workspace.tentativeCalendarId,
-      lead.record.tentativeCalendarEventId,
-    );
-  }
 
   const booking: BookingRecord = {
     bookingId,
@@ -366,15 +358,35 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     tentativeCalendarEventId: "",
   };
 
+  // Commit the booking row (the source of truth) BEFORE any destructive
+  // calendar change. If the append fails, roll back the confirmed event we just
+  // created so a retry starts from a clean state — no orphaned events, and the
+  // tentative hold is still intact because we haven't touched it yet.
   const { sheets } = createGoogleClients(tokens);
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.bookings}!A:${toColumn(bookingHeaders.length)}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [bookingToRow(booking)],
-    },
-  });
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.bookings}!A:${toColumn(bookingHeaders.length)}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [bookingToRow(booking)],
+      },
+    });
+  } catch (error) {
+    await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, confirmedEventId).catch(() => {});
+    throw error;
+  }
+
+  // Booking is now persisted. Releasing the tentative hold and updating the lead
+  // are best-effort cleanups — a failure here leaves a recoverable, non-destructive
+  // state (a stale tentative event) rather than a lost booking.
+  if (lead.record.tentativeCalendarEventId) {
+    await deleteCalendarEvent(
+      tokens,
+      workspace.tentativeCalendarId,
+      lead.record.tentativeCalendarEventId,
+    ).catch(() => {});
+  }
 
   await updateLeadRow(workspace, tokens, lead.rowNumber, updatedLead);
 
@@ -732,7 +744,8 @@ function calculatePricing(
   };
 }
 
-function roundToPremiumNumber(value: number) {
+export function roundToPremiumNumber(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return 0;
   const rounded = Math.round(value / 500) * 500;
   const premium = rounded - 200;
   return premium > 0 ? premium : rounded;
@@ -901,7 +914,10 @@ async function upsertTentativeCalendarEvent(
     requestBody,
   });
 
-  return response.data.id ?? "";
+  if (!response.data.id) {
+    throw new Error("Calendar did not return an event id while creating the tentative hold.");
+  }
+  return response.data.id;
 }
 
 async function createConfirmedCalendarEvent(
@@ -930,7 +946,10 @@ async function createConfirmedCalendarEvent(
     }),
   });
 
-  return response.data.id ?? "";
+  if (!response.data.id) {
+    throw new Error("Calendar did not return an event id while creating the confirmed booking.");
+  }
+  return response.data.id;
 }
 
 async function deleteCalendarEvent(tokens: Credentials, calendarId: string, eventId: string) {

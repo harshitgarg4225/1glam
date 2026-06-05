@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { fetchWithTimeout } from "./http.js";
+import { fetchWithTimeout, isPublicHttpUrl } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
 import { buildPublicDocumentUrl } from "./document-links.js";
@@ -392,7 +392,8 @@ async function embedLogo(
   pdf: PDFDocument,
   logoUrl: string,
 ): Promise<{ image: PdfImage; width: number; height: number } | null> {
-  if (!logoUrl || !/^https?:\/\//i.test(logoUrl)) return null;
+  // SSRF guard: only fetch logos from public hosts (the URL is owner-supplied).
+  if (!logoUrl || !isPublicHttpUrl(logoUrl)) return null;
   try {
     const res = await fetchWithTimeout(logoUrl);
     if (!res.ok) return null;
@@ -414,8 +415,11 @@ async function embedLogo(
 // (the common case for Indian service pricing). Returns [] when no rate is set.
 function gstLines(amount: number, gstPercentage: number): [string, string][] {
   if (!gstPercentage || gstPercentage <= 0) return [];
-  const base = amount / (1 + gstPercentage / 100);
-  const gst = amount - base;
+  const total = Math.round(amount);
+  const base = Math.round(amount / (1 + gstPercentage / 100));
+  // Derive GST as the remainder so base + GST always equals the displayed total
+  // exactly (no ±1 rounding drift that a client verifying the math would notice).
+  const gst = total - base;
   return [
     ["Taxable Value", inr(base)],
     [`GST @ ${gstPercentage}%`, inr(gst)],

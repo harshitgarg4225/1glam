@@ -30,4 +30,5 @@ jobs:
         run: npm test
         env:
           # Tests set their own values where needed; this is a harmless fallback.
-          SESSION_SECRET: ci-test-session-secret
+          # 32+ chars so it satisfies the production-grade secret-length check.
+          SESSION_SECRET: ci-test-session-secret-0123456789abcdef

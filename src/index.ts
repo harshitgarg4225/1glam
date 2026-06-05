@@ -6,6 +6,7 @@ import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import path from "node:path";
+import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
@@ -29,9 +30,10 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, saveWorkspace } from "./services/database.js";
+import { closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, markWebhookEventProcessed, pingDatabase, saveWorkspace } from "./services/database.js";
 import {
   createRazorpayOrder,
+  fetchRazorpayOrder,
   razorpayConfigured,
   razorpayTestMode,
   verifyCheckoutSignature,
@@ -41,6 +43,7 @@ import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalan
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
+  extractMetaMessageId,
   ingestNormalizedLead,
   listInteractions,
   logInteractionForWorkspace,
@@ -201,6 +204,16 @@ const upload = multer({
   },
 });
 
+// Constant-time secret comparison for shared-secret webhooks (WATI/Manychat),
+// so a plain `!==` can't be used as a timing oracle to recover the secret.
+function secretsMatch(provided: string, expected: string): boolean {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 // Throttle unauthenticated public endpoints to curb abuse / DoS.
 const publicWriteLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -244,6 +257,16 @@ const sessionStore = appConfig.databaseUrl
     })
   : undefined;
 
+if (!sessionStore && appConfig.isDeployed) {
+  // Without a persistent store, express-session falls back to MemoryStore, which
+  // leaks memory and drops every session on restart/scale-out. In production this
+  // is already fatal via assertDeploymentConfig (DATABASE_URL required); this warns
+  // for staging so it never goes unnoticed.
+  logger.warn("session_store_memory_fallback", {
+    message: "No DATABASE_URL — using in-memory session store (not safe for multi-instance or restarts).",
+  });
+}
+
 app.set("trust proxy", 1);
 app.use(
   session({
@@ -256,6 +279,7 @@ app.use(
       sameSite: "lax",
       secure: appConfig.baseUrl.startsWith("https://"),
       maxAge: 1000 * 60 * 60 * 24 * 30,
+      path: "/",
     },
   }),
 );
@@ -298,17 +322,7 @@ app.get("/api/health", async (_req, res) => {
 
   if (appConfig.databaseUrl) {
     try {
-      const { Pool } = await import("pg");
-      const pool = new Pool({
-        connectionString: appConfig.databaseUrl,
-        ssl: appConfig.databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
-        connectionTimeoutMillis: 2000,
-        max: 1,
-      });
-      const client = await pool.connect();
-      await client.query("SELECT 1");
-      client.release();
-      await pool.end();
+      await pingDatabase(2000);
       checks.db = "ok";
     } catch {
       checks.db = "error";
@@ -505,10 +519,15 @@ app.get("/auth/google/callback", async (req, res, next) => {
   }
 });
 
-// Dev-only login + seed. Triple-gated: only mounts when APP_ENV=development AND
-// DEV_LOGIN=1. Used to drive the authenticated UI locally without Google OAuth.
-// Never available in staging/production.
-if (appConfig.appEnv === "development" && process.env.DEV_LOGIN === "1") {
+// Dev-only login + seed. Triple-gated: only mounts when APP_ENV=development,
+// NODE_ENV is not production, AND DEV_LOGIN=1. Used to drive the authenticated UI
+// locally without Google OAuth. Never available in staging/production — the extra
+// NODE_ENV check stops a misconfigured APP_ENV from exposing it in prod.
+if (
+  appConfig.appEnv === "development" &&
+  process.env.NODE_ENV !== "production" &&
+  process.env.DEV_LOGIN === "1"
+) {
   app.get("/dev/login", async (req, res, next) => {
     try {
       const profile = { email: "aisha@glowbyaisha.test", name: "Aisha Khan" };
@@ -969,13 +988,29 @@ app.post("/api/wallet/verify", async (req, res, next) => {
     const orderId = String(req.body?.razorpay_order_id || "");
     const paymentId = String(req.body?.razorpay_payment_id || "");
     const signature = String(req.body?.razorpay_signature || "");
-    const pack = findPack(String(req.body?.packId || ""));
-    if (!orderId || !paymentId || !signature || !pack) {
+    if (!orderId || !paymentId || !signature) {
       return res.status(400).json({ error: "Missing payment details." });
     }
     if (!verifyCheckoutSignature({ orderId, paymentId, signature })) {
       return res.status(400).json({ error: "Payment could not be verified." });
     }
+
+    // SECURITY: never trust the pack the client claims to have bought. Re-read
+    // the order from Razorpay and derive the pack from the notes WE set at
+    // creation, validating the amount actually charged. Otherwise a client
+    // could pay for a small pack and replay the signature with a bigger packId.
+    const order = await fetchRazorpayOrder(orderId);
+    const pack = findPack(String(order.notes?.packId || ""));
+    if (!pack) {
+      return res.status(400).json({ error: "Could not match this payment to a credit pack." });
+    }
+    if (order.amount !== Math.round(pack.amountInr * 100)) {
+      return res.status(400).json({ error: "Payment amount mismatch." });
+    }
+    if (order.notes?.email && order.notes.email !== req.session.profile.email) {
+      return res.status(403).json({ error: "This payment belongs to a different account." });
+    }
+
     const result = await creditWallet(req.session.profile.email, {
       credits: pack.credits,
       reason: `${pack.label} pack top-up`,
@@ -2288,7 +2323,7 @@ app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
 app.post("/webhooks/wati", async (req, res, next) => {
   try {
     const rawSecret = String((req.body as Record<string, unknown>)?.secret ?? "");
-    if (!appConfig.watiWebhookSecret || rawSecret !== appConfig.watiWebhookSecret) {
+    if (!secretsMatch(rawSecret, appConfig.watiWebhookSecret)) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
     const parsed = normalizeWatiPayload(req.body as Record<string, unknown>);
@@ -2331,7 +2366,7 @@ app.post("/webhooks/wati", async (req, res, next) => {
 app.post("/webhooks/manychat", async (req, res, next) => {
   try {
     const rawSecret = String((req.body as Record<string, unknown>)?.secret ?? "");
-    if (!appConfig.manychatWebhookSecret || rawSecret !== appConfig.manychatWebhookSecret) {
+    if (!secretsMatch(rawSecret, appConfig.manychatWebhookSecret)) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
     const parsed = normalizeManychatPayload(req.body as Record<string, unknown>);
@@ -2454,6 +2489,17 @@ app.post("/webhooks/meta", async (req, res, next) => {
     }
 
     if (workspace && channel) {
+      // Idempotency: Meta redelivers webhooks until they're acked, so dedup on the
+      // provider's message id. A redelivery is acked with 200 but skips all work,
+      // preventing duplicate leads, duplicate AI replies, and double-charged credits.
+      const metaMessageId = extractMetaMessageId(body);
+      if (metaMessageId) {
+        const fresh = await markWebhookEventProcessed("meta", metaMessageId);
+        if (!fresh) {
+          return res.json({ ok: true, deduped: true });
+        }
+      }
+
       const tokens = await getWorkspaceCredentials(workspace.email);
       const inboundText = extractInboundTextFromMetaWebhook(body);
       let leadCreated = false;
@@ -2713,6 +2759,25 @@ app.post("/webhooks/leegality", async (req, res, next) => {
     }
 
     const event = parseLeegalityWebhook(req.body);
+
+    // Validate the reference id format before using it to scan every workspace —
+    // a junk/oversized value should be a cheap 400, not a full booking sweep.
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(event.referenceId)) {
+      return res.status(400).json({ error: "Invalid reference id" });
+    }
+
+    // Dedup redelivered Leegality webhooks (same document + status) so we don't
+    // re-log / re-notify on every retry. Acked with 200 either way.
+    if (event.documentId) {
+      const fresh = await markWebhookEventProcessed(
+        "leegality",
+        `${event.documentId}:${event.contractStatus || ""}`,
+      );
+      if (!fresh) {
+        return res.json({ ok: true, deduped: true });
+      }
+    }
+
     const resolved = await findBookingAcrossWorkspaces(event.referenceId);
 
     if (!resolved) {

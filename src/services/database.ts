@@ -77,6 +77,52 @@ export async function writeConversationMemory(
   );
 }
 
+// Tracks already-handled webhook event ids so redelivered events (Meta and
+// Leegality both retry until acked) are processed exactly once. Returns true the
+// first time an id is seen, false on every redelivery. Multi-instance safe via a
+// primary-key insert in Postgres; in file mode it uses a bounded in-memory set
+// (single instance, so that's sufficient). Fails open (returns true) on a storage
+// error — better to risk a rare duplicate than to drop a real message.
+const seenWebhookEvents = new Set<string>();
+export async function markWebhookEventProcessed(scope: string, eventId: string): Promise<boolean> {
+  const key = `${scope}:${eventId}`;
+  if (!hasPostgres()) {
+    if (seenWebhookEvents.has(key)) return false;
+    seenWebhookEvents.add(key);
+    if (seenWebhookEvents.size > 5000) {
+      // Bound memory: drop the oldest ~1000 entries.
+      for (const k of Array.from(seenWebhookEvents).slice(0, 1000)) seenWebhookEvents.delete(k);
+    }
+    return true;
+  }
+  try {
+    await ensurePostgres();
+    const result = await getPool().query(
+      `INSERT INTO processed_webhook_events (id) VALUES ($1)
+       ON CONFLICT (id) DO NOTHING`,
+      [key],
+    );
+    return (result.rowCount ?? 0) > 0;
+  } catch {
+    return true; // fail open
+  }
+}
+
+// Liveness probe for the health endpoint. Reuses the shared pool (rather than
+// spinning up a throwaway connection per call) so frequent health checks don't
+// churn connections. Returns false in file mode (nothing to ping).
+export async function pingDatabase(timeoutMs = 2000): Promise<boolean> {
+  if (!hasPostgres()) return false;
+  const client = await getPool().connect();
+  try {
+    await client.query(`SET LOCAL statement_timeout = ${Number(timeoutMs) || 2000}`);
+    await client.query("SELECT 1");
+    return true;
+  } finally {
+    client.release();
+  }
+}
+
 // Closes the Postgres pool during graceful shutdown so in-flight queries drain
 // and connections are released cleanly. No-op when running in file mode.
 export async function closePool(): Promise<void> {
@@ -109,6 +155,14 @@ async function ensurePostgres() {
           content TEXT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           PRIMARY KEY (workspace_id, lead_id)
+        )
+      `);
+      // Dedup ledger for redeliverable webhooks (Meta/Leegality). A redelivered
+      // event id is a no-op insert, so we process each underlying event once.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS processed_webhook_events (
+          id TEXT PRIMARY KEY,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
     } finally {
@@ -236,11 +290,37 @@ async function updateWorkspaceByEmailInPostgres(
   email: string,
   updater: (workspace: WorkspaceRecord) => WorkspaceRecord,
 ) {
-  const current = await findWorkspaceByEmailFromPostgres(email);
-  if (!current) return null;
-  const updated = updater(current);
-  await saveWorkspaceToPostgres(updated);
-  return updated;
+  await ensurePostgres();
+  // Serialize concurrent mutations of the same workspace blob with a row lock.
+  // The whole workspace (wallet, bookings, config) is a single JSONB row, so a
+  // naive read-modify-write would let two concurrent updates (e.g. the Razorpay
+  // webhook racing the checkout-verify callback) clobber each other.
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query<{ data: WorkspaceRecord }>(
+      `SELECT data FROM workspace_records WHERE email = $1 FOR UPDATE`,
+      [normalizeEmail(email)],
+    );
+    if (!result.rows[0]?.data) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const updated = updater(fromStored(result.rows[0].data));
+    await client.query(
+      `UPDATE workspace_records
+         SET workspace_id = $2, data = $3::jsonb, updated_at = NOW()
+       WHERE email = $1`,
+      [normalizeEmail(email), updated.workspaceId, JSON.stringify(toStored(updated))],
+    );
+    await client.query("COMMIT");
+    return updated;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 function normalizeEmail(email: string) {
@@ -412,6 +492,35 @@ export async function withDistributedLock<T>(
   } finally {
     client.release();
   }
+}
+
+// Like withDistributedLock, but BLOCKS until the lock is acquired instead of
+// skipping. Used to serialize the booking-capacity check + create so two
+// simultaneous bookings for the same date can't both slip past a max-per-day cap
+// (the classic check-then-act race). In file mode (single instance) it just runs.
+export async function withSerializedLock<T>(key: number, fn: () => Promise<T>): Promise<T> {
+  if (!hasPostgres()) return fn();
+  await ensurePostgres();
+  const client = await getPool().connect();
+  try {
+    await client.query("SELECT pg_advisory_lock($1)", [key]);
+    try {
+      return await fn();
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1)", [key]);
+    }
+  } finally {
+    client.release();
+  }
+}
+
+// Stable 32-bit signed integer hash for advisory-lock keys derived from strings.
+export function lockKeyFromString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (Math.imul(31, hash) + value.charCodeAt(i)) | 0;
+  }
+  return hash;
 }
 
 export async function findWorkspaceByMetaUserId(metaUserId: string) {

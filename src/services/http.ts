@@ -66,6 +66,44 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// SSRF guard for fetching user-supplied URLs (e.g. an artist's logo URL embedded
+// in a PDF). Rejects anything that isn't a plain http(s) URL pointing at a public
+// host — blocking loopback, link-local (incl. the 169.254.169.254 cloud metadata
+// endpoint) and RFC1918 private ranges. Hostnames that aren't IP literals are
+// allowed (we don't resolve DNS here); this stops the trivial, high-impact cases.
+export function isPublicHttpUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+    return false;
+  }
+
+  // IPv6 loopback / unique-local / link-local.
+  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) {
+    return false;
+  }
+
+  // IPv4 literal in a private / loopback / link-local range.
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 10 || a === 127 || a === 0) return false;
+    if (a === 169 && b === 254) return false; // link-local + cloud metadata
+    if (a === 192 && b === 168) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a >= 224) return false; // multicast / reserved
+  }
+
+  return true;
+}
+
 function safeHost(url: string): string {
   try {
     return new URL(url).host;
