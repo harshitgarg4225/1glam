@@ -252,7 +252,6 @@ export async function setSheetProtection(email: string, protect: boolean, tokens
 }
 
 export async function recoverSheet(profile: { email: string; name: string }, tokens: Credentials) {
-  const existing = await findWorkspaceByEmail(profile.email);
   return provisionWorkspace(profile, tokens);
 }
 

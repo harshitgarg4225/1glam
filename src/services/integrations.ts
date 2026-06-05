@@ -225,7 +225,7 @@ export function extractInboundTextFromMetaWebhook(payload: Record<string, unknow
 }
 
 function extractDate(text: string) {
-  const numericMatch = text.match(/\b(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?\b/);
+  const numericMatch = text.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/);
   if (numericMatch) {
     const day = Number(numericMatch[1]);
     const month = Number(numericMatch[2]);

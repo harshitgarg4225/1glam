@@ -41,6 +41,42 @@ function getPool() {
   return pool;
 }
 
+// ---- Conversation memory persistence ----
+// AI chat memory must survive redeploys, so it lives in Postgres when a database
+// is configured. Callers fall back to the local file store otherwise.
+export function conversationMemoryUsesPostgres(): boolean {
+  return hasPostgres();
+}
+
+export async function readConversationMemory(
+  workspaceId: string,
+  leadId: string,
+): Promise<string> {
+  await ensurePostgres();
+  const result = await getPool().query<{ content: string }>(
+    `SELECT content FROM conversation_memory WHERE workspace_id = $1 AND lead_id = $2 LIMIT 1`,
+    [workspaceId, leadId],
+  );
+  return result.rows[0]?.content ?? "";
+}
+
+export async function writeConversationMemory(
+  workspaceId: string,
+  leadId: string,
+  content: string,
+): Promise<void> {
+  await ensurePostgres();
+  await getPool().query(
+    `
+      INSERT INTO conversation_memory (workspace_id, lead_id, content, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (workspace_id, lead_id)
+      DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+    `,
+    [workspaceId, leadId, content],
+  );
+}
+
 // Closes the Postgres pool during graceful shutdown so in-flight queries drain
 // and connections are released cleanly. No-op when running in file mode.
 export async function closePool(): Promise<void> {
@@ -64,6 +100,15 @@ async function ensurePostgres() {
           workspace_id TEXT UNIQUE NOT NULL,
           data JSONB NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS conversation_memory (
+          workspace_id TEXT NOT NULL,
+          lead_id TEXT NOT NULL,
+          content TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (workspace_id, lead_id)
         )
       `);
     } finally {

@@ -113,6 +113,10 @@ declare module "express-session" {
 
 const app = express();
 
+// Public contact for privacy/data requests, shown on the legal pages. Override
+// with LEGAL_CONTACT_EMAIL once a branded support inbox exists.
+const LEGAL_CONTACT_EMAIL = process.env.LEGAL_CONTACT_EMAIL || "harshitgarg4225@gmail.com";
+
 // Security headers. CSP is tuned to the app's real dependencies: it serves
 // inline scripts/styles (so 'unsafe-inline' is required), loads Razorpay
 // Checkout, embeds the Google Calendar iframe and the same-origin booking-page
@@ -2648,12 +2652,136 @@ app.post("/webhooks/leegality", async (req, res, next) => {
   }
 });
 
+// Shared, styled wrapper for the public legal pages. These are required for the
+// Meta app review (privacy + data deletion) and to set commercial terms.
+function legalPage(title: string, bodyHtml: string): string {
+  const lastUpdated = "5 June 2026";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeAttr(title)} · 1Glam</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 760px; margin: 0 auto; padding: 40px 20px 80px; color: #1c1c28; line-height: 1.65; }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  h2 { font-size: 18px; margin-top: 32px; }
+  .muted { color: #6b6b80; font-size: 14px; }
+  a { color: #b3005e; }
+  nav { margin: 24px 0 8px; font-size: 14px; }
+  nav a { margin-right: 16px; }
+  ul { padding-left: 20px; }
+  footer { margin-top: 48px; font-size: 13px; color: #6b6b80; border-top: 1px solid #eee; padding-top: 16px; }
+</style></head><body>
+<nav><a href="/legal/privacy">Privacy</a><a href="/legal/terms">Terms</a><a href="/legal/data-deletion">Data Deletion</a><a href="/">Home</a></nav>
+<h1>${escapeAttr(title)}</h1>
+<p class="muted">Last updated: ${lastUpdated}</p>
+${bodyHtml}
+<footer>1Glam — booking and client-communication automation for beauty professionals. For privacy or data requests, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</footer>
+</body></html>`;
+}
+
 app.get("/legal/privacy", (_req, res) => {
-  res.type("html").send(`<!doctype html><html><body><h1>1Glam Privacy Policy</h1><p>1Glam stores each artist's Google and Meta connection data separately. Client messages, lead records, bookings, and operational data are isolated per workspace and used only to provide booking, communication, and fulfillment automation for that workspace.</p><p>To request deletion or disconnection, use the in-app disconnect flow or the Meta data deletion callback.</p></body></html>`);
+  res.type("html").send(
+    legalPage(
+      "Privacy Policy",
+      `<p>1Glam ("we", "us") provides booking and client-communication automation to independent beauty professionals and studios ("artists"). This policy explains what we collect, why, and your choices. Each artist's data is isolated in its own workspace and never shared with other workspaces.</p>
+
+<h2>1. Information we process</h2>
+<ul>
+  <li><strong>Account &amp; profile:</strong> your name, email, and profile photo from Google Sign-In.</li>
+  <li><strong>Google Workspace data:</strong> with your consent, we access Google Sheets (to store your leads, bookings and settings in a spreadsheet you own), Google Calendar (to create and read booking events), and Drive file access limited to files the app creates.</li>
+  <li><strong>Meta platform data:</strong> if you connect WhatsApp Business or Instagram, we process the messages your clients send you and the tokens needed to reply on your behalf.</li>
+  <li><strong>Client &amp; booking records:</strong> client names, contact handles, event details, quotes, invoices and payment status that you or your clients enter.</li>
+  <li><strong>Payments:</strong> credit-pack purchases are processed by Razorpay; we store only the resulting payment reference, never card details.</li>
+</ul>
+
+<h2>2. How we use it</h2>
+<ul>
+  <li>To run your booking pipeline: capturing leads, scheduling, generating quotes/invoices/contracts, and sending messages you authorise.</li>
+  <li>To provide AI assistance (drafting replies, enriching leads, drafting review responses) using the xAI Grok API.</li>
+  <li>To meter usage and process credit-pack purchases.</li>
+  <li>We do <strong>not</strong> sell your data or your clients' data, and we do not use it for advertising.</li>
+</ul>
+
+<h2>3. Third parties we share with</h2>
+<p>We share data only with the processors needed to deliver the service: Google (Sheets, Calendar, Drive), Meta (WhatsApp/Instagram messaging), xAI (AI generation), Razorpay (payments), and Leegality (e-signature, when you send a contract). Each receives only what is necessary for its function.</p>
+
+<h2>4. Storage &amp; security</h2>
+<p>Operational records are stored in your own Google Sheet plus our database. OAuth tokens are encrypted at rest using AES-256-GCM. Sessions are stored server-side and transmitted over HTTPS. Access is restricted to the authenticated workspace owner.</p>
+
+<h2>5. Retention</h2>
+<p>We retain workspace data for as long as your account is active. When you disconnect an integration, the related access tokens are revoked and marked disconnected. When you delete your workspace, associated records are removed from our database; data you stored in your own Google Sheet remains under your control in your Google account.</p>
+
+<h2>6. Your rights &amp; choices</h2>
+<ul>
+  <li>Disconnect Google or Meta at any time from Settings; this revokes our access.</li>
+  <li>Request deletion of your data — see our <a href="/legal/data-deletion">Data Deletion</a> page.</li>
+  <li>Access or export your records directly from the Google Sheet you own.</li>
+</ul>
+
+<h2>7. Contact</h2>
+<p>Questions or requests: <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>`,
+    ),
+  );
+});
+
+app.get("/legal/terms", (_req, res) => {
+  res.type("html").send(
+    legalPage(
+      "Terms of Service",
+      `<p>These terms govern your use of 1Glam. By creating a workspace you agree to them.</p>
+
+<h2>1. The service</h2>
+<p>1Glam helps beauty professionals capture leads, schedule bookings, generate documents, and communicate with clients across WhatsApp, Instagram and a public booking page. Features depend on the integrations you choose to connect.</p>
+
+<h2>2. Your responsibilities</h2>
+<ul>
+  <li>You are responsible for the accuracy of content you send to clients and for complying with WhatsApp/Instagram platform policies and applicable messaging laws.</li>
+  <li>You must have the right to contact the clients whose details you enter, and to send them messages.</li>
+  <li>You are responsible for the security of your Google and Meta accounts.</li>
+</ul>
+
+<h2>3. AI-generated content</h2>
+<p>AI suggestions (replies, drafts, enrichment) are provided as assistance and may contain errors. You are responsible for reviewing content before it is sent. Messages that mention price or commitments are never auto-sent without your approval.</p>
+
+<h2>4. Credits &amp; payments</h2>
+<p>Certain actions consume prepaid credits purchased via Razorpay. Credit purchases are final except where required by law. Prices and credit costs may change with notice.</p>
+
+<h2>5. Availability</h2>
+<p>We aim for high availability but the service is provided "as is" without warranty. We are not liable for losses arising from third-party outages (Google, Meta, Razorpay) or from your use of AI-generated content, to the maximum extent permitted by law.</p>
+
+<h2>6. Termination</h2>
+<p>You may stop using 1Glam and delete your workspace at any time. We may suspend accounts that abuse the service or violate platform policies.</p>
+
+<h2>7. Contact</h2>
+<p><a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>`,
+    ),
+  );
 });
 
 app.get("/legal/data-deletion", (_req, res) => {
-  res.type("html").send(`<!doctype html><html><body><h1>1Glam Data Deletion</h1><p>Users can disconnect Meta integrations from within the app, which removes active channel access for that workspace. Meta-originated deletion callbacks are processed through the platform's data deletion endpoint, and connection records are marked disconnected per workspace.</p></body></html>`);
+  res.type("html").send(
+    legalPage(
+      "Data Deletion",
+      `<p>You can remove your data from 1Glam at any time. We offer three paths:</p>
+
+<h2>1. Disconnect an integration</h2>
+<p>In <strong>Settings</strong>, disconnect Google or any Meta channel (WhatsApp/Instagram). This immediately revokes the stored access tokens and marks that connection deleted, so we can no longer access the corresponding account.</p>
+
+<h2>2. Delete your workspace</h2>
+<p>To delete your entire workspace and the records we hold for it, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a> from your account email with the subject "Delete my workspace". We will remove your workspace records from our database within 30 days and confirm by email. Data stored in the Google Sheet you own remains in your Google account for you to delete directly.</p>
+
+<h2>3. Meta data deletion callback</h2>
+<p>If you remove 1Glam from your Facebook/Instagram account, Meta sends us a signed data-deletion request. We verify it, disconnect the associated channels, and return a confirmation code and this status URL, as required by Meta Platform policy. The callback endpoint is <code>/compliance/meta/data-deletion</code>.</p>
+
+<h2>What gets deleted</h2>
+<ul>
+  <li>OAuth access and refresh tokens (revoked and removed).</li>
+  <li>Meta channel connection records for your workspace.</li>
+  <li>On full workspace deletion: lead, booking, interaction, wallet and conversation-memory records in our database.</li>
+</ul>`,
+    ),
+  );
 });
 
 app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {

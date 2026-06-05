@@ -320,7 +320,7 @@ function fallbackConversationReply(input: {
     ? ` We can tentatively hold the date until ${formatHoldExpiry(input.holdExpiresAt)}.`
     : "";
 
-  let reply = greeting;
+  let reply: string;
   if (missing.length) {
     reply = `${greeting} Could you please share your ${missing.join(
       " and ",

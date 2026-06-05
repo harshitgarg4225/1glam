@@ -115,9 +115,6 @@ function parseAddons(raw: string): PublicAddon[] {
     .filter((a): a is PublicAddon => a !== null);
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function addDaysIso(days: number) {
   const date = new Date();

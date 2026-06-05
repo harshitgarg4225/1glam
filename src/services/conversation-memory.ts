@@ -1,5 +1,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import {
+  conversationMemoryUsesPostgres,
+  readConversationMemory,
+  writeConversationMemory,
+} from "./database.js";
 
 type ConversationMemoryInput = {
   workspaceId: string;
@@ -14,6 +19,14 @@ type ConversationMemoryInput = {
 };
 
 export async function loadConversationMemory(workspaceId: string, leadId: string) {
+  // Postgres-backed when a database is configured, so memory survives redeploys.
+  if (conversationMemoryUsesPostgres()) {
+    try {
+      return await readConversationMemory(workspaceId, leadId);
+    } catch {
+      return "";
+    }
+  }
   const filePath = getConversationMemoryPath(workspaceId, leadId);
   try {
     return await fs.readFile(filePath, "utf8");
@@ -23,9 +36,6 @@ export async function loadConversationMemory(workspaceId: string, leadId: string
 }
 
 export async function saveConversationMemory(input: ConversationMemoryInput) {
-  const filePath = getConversationMemoryPath(input.workspaceId, input.leadId);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-
   const content = [
     `# Conversation Memory: ${input.leadId}`,
     "",
@@ -51,6 +61,13 @@ export async function saveConversationMemory(input: ConversationMemoryInput) {
     "",
   ].join("\n");
 
+  if (conversationMemoryUsesPostgres()) {
+    await writeConversationMemory(input.workspaceId, input.leadId, content);
+    return `pg:conversation_memory/${input.workspaceId}/${input.leadId}`;
+  }
+
+  const filePath = getConversationMemoryPath(input.workspaceId, input.leadId);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, content, "utf8");
   return filePath;
 }
