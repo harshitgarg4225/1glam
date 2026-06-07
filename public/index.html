@@ -384,6 +384,63 @@
         .hero-br { display: none; }
       }
 
+      /* ─── Landing explainer (purpose + how it works + data usage) ─── */
+      .landing-explain { border-top: 1px solid var(--line); background: var(--card); }
+      .explain-inner { max-width: 900px; margin: 0 auto; padding: 56px 28px 64px; }
+      .explain-h {
+        font-size: clamp(20px, 3vw, 28px);
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        text-align: center;
+        margin: 0 0 16px;
+      }
+      .explain-h:not(:first-child) { margin-top: 48px; }
+      .explain-p {
+        font-size: 16px;
+        line-height: 1.7;
+        color: var(--muted);
+        max-width: 660px;
+        margin: 0 auto;
+        text-align: center;
+      }
+      .explain-steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-top: 28px;
+      }
+      .explain-step {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 24px 20px;
+      }
+      .explain-step-num {
+        width: 34px; height: 34px;
+        border-radius: 50%;
+        background: var(--accent); color: #fff;
+        font-weight: 700; font-size: 16px;
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 14px;
+      }
+      .explain-step h3 { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+      .explain-step p { font-size: 14px; line-height: 1.6; color: var(--muted); margin: 0; }
+      .explain-data {
+        margin-top: 40px;
+        background: var(--accent-soft);
+        border: 1px solid #F0D9CC;
+        border-radius: var(--radius-lg);
+        padding: 24px 26px;
+      }
+      .explain-data h3 { font-size: 16px; font-weight: 700; margin: 0 0 8px; }
+      .explain-data p { font-size: 14.5px; line-height: 1.7; color: var(--text); margin: 0; }
+      .explain-data a { color: var(--accent); }
+      .explain-cta { text-align: center; margin-top: 40px; }
+      @media (max-width: 720px) {
+        .explain-inner { padding: 40px 18px 48px; }
+        .explain-steps { grid-template-columns: 1fr; }
+      }
+
       .requires-auth { display: none; }
       body.authenticated .requires-auth { display: block; }
       /* The nav is flex, not block — keep it flex when authenticated so the
@@ -681,6 +738,57 @@
           <p class="hero-legal">
             By continuing you agree to our <a href="/legal/terms">Terms</a> and <a href="/legal/privacy">Privacy Policy</a>.
           </p>
+        </div>
+
+        <div class="landing-explain">
+          <div class="explain-inner">
+            <h2 class="explain-h">What BusyDays does</h2>
+            <p class="explain-p">
+              BusyDays is booking and client-communication software for independent appointment-based
+              professionals — makeup artists, salons, photographers, clinics, coaches and studios.
+              It gives you a shareable booking page, a calendar that stays in sync, and one tidy
+              inbox for every enquiry, payment and message, so nothing slips through the cracks.
+            </p>
+
+            <h2 class="explain-h">How it works</h2>
+            <div class="explain-steps">
+              <div class="explain-step">
+                <div class="explain-step-num">1</div>
+                <h3>Connect your Google account</h3>
+                <p>Sign in with Google to create your workspace. BusyDays sets up a private Google
+                  Sheet you own to store your leads and bookings.</p>
+              </div>
+              <div class="explain-step">
+                <div class="explain-step-num">2</div>
+                <h3>Share your booking page</h3>
+                <p>Send clients your link from Instagram or WhatsApp. Enquiries and bookings land
+                  in your dashboard automatically.</p>
+              </div>
+              <div class="explain-step">
+                <div class="explain-step-num">3</div>
+                <h3>Stay in sync everywhere</h3>
+                <p>Confirmed bookings appear on your Google Calendar, documents are generated for
+                  you, and reminders go out on time — hands-free.</p>
+              </div>
+            </div>
+
+            <div class="explain-data">
+              <h3>How BusyDays uses your Google data</h3>
+              <p>
+                With your explicit permission, BusyDays uses <strong>Google Sheets</strong> to store
+                your leads and bookings in a spreadsheet you own, <strong>Google Calendar</strong> to
+                create and read your booking events, and <strong>Drive file access limited to the
+                files this app creates</strong>. Your data lives in your own Google account, is isolated
+                to your workspace, and is never sold or shared with other users. You can disconnect or
+                delete it at any time. See our
+                <a href="/legal/privacy">Privacy Policy</a> for full details.
+              </p>
+            </div>
+
+            <div class="explain-cta">
+              <a href="/auth/google" class="button hero-cta">Get started with Google</a>
+            </div>
+          </div>
         </div>
       </section>
 
