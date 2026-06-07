@@ -187,7 +187,7 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
 
   return {
     workspaceId: workspace.workspaceId,
-    businessName: config.businessName || workspace.name || "1Glam Artist",
+    businessName: config.businessName || workspace.name || "BusyDays",
     city: config.city || "",
     instagramHandle: config.instagramHandle || "",
     ownerWhatsApp: sanitizePhone(config.ownerWhatsApp),

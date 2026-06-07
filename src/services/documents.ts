@@ -585,7 +585,7 @@ function inr(amount: number) {
 }
 
 function safeName(value: string) {
-  return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "1glam";
+  return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "busydays";
 }
 
 function premiumRound(value: number) {

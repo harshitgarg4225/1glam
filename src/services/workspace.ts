@@ -62,7 +62,7 @@ export async function provisionWorkspace(profile: { email: string; name: string 
   const config = buildDefaultConfig(profile);
   const { sheets, calendar } = createGoogleClients(tokens);
 
-  const spreadsheetTitle = `1Glam Booking OS - ${profile.name}`;
+  const spreadsheetTitle = `BusyDays Booking OS - ${profile.name}`;
   const spreadsheet = await sheets.spreadsheets.create({
     requestBody: {
       properties: { title: spreadsheetTitle, locale: "en_US", timeZone: "Asia/Kolkata" },
@@ -87,7 +87,7 @@ export async function provisionWorkspace(profile: { email: string; name: string 
 
   const tentativeCalendar = await calendar.calendars.insert({
     requestBody: {
-      summary: "1Glam Tentative Bookings",
+      summary: "BusyDays Tentative Bookings",
       timeZone: "Asia/Kolkata",
     },
   });
@@ -112,7 +112,7 @@ export async function provisionWorkspace(profile: { email: string; name: string 
     spreadsheetName: spreadsheetTitle,
     confirmedCalendarId: "primary",
     tentativeCalendarId,
-    tentativeCalendarName: "1Glam Tentative Bookings",
+    tentativeCalendarName: "BusyDays Tentative Bookings",
     createdAt: now,
     updatedAt: now,
     googleTokens: {
@@ -239,7 +239,7 @@ export async function setSheetProtection(email: string, protect: boolean, tokens
     fileId: workspace.spreadsheetId,
     requestBody: {
       contentRestrictions: protect
-        ? [{ readOnly: true, reason: "Protected by 1Glam Booking OS" }]
+        ? [{ readOnly: true, reason: "Protected by BusyDays Booking OS" }]
         : [],
     },
   });
@@ -435,7 +435,7 @@ async function recoverBestWorkspaceForProfile(
     spreadsheetName: best.name,
     confirmedCalendarId: config.confirmedCalendarId,
     tentativeCalendarId: config.tentativeCalendarId,
-    tentativeCalendarName: existing?.tentativeCalendarName ?? "1Glam Tentative Bookings",
+    tentativeCalendarName: existing?.tentativeCalendarName ?? "BusyDays Tentative Bookings",
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     googleTokens: existing?.googleTokens,
@@ -460,7 +460,9 @@ async function listRecoverableSheets(profile: { email: string; name: string }, t
       .map((owner) => owner.emailAddress?.toLowerCase())
       .filter(Boolean);
     return (
-      name.includes("1Glam Booking OS") &&
+      // Match both the current "BusyDays" name and the legacy "1Glam" name so
+      // workspaces provisioned before the rebrand still recover correctly.
+      (name.includes("BusyDays Booking OS") || name.includes("1Glam Booking OS")) &&
       (ownerEmails.length === 0 || ownerEmails.includes(profile.email.toLowerCase()))
     );
   });

@@ -3,9 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>1Glam Booking OS</title>
-    <meta name="application-name" content="1Glam Booking OS" />
-    <meta property="og:site_name" content="1Glam Booking OS" />
+    <title>BusyDays — Software for appointment-based professionals</title>
+    <meta name="application-name" content="BusyDays" />
+    <meta property="og:site_name" content="BusyDays" />
+    <meta name="description" content="BusyDays is booking software for appointment-based professionals. Zero stress managing your calendar, zero missed DMs, zero missed bookings." />
+    <meta property="og:title" content="BusyDays — Software for appointment-based professionals" />
+    <meta property="og:description" content="Zero stress managing your calendar. Zero missed DMs. Zero missed bookings." />
     <style>
       :root {
         --bg: #FAF8F5;
@@ -281,6 +284,106 @@
       .msg.inbound { background: var(--surface); border: 1px solid var(--line); margin-right: auto; }
       .msg.outbound { background: var(--accent-soft); margin-left: auto; }
 
+      /* ─── Landing hero ─── */
+      .landing-hero {
+        margin-top: 16px;
+        border-radius: var(--radius-lg);
+        background:
+          radial-gradient(1200px 480px at 50% -10%, var(--accent-soft) 0%, rgba(251,240,234,0) 60%),
+          linear-gradient(180deg, var(--card) 0%, var(--bg) 100%);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .hero-inner {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 72px 28px 64px;
+        text-align: center;
+      }
+      .hero-wordmark {
+        font-size: clamp(34px, 6vw, 56px);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        color: var(--text);
+        line-height: 1;
+      }
+      .hero-eyebrow {
+        margin-top: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .hero-headline {
+        font-size: clamp(30px, 5.2vw, 50px);
+        line-height: 1.08;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        margin: 34px 0 0;
+      }
+      .hero-accent { color: var(--accent); }
+      .hero-sub {
+        font-size: clamp(16px, 2vw, 19px);
+        line-height: 1.65;
+        color: var(--muted);
+        max-width: 620px;
+        margin: 20px auto 0;
+      }
+      .zero-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin: 44px auto 0;
+        max-width: 660px;
+      }
+      .zero-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 26px 16px 22px;
+        box-shadow: var(--shadow-sm);
+        transition: transform 0.15s, box-shadow 0.15s;
+      }
+      .zero-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+      .zero-num {
+        font-size: clamp(48px, 8vw, 72px);
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        color: var(--accent);
+      }
+      .zero-label {
+        margin-top: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.35;
+        color: var(--text);
+      }
+      .hero-cta-row {
+        margin-top: 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .hero-cta {
+        font-size: 16px;
+        padding: 14px 30px;
+        border-radius: 10px;
+        box-shadow: 0 6px 20px rgba(194,107,69,0.28);
+      }
+      .hero-cta-note { font-size: 13px; color: var(--muted); }
+      .hero-legal { margin-top: 28px; font-size: 12.5px; color: var(--muted); }
+      .hero-legal a { color: var(--accent); }
+      @media (max-width: 640px) {
+        .hero-inner { padding: 52px 18px 48px; }
+        .zero-grid { gap: 10px; }
+        .zero-card { padding: 20px 8px 16px; }
+        .hero-br { display: none; }
+      }
+
       .requires-auth { display: none; }
       body.authenticated .requires-auth { display: block; }
       /* The nav is flex, not block — keep it flex when authenticated so the
@@ -509,7 +612,7 @@
       <header class="panel topbar">
         <div class="brand">
           <span class="kicker">Your booking workspace</span>
-          <span class="brand-title">1Glam</span>
+          <span class="brand-title">BusyDays</span>
         </div>
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
@@ -540,16 +643,45 @@
       </nav>
 
       <!-- Landing -->
-      <section id="landing" class="panel section">
-        <div class="kicker">Welcome</div>
-        <h1>Run your makeup bookings, beautifully simple.</h1>
-        <p class="lead">
-          Sign in with Google to get your own booking page, a calendar that stays in sync, and one tidy place
-          to handle every request, payment, and message. Your data lives in your own Google account.
-        </p>
-        <p class="muted" style="font-size:13px;margin-top:12px;">
-          By continuing you agree to our <a href="/legal/terms">Terms</a> and <a href="/legal/privacy">Privacy Policy</a>.
-        </p>
+      <section id="landing" class="landing-hero">
+        <div class="hero-inner">
+          <div class="hero-wordmark">BusyDays</div>
+          <div class="hero-eyebrow">Software for appointment-based professionals</div>
+
+          <h1 class="hero-headline">
+            Your calendar, your DMs, your bookings —<br class="hero-br" />
+            <span class="hero-accent">handled.</span>
+          </h1>
+
+          <p class="hero-sub">
+            Every enquiry answered, every booking captured, every date in sync.
+            BusyDays runs the busywork so you can do the work.
+          </p>
+
+          <div class="zero-grid">
+            <div class="zero-card">
+              <div class="zero-num">0</div>
+              <div class="zero-label">Stress managing<br />your calendar</div>
+            </div>
+            <div class="zero-card">
+              <div class="zero-num">0</div>
+              <div class="zero-label">Missed<br />DMs</div>
+            </div>
+            <div class="zero-card">
+              <div class="zero-num">0</div>
+              <div class="zero-label">Missed<br />bookings</div>
+            </div>
+          </div>
+
+          <div class="hero-cta-row">
+            <a href="/auth/google" class="button hero-cta">Get started with Google</a>
+            <span class="hero-cta-note">Free to start · Your data stays in your own Google account</span>
+          </div>
+
+          <p class="hero-legal">
+            By continuing you agree to our <a href="/legal/terms">Terms</a> and <a href="/legal/privacy">Privacy Policy</a>.
+          </p>
+        </div>
       </section>
 
       <div class="requires-auth" id="tab-panels">
@@ -2287,7 +2419,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             amount: order.amount,
             currency: order.currency,
             order_id: order.orderId,
-            name: sessionState?.workspace?.config?.businessName || "1Glam",
+            name: sessionState?.workspace?.config?.businessName || "BusyDays",
             description: `${order.pack.label} — ${order.pack.credits} credits`,
             prefill: order.prefill,
             theme: { color: "#C26B45" },

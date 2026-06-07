@@ -601,7 +601,7 @@ export async function recordReviewRequest(
     const row = [...rows[existingIndex]];
     row[4] = input.type === "request" ? now : row[4] || "";
     row[5] = input.type === "reminder" ? now : row[5] || "";
-    row[8] = row[8] || "Sent from 1Glam";
+    row[8] = row[8] || "Sent from BusyDays";
     await sheets.spreadsheets.values.update({
       spreadsheetId: workspace.spreadsheetId,
       range: `${sheetNames.reviews}!A${existingIndex + 2}:I${existingIndex + 2}`,
@@ -625,7 +625,7 @@ export async function recordReviewRequest(
         input.type === "reminder" ? now : "",
         "No",
         "No",
-        "Sent from 1Glam",
+        "Sent from BusyDays",
       ]],
     },
   });

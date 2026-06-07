@@ -2821,7 +2821,7 @@ function legalPage(title: string, bodyHtml: string): string {
   const lastUpdated = "5 June 2026";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeAttr(title)} · 1Glam</title>
+<title>${escapeAttr(title)} · BusyDays</title>
 <style>
   :root { color-scheme: light; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -2839,7 +2839,7 @@ function legalPage(title: string, bodyHtml: string): string {
 <h1>${escapeAttr(title)}</h1>
 <p class="muted">Last updated: ${lastUpdated}</p>
 ${bodyHtml}
-<footer>1Glam — booking and client-communication automation for beauty professionals. For privacy or data requests, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</footer>
+<footer>BusyDays — booking and client-communication automation for appointment-based professionals. For privacy or data requests, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</footer>
 </body></html>`;
 }
 
@@ -2847,7 +2847,7 @@ app.get("/legal/privacy", (_req, res) => {
   res.type("html").send(
     legalPage(
       "Privacy Policy",
-      `<p>1Glam ("we", "us") provides booking and client-communication automation to independent beauty professionals and studios ("artists"). This policy explains what we collect, why, and your choices. Each artist's data is isolated in its own workspace and never shared with other workspaces.</p>
+      `<p>BusyDays ("we", "us") provides booking and client-communication automation to independent appointment-based professionals and studios ("artists"). This policy explains what we collect, why, and your choices. Each artist's data is isolated in its own workspace and never shared with other workspaces.</p>
 
 <h2>1. Information we process</h2>
 <ul>
@@ -2892,10 +2892,10 @@ app.get("/legal/terms", (_req, res) => {
   res.type("html").send(
     legalPage(
       "Terms of Service",
-      `<p>These terms govern your use of 1Glam. By creating a workspace you agree to them.</p>
+      `<p>These terms govern your use of BusyDays. By creating a workspace you agree to them.</p>
 
 <h2>1. The service</h2>
-<p>1Glam helps beauty professionals capture leads, schedule bookings, generate documents, and communicate with clients across WhatsApp, Instagram and a public booking page. Features depend on the integrations you choose to connect.</p>
+<p>BusyDays helps appointment-based professionals capture leads, schedule bookings, generate documents, and communicate with clients across WhatsApp, Instagram and a public booking page. Features depend on the integrations you choose to connect.</p>
 
 <h2>2. Your responsibilities</h2>
 <ul>
@@ -2914,7 +2914,7 @@ app.get("/legal/terms", (_req, res) => {
 <p>We aim for high availability but the service is provided "as is" without warranty. We are not liable for losses arising from third-party outages (Google, Meta, Razorpay) or from your use of AI-generated content, to the maximum extent permitted by law.</p>
 
 <h2>6. Termination</h2>
-<p>You may stop using 1Glam and delete your workspace at any time. We may suspend accounts that abuse the service or violate platform policies.</p>
+<p>You may stop using BusyDays and delete your workspace at any time. We may suspend accounts that abuse the service or violate platform policies.</p>
 
 <h2>7. Contact</h2>
 <p><a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>`,
@@ -2926,7 +2926,7 @@ app.get("/legal/data-deletion", (_req, res) => {
   res.type("html").send(
     legalPage(
       "Data Deletion",
-      `<p>You can remove your data from 1Glam at any time. We offer three paths:</p>
+      `<p>You can remove your data from BusyDays at any time. We offer three paths:</p>
 
 <h2>1. Disconnect an integration</h2>
 <p>In <strong>Settings</strong>, disconnect Google or any Meta channel (WhatsApp/Instagram). This immediately revokes the stored access tokens and marks that connection deleted, so we can no longer access the corresponding account.</p>
@@ -2935,7 +2935,7 @@ app.get("/legal/data-deletion", (_req, res) => {
 <p>To delete your entire workspace and the records we hold for it, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a> from your account email with the subject "Delete my workspace". We will remove your workspace records from our database within 30 days and confirm by email. Data stored in the Google Sheet you own remains in your Google account for you to delete directly.</p>
 
 <h2>3. Meta data deletion callback</h2>
-<p>If you remove 1Glam from your Facebook/Instagram account, Meta sends us a signed data-deletion request. We verify it, disconnect the associated channels, and return a confirmation code and this status URL, as required by Meta Platform policy. The callback endpoint is <code>/compliance/meta/data-deletion</code>.</p>
+<p>If you remove BusyDays from your Facebook/Instagram account, Meta sends us a signed data-deletion request. We verify it, disconnect the associated channels, and return a confirmation code and this status URL, as required by Meta Platform policy. The callback endpoint is <code>/compliance/meta/data-deletion</code>.</p>
 
 <h2>What gets deleted</h2>
 <ul>
@@ -2999,7 +2999,7 @@ if (isMainModule) {
   assertDeploymentConfig();
 
   const server = app.listen(appConfig.port, () => {
-    logger.info("1Glam app listening", {
+    logger.info("BusyDays app listening", {
       baseUrl: appConfig.baseUrl,
       env: appConfig.appEnv,
       persistence: appConfig.databaseUrl ? "postgres" : "file",
@@ -3174,7 +3174,7 @@ async function upsertReviewRequest(
     const row = [...rows[existingIndex]];
     row[4] = input.type === "request" ? now : row[4] || "";
     row[5] = input.type === "reminder" ? now : row[5] || "";
-    row[8] = row[8] || "Sent from 1Glam";
+    row[8] = row[8] || "Sent from BusyDays";
     await sheets.spreadsheets.values.update({
       spreadsheetId: workspace.spreadsheetId,
       range: `${sheetNames.reviews}!A${existingIndex + 2}:I${existingIndex + 2}`,
@@ -3198,7 +3198,7 @@ async function upsertReviewRequest(
         input.type === "reminder" ? now : "",
         "No",
         "No",
-        "Sent from 1Glam",
+        "Sent from BusyDays",
       ]],
     },
   });
