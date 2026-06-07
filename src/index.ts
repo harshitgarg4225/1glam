@@ -304,7 +304,10 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // still do their own (and often stricter, e.g. googleTokens) checks; this is a
 // backstop so a newly-added authenticated endpoint can never accidentally ship
 // without protection. Only the genuinely public endpoints are allowlisted.
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/document-templates", "/api/logout"]);
+// /api/session is intentionally public: it reports authenticated:false for
+// logged-out visitors so the landing page can render without bouncing them (and
+// Google's OAuth-verification crawler) to a login screen.
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/session", "/api/document-templates", "/api/logout"]);
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
