@@ -2938,8 +2938,14 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
       async function refreshSession() {
         const response = await fetch("/api/session");
-        if (response.status === 401) {
-          window.location.href = "/auth/google";
+        // A logged-out visitor must stay on the public landing page — never
+        // auto-redirect to Google sign-in (that makes the homepage look "behind
+        // a login page" to users and to Google's OAuth-verification crawler).
+        if (response.status === 401 || !response.ok) {
+          document.body.classList.remove("authenticated");
+          loginState.textContent = "Not signed in";
+          connectLink.style.display = "inline-flex";
+          logoutButton.style.display = "none";
           return;
         }
         const payload = await response.json();
