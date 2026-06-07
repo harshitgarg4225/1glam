@@ -1,4 +1,5 @@
 import { appConfig } from "../config.js";
+import { fetchWithTimeout } from "./http.js";
 
 type Coordinates = {
   lat: number;
@@ -77,7 +78,7 @@ async function geocodeAddress(address: string) {
   url.searchParams.set("address", address);
   url.searchParams.set("key", appConfig.googleMapsApiKey);
 
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString());
   if (!response.ok) {
     throw new Error(`Geocoding failed with ${response.status}`);
   }

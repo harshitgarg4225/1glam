@@ -1,4 +1,5 @@
 import { appConfig } from "../config.js";
+import { fetchWithTimeout } from "./http.js";
 
 export type BusinessCandidate = {
   placeId: string;
@@ -46,7 +47,7 @@ export async function estimateDistance(
   url.searchParams.set("mode", "driving");
   url.searchParams.set("key", appConfig.googleMapsApiKey);
 
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString());
   if (!response.ok) {
     throw new Error(`Distance lookup failed (${response.status}).`);
   }
@@ -96,7 +97,7 @@ export async function findBusinessCandidates(query: string): Promise<BusinessCan
   url.searchParams.set("query", trimmed);
   url.searchParams.set("key", appConfig.googleMapsApiKey);
 
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString());
   if (!response.ok) {
     throw new Error(`Places lookup failed (${response.status}).`);
   }

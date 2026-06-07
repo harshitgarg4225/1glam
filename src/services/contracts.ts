@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { fetchWithTimeout } from "./http.js";
 import type { WorkspaceRecord } from "../types.js";
 import type { BookingRecord, LeadRecord } from "./booking.js";
 import { appConfig } from "../config.js";
@@ -64,7 +65,7 @@ export async function createLeegalityContract(
     irn: booking.bookingId,
   };
 
-  const response = await fetch(appConfig.leegalityCreateUrl, {
+  const response = await fetchWithTimeout(appConfig.leegalityCreateUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -114,7 +115,7 @@ export async function checkLeegalityDocumentDetails(referenceId: string): Promis
     );
   }
 
-  const response = await fetch(appConfig.leegalityDetailsUrl, {
+  const response = await fetchWithTimeout(appConfig.leegalityDetailsUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

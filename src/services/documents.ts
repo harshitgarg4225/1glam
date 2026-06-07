@@ -1,8 +1,8 @@
-import { Readable } from "node:stream";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { fetchWithTimeout, isPublicHttpUrl } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
-import { createGoogleClients } from "./google.js";
+import { buildPublicDocumentUrl } from "./document-links.js";
 import { getDocumentTheme, type DocumentTheme } from "./document-themes.js";
 import type { WorkspaceRecord } from "../types.js";
 import type { BookingRecord, LeadRecord } from "./booking.js";
@@ -87,18 +87,20 @@ export async function buildQuotePdfBytes(
   return pdf.save();
 }
 
+// Produces the client-facing quote link. The PDF is served by the app itself
+// (see the /d/:type/... route) and regenerated on demand, so this never touches
+// Google Drive and can't fail on a Drive permission/scope misconfiguration.
 export async function generateQuoteDocument(
   workspace: WorkspaceRecord,
-  tokens: Credentials,
+  _tokens: Credentials,
   lead: LeadRecord,
-) {
+): Promise<UploadedDriveFile> {
   const quoteNumber = `Q-${lead.leadId}`;
-  const pdfBytes = await buildQuotePdfBytes(workspace, lead);
-  return uploadPdfToDrive(tokens, {
+  return {
+    fileId: "",
     fileName: `${safeName(workspace.config.businessName || workspace.name)}-${quoteNumber}.pdf`,
-    title: `${workspace.config.businessName || workspace.name} Quote ${quoteNumber}`,
-    pdfBytes,
-  });
+    fileUrl: buildPublicDocumentUrl("quote", workspace.workspaceId, lead.leadId),
+  };
 }
 
 // Builds the invoice PDF bytes in memory (no Drive upload). Used for both the
@@ -189,18 +191,18 @@ export async function buildInvoicePdfBytes(
   return pdf.save();
 }
 
+// Produces the client-facing invoice link, served by the app (no Drive).
 export async function generateInvoiceDocument(
   workspace: WorkspaceRecord,
-  tokens: Credentials,
+  _tokens: Credentials,
   booking: BookingRecord,
-) {
+): Promise<UploadedDriveFile> {
   const invoiceNumber = `INV-${booking.bookingId}`;
-  const pdfBytes = await buildInvoicePdfBytes(workspace, booking);
-  return uploadPdfToDrive(tokens, {
+  return {
+    fileId: "",
     fileName: `${safeName(workspace.config.businessName || workspace.name)}-${invoiceNumber}.pdf`,
-    title: `${workspace.config.businessName || workspace.name} Invoice ${invoiceNumber}`,
-    pdfBytes,
-  });
+    fileUrl: buildPublicDocumentUrl("invoice", workspace.workspaceId, booking.bookingId),
+  };
 }
 
 export async function generateContractPdfBytes(
@@ -282,56 +284,6 @@ function resolveInvoiceStage(booking: BookingRecord): InvoiceStage {
   return {
     label: booking.paymentStatus === "Paid in Full" ? "Paid" : "Booking",
     amount: booking.balanceDue > 0 ? booking.balanceDue : booking.finalPrice,
-  };
-}
-
-async function uploadPdfToDrive(
-  tokens: Credentials,
-  input: { fileName: string; title: string; pdfBytes: Uint8Array },
-): Promise<UploadedDriveFile> {
-  const { drive } = createGoogleClients(tokens);
-  const response = await drive.files.create({
-    requestBody: {
-      name: input.fileName,
-      mimeType: "application/pdf",
-      description: input.title,
-    },
-    media: {
-      mimeType: "application/pdf",
-      body: Readable.from(Buffer.from(input.pdfBytes)),
-    },
-    fields: "id, webViewLink, webContentLink",
-  });
-
-  const fileId = response.data.id;
-  if (!fileId) {
-    throw new Error("Google Drive upload failed");
-  }
-
-  try {
-    await drive.permissions.create({
-      fileId,
-      requestBody: {
-        role: "reader",
-        type: "anyone",
-      },
-    });
-  } catch {
-    // If public sharing is blocked, keep the owner-visible Drive link.
-  }
-
-  const refreshed = await drive.files.get({
-    fileId,
-    fields: "id, webViewLink, webContentLink",
-  });
-
-  return {
-    fileId,
-    fileName: input.fileName,
-    fileUrl:
-      refreshed.data.webViewLink ||
-      refreshed.data.webContentLink ||
-      `https://drive.google.com/file/d/${fileId}/view`,
   };
 }
 
@@ -440,9 +392,10 @@ async function embedLogo(
   pdf: PDFDocument,
   logoUrl: string,
 ): Promise<{ image: PdfImage; width: number; height: number } | null> {
-  if (!logoUrl || !/^https?:\/\//i.test(logoUrl)) return null;
+  // SSRF guard: only fetch logos from public hosts (the URL is owner-supplied).
+  if (!logoUrl || !isPublicHttpUrl(logoUrl)) return null;
   try {
-    const res = await fetch(logoUrl);
+    const res = await fetchWithTimeout(logoUrl);
     if (!res.ok) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     const contentType = (res.headers.get("content-type") || "").toLowerCase();
@@ -462,8 +415,11 @@ async function embedLogo(
 // (the common case for Indian service pricing). Returns [] when no rate is set.
 function gstLines(amount: number, gstPercentage: number): [string, string][] {
   if (!gstPercentage || gstPercentage <= 0) return [];
-  const base = amount / (1 + gstPercentage / 100);
-  const gst = amount - base;
+  const total = Math.round(amount);
+  const base = Math.round(amount / (1 + gstPercentage / 100));
+  // Derive GST as the remainder so base + GST always equals the displayed total
+  // exactly (no ±1 rounding drift that a client verifying the math would notice).
+  const gst = total - base;
   return [
     ["Taxable Value", inr(base)],
     [`GST @ ${gstPercentage}%`, inr(gst)],
@@ -629,7 +585,7 @@ function inr(amount: number) {
 }
 
 function safeName(value: string) {
-  return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "1glam";
+  return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "busydays";
 }
 
 function premiumRound(value: number) {

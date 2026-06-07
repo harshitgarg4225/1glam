@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { fetchWithTimeout } from "./http.js";
 import { appConfig } from "../config.js";
 
 // Thin Razorpay client over fetch + node:crypto — no SDK dependency. Handles
@@ -33,7 +34,7 @@ export async function createRazorpayOrder(input: {
     `${appConfig.razorpayKeyId}:${appConfig.razorpayKeySecret}`,
   ).toString("base64");
 
-  const response = await fetch("https://api.razorpay.com/v1/orders", {
+  const response = await fetchWithTimeout("https://api.razorpay.com/v1/orders", {
     method: "POST",
     headers: {
       Authorization: `Basic ${auth}`,
@@ -52,6 +53,48 @@ export async function createRazorpayOrder(input: {
     throw new Error(`Couldn't start the payment (Razorpay ${response.status}). ${detail.slice(0, 120)}`);
   }
   return (await response.json()) as RazorpayOrder;
+}
+
+// Fetches an order straight from Razorpay so the server can trust its amount
+// and notes (which we set at creation) instead of believing the client. Used
+// to bind a verified payment to the exact pack that was actually paid for.
+export async function fetchRazorpayOrder(orderId: string): Promise<{
+  id: string;
+  amount: number; // paise
+  amountPaid: number; // paise
+  currency: string;
+  status: string;
+  notes: Record<string, string>;
+}> {
+  if (!razorpayConfigured()) {
+    throw new Error("Payments aren't set up yet.");
+  }
+  const auth = Buffer.from(
+    `${appConfig.razorpayKeyId}:${appConfig.razorpayKeySecret}`,
+  ).toString("base64");
+  const response = await fetchWithTimeout(
+    `https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}`,
+    { headers: { Authorization: `Basic ${auth}` } },
+  );
+  if (!response.ok) {
+    throw new Error(`Couldn't verify the order with Razorpay (${response.status}).`);
+  }
+  const order = (await response.json()) as {
+    id: string;
+    amount: number;
+    amount_paid?: number;
+    currency: string;
+    status: string;
+    notes?: Record<string, string>;
+  };
+  return {
+    id: order.id,
+    amount: order.amount,
+    amountPaid: order.amount_paid ?? 0,
+    currency: order.currency,
+    status: order.status,
+    notes: order.notes ?? {},
+  };
 }
 
 // Verifies the signature returned by Razorpay Checkout after a successful

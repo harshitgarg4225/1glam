@@ -140,7 +140,7 @@
       </div>
 
       <div class="panel hidden" id="booking">
-        <div id="cover-wrap" class="cover-wrap hidden"><img id="cover-img" alt="" /></div>
+        <div id="cover-wrap" class="cover-wrap hidden"><img id="cover-img" alt="Cover photo" /></div>
         <p class="kicker" id="booking-kicker">Book an appointment</p>
         <h1 id="biz-name"></h1>
         <p class="tagline hidden" id="biz-tagline"></p>
@@ -209,7 +209,7 @@
         <a id="wa-confirm" class="button hidden" target="_blank" rel="noreferrer">Confirm on WhatsApp</a>
       </div>
 
-      <div class="footer">Powered by 1Glam Booking OS</div>
+      <div class="footer">Powered by BusyDays · <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></div>
     </div>
 
     <div class="lightbox" id="lightbox"><img id="lightbox-img" alt="" /></div>
@@ -289,6 +289,7 @@
 
         if (profile.coverImageUrl) {
           el("cover-img").src = profile.coverImageUrl;
+          el("cover-img").alt = (profile.businessName || "Artist") + " cover photo";
           show("cover-wrap");
         }
         if (profile.headline) el("booking-kicker").textContent = profile.headline;
@@ -588,7 +589,11 @@
           show("success");
           window.scrollTo({ top: 0, behavior: "smooth" });
         } catch (error) {
-          statusEl.textContent = error.message;
+          // Show the server's friendly validation message, but never surface a
+          // raw network error like "Failed to fetch" to a client.
+          statusEl.textContent = (error instanceof TypeError)
+            ? "We couldn't reach the server. Please check your connection and try again."
+            : (error.message || "Something went wrong. Please try again.");
           submitBtn.disabled = false;
           submitBtn.textContent = "Request booking";
         }

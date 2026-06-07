@@ -95,6 +95,10 @@ export type WorkspaceConfig = PricingRuleConfig & {
   cancellationPolicy: string;
   contractTerms: string;
   autoReplyEnabled: string;
+  // AI voice training: the owner's selected/pasted sample replies, and the
+  // derived style guide the assistant uses to write in their tone.
+  aiToneSamples: string;
+  aiToneProfile: string;
   brandColor: string;
   coverImageUrl: string;
   headline: string;

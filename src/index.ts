@@ -1,10 +1,13 @@
 import express from "express";
 import session from "express-session";
+import helmet from "helmet";
 import connectPgSimple from "connect-pg-simple";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import path from "node:path";
+import crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
@@ -27,9 +30,10 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, listWorkspaces, saveWorkspace } from "./services/database.js";
+import { closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, markWebhookEventProcessed, pingDatabase, saveWorkspace } from "./services/database.js";
 import {
   createRazorpayOrder,
+  fetchRazorpayOrder,
   razorpayConfigured,
   razorpayTestMode,
   verifyCheckoutSignature,
@@ -39,6 +43,7 @@ import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalan
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   extractInboundTextFromMetaWebhook,
+  extractMetaMessageId,
   ingestNormalizedLead,
   listInteractions,
   logInteractionForWorkspace,
@@ -66,7 +71,7 @@ import {
   verifyMetaWebhook,
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
-import { generateConversationReply } from "./services/grok.js";
+import { generateConversationReply, deriveToneProfile } from "./services/grok.js";
 import { sendChannelMessage, sendBusinessMessage } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
@@ -78,6 +83,7 @@ import {
   buildQuotePdfBytes,
   generateContractPdfBytes,
 } from "./services/documents.js";
+import { isDocumentType, verifyDocumentToken } from "./services/document-links.js";
 import {
   checkLeegalityDocumentDetails,
   createLeegalityContract,
@@ -111,6 +117,73 @@ declare module "express-session" {
 
 const app = express();
 
+// Public contact for privacy/data requests, shown on the legal pages. Override
+// with LEGAL_CONTACT_EMAIL once a branded support inbox exists.
+const LEGAL_CONTACT_EMAIL = process.env.LEGAL_CONTACT_EMAIL || "harshitgarg4225@gmail.com";
+
+// Security headers. CSP is tuned to the app's real dependencies: it serves
+// inline scripts/styles (so 'unsafe-inline' is required), loads Razorpay
+// Checkout, embeds the Google Calendar iframe and the same-origin booking-page
+// preview, and renders arbitrary https logo/cover images and QR codes. HSTS,
+// nosniff, frame-ancestors (anti-clickjacking) and referrer policy come from
+// helmet's defaults.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "'unsafe-inline'", "https://checkout.razorpay.com"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:", "https:"],
+        "font-src": ["'self'", "data:"],
+        "connect-src": ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com"],
+        "frame-src": [
+          "'self'",
+          "https://calendar.google.com",
+          "https://api.razorpay.com",
+          "https://*.razorpay.com",
+        ],
+        "frame-ancestors": ["'self'"],
+        "object-src": ["'none'"],
+        "base-uri": ["'self'"],
+        // Let the browser upgrade any stray http subresource to https in prod.
+        "upgrade-insecure-requests": appConfig.baseUrl.startsWith("https://") ? [] : null,
+      },
+    },
+    // Booking-page links are shared cross-site (WhatsApp/IG); COEP would block
+    // third-party images/embeds, so leave it off.
+    crossOriginEmbedderPolicy: false,
+    // Allow the booking page's images/QR to be loaded by link-preview crawlers.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
+
+// Per-request access log with a correlation id. Logs once on response finish so
+// each line carries method, path, status and latency — enough to trace a single
+// request through the aggregator. Health checks are skipped to avoid noise.
+app.use((req, res, next) => {
+  const requestId = (req.headers["x-request-id"] as string) || nanoid(10);
+  res.setHeader("x-request-id", requestId);
+  (req as express.Request & { requestId?: string }).requestId = requestId;
+
+  if (req.path === "/api/health") return next();
+
+  const start = process.hrtime.bigint();
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const level = res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
+    logger[level]("http_request", {
+      requestId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs),
+    });
+  });
+  next();
+});
+
 // Image uploads (payment screenshots, portfolio) — images only, max 10 MB.
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -131,6 +204,16 @@ const upload = multer({
   },
 });
 
+// Constant-time secret comparison for shared-secret webhooks (WATI/Manychat),
+// so a plain `!==` can't be used as a timing oracle to recover the secret.
+function secretsMatch(provided: string, expected: string): boolean {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 // Throttle unauthenticated public endpoints to curb abuse / DoS.
 const publicWriteLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -140,14 +223,31 @@ const publicWriteLimiter = rateLimit({
   message: { error: "Too many requests. Please wait a minute and try again." },
 });
 
+// Throttle authenticated API endpoints — 300 req/min per IP covers normal
+// single-user sessions with headroom for burst, while blocking credential
+// stuffing and naive scrapers. Webhooks and public routes are excluded below.
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please slow down." },
+  skip: (req) =>
+    req.path.startsWith("/webhooks/") ||
+    req.path.startsWith("/api/public/") ||
+    req.path === "/api/health",
+});
+app.use("/api", apiLimiter);
+
 app.use(
   express.json({
+    limit: "1mb",
     verify: (req, _res, buf) => {
       (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
     },
   }),
 );
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 const PgSession = connectPgSimple(session);
 const sessionStore = appConfig.databaseUrl
   ? new PgSession({
@@ -156,6 +256,16 @@ const sessionStore = appConfig.databaseUrl
       createTableIfMissing: true,
     })
   : undefined;
+
+if (!sessionStore && appConfig.isDeployed) {
+  // Without a persistent store, express-session falls back to MemoryStore, which
+  // leaks memory and drops every session on restart/scale-out. In production this
+  // is already fatal via assertDeploymentConfig (DATABASE_URL required); this warns
+  // for staging so it never goes unnoticed.
+  logger.warn("session_store_memory_fallback", {
+    message: "No DATABASE_URL — using in-memory session store (not safe for multi-instance or restarts).",
+  });
+}
 
 app.set("trust proxy", 1);
 app.use(
@@ -169,6 +279,7 @@ app.use(
       sameSite: "lax",
       secure: appConfig.baseUrl.startsWith("https://"),
       maxAge: 1000 * 60 * 60 * 24 * 30,
+      path: "/",
     },
   }),
 );
@@ -189,11 +300,42 @@ app.use(async (req, _res, next) => {
 
 app.use(express.static(path.join(process.cwd(), "public")));
 
-app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
-    codePrivate: true,
+// Defense-in-depth auth guard for the whole /api surface. Individual handlers
+// still do their own (and often stricter, e.g. googleTokens) checks; this is a
+// backstop so a newly-added authenticated endpoint can never accidentally ship
+// without protection. Only the genuinely public endpoints are allowlisted.
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/document-templates", "/api/logout"]);
+app.use((req, res, next) => {
+  if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
+  if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
+  if (!req.session.profile) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+});
+
+app.get("/api/health", async (_req, res) => {
+  const checks: Record<string, string> = {
+    app: "ok",
+    db: "unconfigured",
+  };
+
+  if (appConfig.databaseUrl) {
+    try {
+      await pingDatabase(2000);
+      checks.db = "ok";
+    } catch {
+      checks.db = "error";
+    }
+  }
+
+  const allOk = Object.values(checks).every((v) => v === "ok" || v === "unconfigured");
+  res.status(allOk ? 200 : 503).json({
+    ok: allOk,
+    uptimeSeconds: Math.floor(process.uptime()),
+    encryptionEnabled: encryptionEnabled(),
     oauthConfigured: Boolean(appConfig.googleClientId && appConfig.googleClientSecret),
+    checks,
   });
 });
 
@@ -377,10 +519,15 @@ app.get("/auth/google/callback", async (req, res, next) => {
   }
 });
 
-// Dev-only login + seed. Triple-gated: only mounts when APP_ENV=development AND
-// DEV_LOGIN=1. Used to drive the authenticated UI locally without Google OAuth.
-// Never available in staging/production.
-if (appConfig.appEnv === "development" && process.env.DEV_LOGIN === "1") {
+// Dev-only login + seed. Triple-gated: only mounts when APP_ENV=development,
+// NODE_ENV is not production, AND DEV_LOGIN=1. Used to drive the authenticated UI
+// locally without Google OAuth. Never available in staging/production — the extra
+// NODE_ENV check stops a misconfigured APP_ENV from exposing it in prod.
+if (
+  appConfig.appEnv === "development" &&
+  process.env.NODE_ENV !== "production" &&
+  process.env.DEV_LOGIN === "1"
+) {
   app.get("/dev/login", async (req, res, next) => {
     try {
       const profile = { email: "aisha@glowbyaisha.test", name: "Aisha Khan" };
@@ -679,6 +826,86 @@ app.post("/api/gmb/post-reply", async (req, res, next) => {
   }
 });
 
+// ---- AI voice training ----
+// Learns the owner's writing tone from sample messages they select/paste (e.g.
+// 10 past client replies), distils a reusable style guide, and saves both the
+// samples and the derived profile so every future AI reply sounds like them.
+app.post("/api/ai/train-tone", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    // Accept either an array of messages or a single newline-separated blob.
+    const raw = req.body?.samples;
+    const samples: string[] = Array.isArray(raw)
+      ? raw.map((s: unknown) => String(s))
+      : String(raw || "").split(/\n{2,}|\r?\n/);
+    const cleaned = samples.map((s) => s.trim()).filter(Boolean);
+    if (cleaned.length < 3) {
+      return res.status(400).json({ error: "Add at least 3 sample messages so the AI has enough to learn from." });
+    }
+
+    const profile = await deriveToneProfile({
+      samples: cleaned,
+      language: workspace.config.aiLanguage,
+      signOff: workspace.config.aiSignOff,
+    });
+    if (!profile) {
+      return res.status(502).json({ error: "Couldn't analyse your tone right now. Please try again in a moment." });
+    }
+
+    const updated = await updateWorkspaceConfig(
+      req.session.profile.email,
+      {
+        ...workspace.config,
+        aiToneSamples: cleaned.join("\n\n"),
+        aiToneProfile: profile,
+      },
+      req.session.googleTokens,
+    );
+
+    res.json({ ok: true, toneProfile: updated.config.aiToneProfile });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sends a test customer message through the full AI reply pipeline using the
+// owner's trained tone so they can verify how the AI sounds before going live.
+app.post("/api/ai/preview-tone", async (req, res, next) => {
+  try {
+    const workspace = await getWorkspaceByEmail(req.session.profile!.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { customerMessage } = req.body as { customerMessage?: string };
+    if (!customerMessage?.trim()) {
+      return res.status(400).json({ error: "customerMessage is required" });
+    }
+
+    const result = await generateConversationReply({
+      ownerName: workspace.config.ownerName,
+      brandName: workspace.config.businessName,
+      city: workspace.config.city,
+      channel: "WhatsApp",
+      clientName: "Test Client",
+      leadStatus: "New Lead",
+      eventType: "Bridal",
+      eventDate: "TBD",
+      locationText: workspace.config.city,
+      latestMessage: customerMessage.trim(),
+      language: workspace.config.aiLanguage,
+      signOff: workspace.config.aiSignOff,
+      toneProfile: workspace.config.aiToneProfile,
+    });
+
+    res.json({ reply: result.reply });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ---- Credits wallet (Razorpay) ----
 // Returns balance, recent ledger, and the buyable credit packs. Includes the
 // Razorpay key id (publishable) so the browser can open Checkout.
@@ -761,13 +988,29 @@ app.post("/api/wallet/verify", async (req, res, next) => {
     const orderId = String(req.body?.razorpay_order_id || "");
     const paymentId = String(req.body?.razorpay_payment_id || "");
     const signature = String(req.body?.razorpay_signature || "");
-    const pack = findPack(String(req.body?.packId || ""));
-    if (!orderId || !paymentId || !signature || !pack) {
+    if (!orderId || !paymentId || !signature) {
       return res.status(400).json({ error: "Missing payment details." });
     }
     if (!verifyCheckoutSignature({ orderId, paymentId, signature })) {
       return res.status(400).json({ error: "Payment could not be verified." });
     }
+
+    // SECURITY: never trust the pack the client claims to have bought. Re-read
+    // the order from Razorpay and derive the pack from the notes WE set at
+    // creation, validating the amount actually charged. Otherwise a client
+    // could pay for a small pack and replay the signature with a bigger packId.
+    const order = await fetchRazorpayOrder(orderId);
+    const pack = findPack(String(order.notes?.packId || ""));
+    if (!pack) {
+      return res.status(400).json({ error: "Could not match this payment to a credit pack." });
+    }
+    if (order.amount !== Math.round(pack.amountInr * 100)) {
+      return res.status(400).json({ error: "Payment amount mismatch." });
+    }
+    if (order.notes?.email && order.notes.email !== req.session.profile.email) {
+      return res.status(403).json({ error: "This payment belongs to a different account." });
+    }
+
     const result = await creditWallet(req.session.profile.email, {
       credits: pack.credits,
       reason: `${pack.label} pack top-up`,
@@ -1372,6 +1615,51 @@ app.get("/api/leads/:leadId/quote/preview", async (req, res, next) => {
     }
     const bytes = await buildQuotePdfBytes(workspace, lead);
     streamPdfInline(res, bytes, `quote-${lead.leadId}.pdf`);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Public, client-facing document links (no login, no Google Drive) ----
+// This is the URL the client actually opens from their WhatsApp/Instagram
+// message. The link is HMAC-signed over (type, workspaceId, recordId) so it's
+// unguessable and tamper-proof, and the PDF is regenerated on demand from the
+// workspace's own stored Google tokens — so sharing never depends on a Drive
+// scope or public-sharing permission being configured correctly.
+app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
+  try {
+    const { type, workspaceId, recordId } = req.params;
+    const sig = typeof req.query.sig === "string" ? req.query.sig : "";
+
+    if (!isDocumentType(type) || !verifyDocumentToken(type, workspaceId, recordId, sig)) {
+      return res.status(404).send("Document not found.");
+    }
+
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace || !workspace.googleTokens) {
+      return res.status(404).send("Document not found.");
+    }
+
+    if (type === "quote") {
+      const lead = await getLeadRecord(workspace.email, workspace.googleTokens, recordId);
+      if (!lead) return res.status(404).send("Document not found.");
+      const bytes = await buildQuotePdfBytes(workspace, lead);
+      return streamPdfInline(res, bytes, `quote-${recordId}.pdf`);
+    }
+
+    const booking = await getBookingRecord(workspace.email, workspace.googleTokens, recordId);
+    if (!booking) return res.status(404).send("Document not found.");
+
+    if (type === "invoice") {
+      const bytes = await buildInvoicePdfBytes(workspace, booking);
+      return streamPdfInline(res, bytes, `invoice-${recordId}.pdf`);
+    }
+
+    // contract
+    const lead = await getLeadRecord(workspace.email, workspace.googleTokens, booking.leadId);
+    if (!lead) return res.status(404).send("Document not found.");
+    const bytes = await generateContractPdfBytes(workspace, lead, booking);
+    return streamPdfInline(res, bytes, `contract-${recordId}.pdf`);
   } catch (error) {
     next(error);
   }
@@ -2035,7 +2323,7 @@ app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
 app.post("/webhooks/wati", async (req, res, next) => {
   try {
     const rawSecret = String((req.body as Record<string, unknown>)?.secret ?? "");
-    if (!appConfig.watiWebhookSecret || rawSecret !== appConfig.watiWebhookSecret) {
+    if (!secretsMatch(rawSecret, appConfig.watiWebhookSecret)) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
     const parsed = normalizeWatiPayload(req.body as Record<string, unknown>);
@@ -2078,7 +2366,7 @@ app.post("/webhooks/wati", async (req, res, next) => {
 app.post("/webhooks/manychat", async (req, res, next) => {
   try {
     const rawSecret = String((req.body as Record<string, unknown>)?.secret ?? "");
-    if (!appConfig.manychatWebhookSecret || rawSecret !== appConfig.manychatWebhookSecret) {
+    if (!secretsMatch(rawSecret, appConfig.manychatWebhookSecret)) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
     const parsed = normalizeManychatPayload(req.body as Record<string, unknown>);
@@ -2201,6 +2489,17 @@ app.post("/webhooks/meta", async (req, res, next) => {
     }
 
     if (workspace && channel) {
+      // Idempotency: Meta redelivers webhooks until they're acked, so dedup on the
+      // provider's message id. A redelivery is acked with 200 but skips all work,
+      // preventing duplicate leads, duplicate AI replies, and double-charged credits.
+      const metaMessageId = extractMetaMessageId(body);
+      if (metaMessageId) {
+        const fresh = await markWebhookEventProcessed("meta", metaMessageId);
+        if (!fresh) {
+          return res.json({ ok: true, deduped: true });
+        }
+      }
+
       const tokens = await getWorkspaceCredentials(workspace.email);
       const inboundText = extractInboundTextFromMetaWebhook(body);
       let leadCreated = false;
@@ -2340,6 +2639,9 @@ app.post("/webhooks/meta", async (req, res, next) => {
             holdExpiresAt: lead.holdExpiresAt,
             latestMessage: inboundText,
             memorySummary: extractSummaryFromMemory(memory),
+            language: workspace.config.aiLanguage,
+            signOff: workspace.config.aiSignOff,
+            toneProfile: workspace.config.aiToneProfile,
           });
 
           // Meter the AI reply when real AI ran (not the templated fallback).
@@ -2457,6 +2759,25 @@ app.post("/webhooks/leegality", async (req, res, next) => {
     }
 
     const event = parseLeegalityWebhook(req.body);
+
+    // Validate the reference id format before using it to scan every workspace —
+    // a junk/oversized value should be a cheap 400, not a full booking sweep.
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(event.referenceId)) {
+      return res.status(400).json({ error: "Invalid reference id" });
+    }
+
+    // Dedup redelivered Leegality webhooks (same document + status) so we don't
+    // re-log / re-notify on every retry. Acked with 200 either way.
+    if (event.documentId) {
+      const fresh = await markWebhookEventProcessed(
+        "leegality",
+        `${event.documentId}:${event.contractStatus || ""}`,
+      );
+      if (!fresh) {
+        return res.json({ ok: true, deduped: true });
+      }
+    }
+
     const resolved = await findBookingAcrossWorkspaces(event.referenceId);
 
     if (!resolved) {
@@ -2494,17 +2815,145 @@ app.post("/webhooks/leegality", async (req, res, next) => {
   }
 });
 
+// Shared, styled wrapper for the public legal pages. These are required for the
+// Meta app review (privacy + data deletion) and to set commercial terms.
+function legalPage(title: string, bodyHtml: string): string {
+  const lastUpdated = "5 June 2026";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeAttr(title)} · BusyDays</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 760px; margin: 0 auto; padding: 40px 20px 80px; color: #1c1c28; line-height: 1.65; }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  h2 { font-size: 18px; margin-top: 32px; }
+  .muted { color: #6b6b80; font-size: 14px; }
+  a { color: #b3005e; }
+  nav { margin: 24px 0 8px; font-size: 14px; }
+  nav a { margin-right: 16px; }
+  ul { padding-left: 20px; }
+  footer { margin-top: 48px; font-size: 13px; color: #6b6b80; border-top: 1px solid #eee; padding-top: 16px; }
+</style></head><body>
+<nav><a href="/legal/privacy">Privacy</a><a href="/legal/terms">Terms</a><a href="/legal/data-deletion">Data Deletion</a><a href="/">Home</a></nav>
+<h1>${escapeAttr(title)}</h1>
+<p class="muted">Last updated: ${lastUpdated}</p>
+${bodyHtml}
+<footer>BusyDays — booking and client-communication automation for appointment-based professionals. For privacy or data requests, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</footer>
+</body></html>`;
+}
+
 app.get("/legal/privacy", (_req, res) => {
-  res.type("html").send(`<!doctype html><html><body><h1>1Glam Privacy Policy</h1><p>1Glam stores each artist's Google and Meta connection data separately. Client messages, lead records, bookings, and operational data are isolated per workspace and used only to provide booking, communication, and fulfillment automation for that workspace.</p><p>To request deletion or disconnection, use the in-app disconnect flow or the Meta data deletion callback.</p></body></html>`);
+  res.type("html").send(
+    legalPage(
+      "Privacy Policy",
+      `<p>BusyDays ("we", "us") provides booking and client-communication automation to independent appointment-based professionals and studios ("artists"). This policy explains what we collect, why, and your choices. Each artist's data is isolated in its own workspace and never shared with other workspaces.</p>
+
+<h2>1. Information we process</h2>
+<ul>
+  <li><strong>Account &amp; profile:</strong> your name, email, and profile photo from Google Sign-In.</li>
+  <li><strong>Google Workspace data:</strong> with your consent, we access Google Sheets (to store your leads, bookings and settings in a spreadsheet you own), Google Calendar (to create and read booking events), and Drive file access limited to files the app creates.</li>
+  <li><strong>Meta platform data:</strong> if you connect WhatsApp Business or Instagram, we process the messages your clients send you and the tokens needed to reply on your behalf.</li>
+  <li><strong>Client &amp; booking records:</strong> client names, contact handles, event details, quotes, invoices and payment status that you or your clients enter.</li>
+  <li><strong>Payments:</strong> credit-pack purchases are processed by Razorpay; we store only the resulting payment reference, never card details.</li>
+</ul>
+
+<h2>2. How we use it</h2>
+<ul>
+  <li>To run your booking pipeline: capturing leads, scheduling, generating quotes/invoices/contracts, and sending messages you authorise.</li>
+  <li>To provide AI assistance (drafting replies, enriching leads, drafting review responses) using the xAI Grok API.</li>
+  <li>To meter usage and process credit-pack purchases.</li>
+  <li>We do <strong>not</strong> sell your data or your clients' data, and we do not use it for advertising.</li>
+</ul>
+
+<h2>3. Third parties we share with</h2>
+<p>We share data only with the processors needed to deliver the service: Google (Sheets, Calendar, Drive), Meta (WhatsApp/Instagram messaging), xAI (AI generation), Razorpay (payments), and Leegality (e-signature, when you send a contract). Each receives only what is necessary for its function.</p>
+
+<h2>4. Storage &amp; security</h2>
+<p>Operational records are stored in your own Google Sheet plus our database. OAuth tokens are encrypted at rest using AES-256-GCM. Sessions are stored server-side and transmitted over HTTPS. Access is restricted to the authenticated workspace owner.</p>
+
+<h2>5. Retention</h2>
+<p>We retain workspace data for as long as your account is active. When you disconnect an integration, the related access tokens are revoked and marked disconnected. When you delete your workspace, associated records are removed from our database; data you stored in your own Google Sheet remains under your control in your Google account.</p>
+
+<h2>6. Your rights &amp; choices</h2>
+<ul>
+  <li>Disconnect Google or Meta at any time from Settings; this revokes our access.</li>
+  <li>Request deletion of your data — see our <a href="/legal/data-deletion">Data Deletion</a> page.</li>
+  <li>Access or export your records directly from the Google Sheet you own.</li>
+</ul>
+
+<h2>7. Contact</h2>
+<p>Questions or requests: <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>`,
+    ),
+  );
+});
+
+app.get("/legal/terms", (_req, res) => {
+  res.type("html").send(
+    legalPage(
+      "Terms of Service",
+      `<p>These terms govern your use of BusyDays. By creating a workspace you agree to them.</p>
+
+<h2>1. The service</h2>
+<p>BusyDays helps appointment-based professionals capture leads, schedule bookings, generate documents, and communicate with clients across WhatsApp, Instagram and a public booking page. Features depend on the integrations you choose to connect.</p>
+
+<h2>2. Your responsibilities</h2>
+<ul>
+  <li>You are responsible for the accuracy of content you send to clients and for complying with WhatsApp/Instagram platform policies and applicable messaging laws.</li>
+  <li>You must have the right to contact the clients whose details you enter, and to send them messages.</li>
+  <li>You are responsible for the security of your Google and Meta accounts.</li>
+</ul>
+
+<h2>3. AI-generated content</h2>
+<p>AI suggestions (replies, drafts, enrichment) are provided as assistance and may contain errors. You are responsible for reviewing content before it is sent. Messages that mention price or commitments are never auto-sent without your approval.</p>
+
+<h2>4. Credits &amp; payments</h2>
+<p>Certain actions consume prepaid credits purchased via Razorpay. Credit purchases are final except where required by law. Prices and credit costs may change with notice.</p>
+
+<h2>5. Availability</h2>
+<p>We aim for high availability but the service is provided "as is" without warranty. We are not liable for losses arising from third-party outages (Google, Meta, Razorpay) or from your use of AI-generated content, to the maximum extent permitted by law.</p>
+
+<h2>6. Termination</h2>
+<p>You may stop using BusyDays and delete your workspace at any time. We may suspend accounts that abuse the service or violate platform policies.</p>
+
+<h2>7. Contact</h2>
+<p><a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>`,
+    ),
+  );
 });
 
 app.get("/legal/data-deletion", (_req, res) => {
-  res.type("html").send(`<!doctype html><html><body><h1>1Glam Data Deletion</h1><p>Users can disconnect Meta integrations from within the app, which removes active channel access for that workspace. Meta-originated deletion callbacks are processed through the platform's data deletion endpoint, and connection records are marked disconnected per workspace.</p></body></html>`);
+  res.type("html").send(
+    legalPage(
+      "Data Deletion",
+      `<p>You can remove your data from BusyDays at any time. We offer three paths:</p>
+
+<h2>1. Disconnect an integration</h2>
+<p>In <strong>Settings</strong>, disconnect Google or any Meta channel (WhatsApp/Instagram). This immediately revokes the stored access tokens and marks that connection deleted, so we can no longer access the corresponding account.</p>
+
+<h2>2. Delete your workspace</h2>
+<p>To delete your entire workspace and the records we hold for it, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a> from your account email with the subject "Delete my workspace". We will remove your workspace records from our database within 30 days and confirm by email. Data stored in the Google Sheet you own remains in your Google account for you to delete directly.</p>
+
+<h2>3. Meta data deletion callback</h2>
+<p>If you remove BusyDays from your Facebook/Instagram account, Meta sends us a signed data-deletion request. We verify it, disconnect the associated channels, and return a confirmation code and this status URL, as required by Meta Platform policy. The callback endpoint is <code>/compliance/meta/data-deletion</code>.</p>
+
+<h2>What gets deleted</h2>
+<ul>
+  <li>OAuth access and refresh tokens (revoked and removed).</li>
+  <li>Meta channel connection records for your workspace.</li>
+  <li>On full workspace deletion: lead, booking, interaction, wallet and conversation-memory records in our database.</li>
+</ul>`,
+    ),
+  );
 });
 
 app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   // Always log the full error server-side for debugging (structured + captured).
-  captureException(error, { method: req.method, path: req.path });
+  captureException(error, {
+    method: req.method,
+    path: req.path,
+    requestId: (req as express.Request & { requestId?: string }).requestId,
+  });
 
   // Validation errors are safe to surface and help the user fix their input.
   if (error instanceof ZodError) {
@@ -2535,19 +2984,60 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
   res.status(500).json({ error: isUserSafe ? message : "Something went wrong on our end. Please try again." });
 });
 
-// Fail closed: refuse to boot a deployed environment without a database and a
-// token-encryption key, rather than silently using ephemeral/plaintext storage.
-assertDeploymentConfig();
+// Exported so integration tests can boot the fully-wired app on an ephemeral
+// port without the side effects below (listen, schedulers, signal handlers).
+export { app };
 
-app.listen(appConfig.port, () => {
-  logger.info("1Glam app listening", {
-    baseUrl: appConfig.baseUrl,
-    env: appConfig.appEnv,
-    persistence: appConfig.databaseUrl ? "postgres" : "file",
-    tokenEncryption: encryptionEnabled() ? "on" : "off",
+// Only start the server, schedulers, and signal handlers when run directly
+// (node dist/index.js) — not when imported by a test.
+const isMainModule =
+  Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMainModule) {
+  // Fail closed: refuse to boot a deployed environment without a database and a
+  // token-encryption key, rather than silently using ephemeral/plaintext storage.
+  assertDeploymentConfig();
+
+  const server = app.listen(appConfig.port, () => {
+    logger.info("BusyDays app listening", {
+      baseUrl: appConfig.baseUrl,
+      env: appConfig.appEnv,
+      persistence: appConfig.databaseUrl ? "postgres" : "file",
+      tokenEncryption: encryptionEnabled() ? "on" : "off",
+    });
+    startReminderScheduler();
   });
-  startReminderScheduler();
-});
+
+  // Graceful shutdown: on a deploy/restart Railway sends SIGTERM. Stop accepting
+  // new connections, let in-flight requests finish, close the DB pool, then exit.
+  // A hard 10s timeout guarantees we never hang the platform's shutdown.
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info("shutdown_initiated", { signal });
+
+    const forceExit = setTimeout(() => {
+      logger.error("shutdown_forced", { signal });
+      process.exit(1);
+    }, 10_000);
+    forceExit.unref();
+
+    server.close(async () => {
+      try {
+        await closePool();
+      } catch (error) {
+        captureException(error, { phase: "shutdown_close_pool" });
+      }
+      clearTimeout(forceExit);
+      logger.info("shutdown_complete", { signal });
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+}
 
 function mergeTags(existing: string, incoming: string) {
   const values = [...existing.split(","), ...incoming.split(",")]
@@ -2684,7 +3174,7 @@ async function upsertReviewRequest(
     const row = [...rows[existingIndex]];
     row[4] = input.type === "request" ? now : row[4] || "";
     row[5] = input.type === "reminder" ? now : row[5] || "";
-    row[8] = row[8] || "Sent from 1Glam";
+    row[8] = row[8] || "Sent from BusyDays";
     await sheets.spreadsheets.values.update({
       spreadsheetId: workspace.spreadsheetId,
       range: `${sheetNames.reviews}!A${existingIndex + 2}:I${existingIndex + 2}`,
@@ -2708,7 +3198,7 @@ async function upsertReviewRequest(
         input.type === "reminder" ? now : "",
         "No",
         "No",
-        "Sent from 1Glam",
+        "Sent from BusyDays",
       ]],
     },
   });

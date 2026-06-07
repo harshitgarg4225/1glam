@@ -224,8 +224,45 @@ export function extractInboundTextFromMetaWebhook(payload: Record<string, unknow
   return "";
 }
 
+// Pulls the provider's unique message id from a Meta webhook so redeliveries can
+// be deduped. WhatsApp uses messages[0].id; Messenger/Instagram use the message
+// mid. Returns "" when no id is present (e.g. status callbacks) — the caller then
+// processes normally rather than over-deduping on a missing id.
+export function extractMetaMessageId(payload: Record<string, unknown>): string {
+  const object = typeof payload.object === "string" ? payload.object : "";
+  const field = typeof payload.field === "string" ? payload.field : "";
+  const entry = Array.isArray(payload.entry) ? (payload.entry[0] as Record<string, unknown>) : undefined;
+
+  if (object === "whatsapp_business_account") {
+    const change = entry && Array.isArray(entry.changes)
+      ? (entry.changes as Array<Record<string, unknown>>)[0]
+      : undefined;
+    const value = change?.value as Record<string, unknown> | undefined;
+    const message = Array.isArray(value?.messages)
+      ? (value?.messages as Array<Record<string, unknown>>)[0]
+      : undefined;
+    return typeof message?.id === "string" ? message.id : "";
+  }
+
+  if (object === "page" || object === "instagram") {
+    const messaging = entry && Array.isArray(entry.messaging)
+      ? (entry.messaging as Array<Record<string, unknown>>)[0]
+      : undefined;
+    const message = messaging?.message as Record<string, unknown> | undefined;
+    return typeof message?.mid === "string" ? message.mid : "";
+  }
+
+  if (field === "messages") {
+    const value = payload.value as Record<string, unknown> | undefined;
+    const message = value?.message as Record<string, unknown> | undefined;
+    return typeof message?.mid === "string" ? message.mid : "";
+  }
+
+  return "";
+}
+
 function extractDate(text: string) {
-  const numericMatch = text.match(/\b(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?\b/);
+  const numericMatch = text.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/);
   if (numericMatch) {
     const day = Number(numericMatch[1]);
     const month = Number(numericMatch[2]);

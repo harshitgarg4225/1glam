@@ -62,7 +62,7 @@ export async function provisionWorkspace(profile: { email: string; name: string 
   const config = buildDefaultConfig(profile);
   const { sheets, calendar } = createGoogleClients(tokens);
 
-  const spreadsheetTitle = `1Glam Booking OS - ${profile.name}`;
+  const spreadsheetTitle = `BusyDays Booking OS - ${profile.name}`;
   const spreadsheet = await sheets.spreadsheets.create({
     requestBody: {
       properties: { title: spreadsheetTitle, locale: "en_US", timeZone: "Asia/Kolkata" },
@@ -87,7 +87,7 @@ export async function provisionWorkspace(profile: { email: string; name: string 
 
   const tentativeCalendar = await calendar.calendars.insert({
     requestBody: {
-      summary: "1Glam Tentative Bookings",
+      summary: "BusyDays Tentative Bookings",
       timeZone: "Asia/Kolkata",
     },
   });
@@ -112,7 +112,7 @@ export async function provisionWorkspace(profile: { email: string; name: string 
     spreadsheetName: spreadsheetTitle,
     confirmedCalendarId: "primary",
     tentativeCalendarId,
-    tentativeCalendarName: "1Glam Tentative Bookings",
+    tentativeCalendarName: "BusyDays Tentative Bookings",
     createdAt: now,
     updatedAt: now,
     googleTokens: {
@@ -239,7 +239,7 @@ export async function setSheetProtection(email: string, protect: boolean, tokens
     fileId: workspace.spreadsheetId,
     requestBody: {
       contentRestrictions: protect
-        ? [{ readOnly: true, reason: "Protected by 1Glam Booking OS" }]
+        ? [{ readOnly: true, reason: "Protected by BusyDays Booking OS" }]
         : [],
     },
   });
@@ -252,7 +252,6 @@ export async function setSheetProtection(email: string, protect: boolean, tokens
 }
 
 export async function recoverSheet(profile: { email: string; name: string }, tokens: Credentials) {
-  const existing = await findWorkspaceByEmail(profile.email);
   return provisionWorkspace(profile, tokens);
 }
 
@@ -363,6 +362,8 @@ async function seedSpreadsheet(
     ["cancellation_policy", config.cancellationPolicy, "Cancellation and rescheduling terms shown on quotes and contracts"],
     ["contract_terms", config.contractTerms, "Full terms & conditions for the booking contract"],
     ["auto_reply_enabled", config.autoReplyEnabled, "When Yes, AI auto-replies to inbound client messages (within guardrails)"],
+    ["ai_tone_samples", config.aiToneSamples, "Your selected sample replies the AI learns your tone from"],
+    ["ai_tone_profile", config.aiToneProfile, "AI-derived style guide describing how you write (editable)"],
     ["brand_color", config.brandColor, "Accent colour for your booking page (hex, e.g. #C26B45)"],
     ["cover_image_url", config.coverImageUrl, "Cover photo shown at the top of your booking page (URL)"],
     ["headline", config.headline, "Headline shown on your booking page"],
@@ -434,7 +435,7 @@ async function recoverBestWorkspaceForProfile(
     spreadsheetName: best.name,
     confirmedCalendarId: config.confirmedCalendarId,
     tentativeCalendarId: config.tentativeCalendarId,
-    tentativeCalendarName: existing?.tentativeCalendarName ?? "1Glam Tentative Bookings",
+    tentativeCalendarName: existing?.tentativeCalendarName ?? "BusyDays Tentative Bookings",
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     googleTokens: existing?.googleTokens,
@@ -459,7 +460,9 @@ async function listRecoverableSheets(profile: { email: string; name: string }, t
       .map((owner) => owner.emailAddress?.toLowerCase())
       .filter(Boolean);
     return (
-      name.includes("1Glam Booking OS") &&
+      // Match both the current "BusyDays" name and the legacy "1Glam" name so
+      // workspaces provisioned before the rebrand still recover correctly.
+      (name.includes("BusyDays Booking OS") || name.includes("1Glam Booking OS")) &&
       (ownerEmails.length === 0 || ownerEmails.includes(profile.email.toLowerCase()))
     );
   });
@@ -621,6 +624,8 @@ async function loadConfigFromSpreadsheet(
       cancellationPolicy: String(values.cancellation_policy ?? base.cancellationPolicy),
       contractTerms: String(values.contract_terms ?? base.contractTerms),
       autoReplyEnabled: String(values.auto_reply_enabled ?? base.autoReplyEnabled),
+      aiToneSamples: String(values.ai_tone_samples ?? base.aiToneSamples),
+      aiToneProfile: String(values.ai_tone_profile ?? base.aiToneProfile),
       brandColor: String(values.brand_color ?? base.brandColor),
       coverImageUrl: String(values.cover_image_url ?? base.coverImageUrl),
       headline: String(values.headline ?? base.headline),

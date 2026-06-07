@@ -3,7 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>1Glam Booking OS</title>
+    <title>BusyDays — Software for appointment-based professionals</title>
+    <meta name="application-name" content="BusyDays" />
+    <meta property="og:site_name" content="BusyDays" />
+    <meta name="description" content="BusyDays is booking software for appointment-based professionals. Zero stress managing your calendar, zero missed DMs, zero missed bookings." />
+    <meta property="og:title" content="BusyDays — Software for appointment-based professionals" />
+    <meta property="og:description" content="Zero stress managing your calendar. Zero missed DMs. Zero missed bookings." />
     <style>
       :root {
         --bg: #FAF8F5;
@@ -279,6 +284,106 @@
       .msg.inbound { background: var(--surface); border: 1px solid var(--line); margin-right: auto; }
       .msg.outbound { background: var(--accent-soft); margin-left: auto; }
 
+      /* ─── Landing hero ─── */
+      .landing-hero {
+        margin-top: 16px;
+        border-radius: var(--radius-lg);
+        background:
+          radial-gradient(1200px 480px at 50% -10%, var(--accent-soft) 0%, rgba(251,240,234,0) 60%),
+          linear-gradient(180deg, var(--card) 0%, var(--bg) 100%);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .hero-inner {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 72px 28px 64px;
+        text-align: center;
+      }
+      .hero-wordmark {
+        font-size: clamp(34px, 6vw, 56px);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        color: var(--text);
+        line-height: 1;
+      }
+      .hero-eyebrow {
+        margin-top: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .hero-headline {
+        font-size: clamp(30px, 5.2vw, 50px);
+        line-height: 1.08;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        margin: 34px 0 0;
+      }
+      .hero-accent { color: var(--accent); }
+      .hero-sub {
+        font-size: clamp(16px, 2vw, 19px);
+        line-height: 1.65;
+        color: var(--muted);
+        max-width: 620px;
+        margin: 20px auto 0;
+      }
+      .zero-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin: 44px auto 0;
+        max-width: 660px;
+      }
+      .zero-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 26px 16px 22px;
+        box-shadow: var(--shadow-sm);
+        transition: transform 0.15s, box-shadow 0.15s;
+      }
+      .zero-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+      .zero-num {
+        font-size: clamp(48px, 8vw, 72px);
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        color: var(--accent);
+      }
+      .zero-label {
+        margin-top: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.35;
+        color: var(--text);
+      }
+      .hero-cta-row {
+        margin-top: 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .hero-cta {
+        font-size: 16px;
+        padding: 14px 30px;
+        border-radius: 10px;
+        box-shadow: 0 6px 20px rgba(194,107,69,0.28);
+      }
+      .hero-cta-note { font-size: 13px; color: var(--muted); }
+      .hero-legal { margin-top: 28px; font-size: 12.5px; color: var(--muted); }
+      .hero-legal a { color: var(--accent); }
+      @media (max-width: 640px) {
+        .hero-inner { padding: 52px 18px 48px; }
+        .zero-grid { gap: 10px; }
+        .zero-card { padding: 20px 8px 16px; }
+        .hero-br { display: none; }
+      }
+
       .requires-auth { display: none; }
       body.authenticated .requires-auth { display: block; }
       /* The nav is flex, not block — keep it flex when authenticated so the
@@ -507,7 +612,7 @@
       <header class="panel topbar">
         <div class="brand">
           <span class="kicker">Your booking workspace</span>
-          <span class="brand-title">1Glam</span>
+          <span class="brand-title">BusyDays</span>
         </div>
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
@@ -538,13 +643,45 @@
       </nav>
 
       <!-- Landing -->
-      <section id="landing" class="panel section">
-        <div class="kicker">Welcome</div>
-        <h1>Run your makeup bookings, beautifully simple.</h1>
-        <p class="lead">
-          Sign in with Google to get your own booking page, a calendar that stays in sync, and one tidy place
-          to handle every request, payment, and message. Your data lives in your own Google account.
-        </p>
+      <section id="landing" class="landing-hero">
+        <div class="hero-inner">
+          <div class="hero-wordmark">BusyDays</div>
+          <div class="hero-eyebrow">Software for appointment-based professionals</div>
+
+          <h1 class="hero-headline">
+            Your calendar, your DMs, your bookings —<br class="hero-br" />
+            <span class="hero-accent">handled.</span>
+          </h1>
+
+          <p class="hero-sub">
+            Every enquiry answered, every booking captured, every date in sync.
+            BusyDays runs the busywork so you can do the work.
+          </p>
+
+          <div class="zero-grid">
+            <div class="zero-card">
+              <div class="zero-num">0</div>
+              <div class="zero-label">Stress managing<br />your calendar</div>
+            </div>
+            <div class="zero-card">
+              <div class="zero-num">0</div>
+              <div class="zero-label">Missed<br />DMs</div>
+            </div>
+            <div class="zero-card">
+              <div class="zero-num">0</div>
+              <div class="zero-label">Missed<br />bookings</div>
+            </div>
+          </div>
+
+          <div class="hero-cta-row">
+            <a href="/auth/google" class="button hero-cta">Get started with Google</a>
+            <span class="hero-cta-note">Free to start · Your data stays in your own Google account</span>
+          </div>
+
+          <p class="hero-legal">
+            By continuing you agree to our <a href="/legal/terms">Terms</a> and <a href="/legal/privacy">Privacy Policy</a>.
+          </p>
+        </div>
       </section>
 
       <div class="requires-auth" id="tab-panels">
@@ -1103,6 +1240,39 @@
                     <option value="Yes">On — AI replies automatically (within guardrails)</option>
                   </select>
                 </div>
+
+                <div class="wide" style="margin-top:18px;border-top:1px solid var(--line,#eee);padding-top:16px;">
+                  <label for="aiToneSamples">Teach the AI your voice</label>
+                  <p class="muted" style="margin:2px 0 8px;font-size:12.5px;">
+                    Paste a few of your own past replies to clients — at least 3, ideally 8–10 — and the AI learns how <em>you</em> write: your warmth, language mix (English/Hindi/Hinglish), emojis, and sign-off. Separate messages with a blank line.
+                    <br><span id="tone-source-hint" style="opacity:.8;">Tip: once WhatsApp/Instagram are connected, you'll be able to pick past conversations here instead of pasting.</span>
+                  </p>
+                  <textarea id="aiToneSamples" name="aiToneSamples" rows="6" placeholder="Hi Priya! So glad you reached out 💕 Could you share your wedding date and venue?
+
+Thank you so much love, that date is open! I'll keep it tentatively held for you."></textarea>
+                  <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+                    <button type="button" id="train-tone-btn" class="button secondary">✨ Learn my tone</button>
+                    <span id="train-tone-status" class="muted" style="font-size:12.5px;"></span>
+                  </div>
+                  <div id="tone-profile-wrap" style="display:none;margin-top:12px;">
+                    <label for="aiToneProfile">Your AI voice profile (editable)</label>
+                    <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">This is how the AI now understands your style. Tweak it freely — it's used on every reply.</p>
+                    <textarea id="aiToneProfile" name="aiToneProfile" rows="3"></textarea>
+                    <div style="margin-top:14px;border-top:1px dashed var(--line,#eee);padding-top:12px;">
+                      <label style="font-size:13px;">Preview your voice</label>
+                      <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Type a test message as if you're a new client, and see exactly how the AI replies in your tone.</p>
+                      <textarea id="preview-tone-input" rows="2" placeholder="Hi! I saw your work on Instagram, can you do bridal makeup for Feb 2025?" style="width:100%;box-sizing:border-box;"></textarea>
+                      <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+                        <button type="button" id="preview-tone-btn" class="button secondary" style="font-size:13px;">👁 Preview reply</button>
+                        <span id="preview-tone-status" class="muted" style="font-size:12.5px;"></span>
+                      </div>
+                      <div id="preview-tone-result" style="display:none;margin-top:10px;background:var(--surface,#f9f9f9);border:1px solid var(--line,#e5e5e5);border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:11px;color:#aaa;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">AI reply preview</div>
+                        <div id="preview-tone-text" style="white-space:pre-wrap;font-size:14px;line-height:1.6;"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </details>
@@ -1399,7 +1569,13 @@
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
       function setValue(form, name, value) { const f = form.elements.namedItem(name); if (f) f.value = value ?? ""; }
-      function fillConfig(config) { Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v)); renderTemplatePicker(config.documentTemplate); }
+      function fillConfig(config) { Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v)); renderTemplatePicker(config.documentTemplate); reflectToneProfile(config.aiToneProfile); }
+
+      function reflectToneProfile(profile) {
+        const wrap = document.getElementById("tone-profile-wrap");
+        if (!wrap) return;
+        wrap.style.display = profile && profile.trim() ? "block" : "none";
+      }
 
       // ---- Document design picker ----
       // Visual swatch colours mirror the server-side themes in document-themes.ts.
@@ -2243,7 +2419,7 @@
             amount: order.amount,
             currency: order.currency,
             order_id: order.orderId,
-            name: sessionState?.workspace?.config?.businessName || "1Glam",
+            name: sessionState?.workspace?.config?.businessName || "BusyDays",
             description: `${order.pack.label} — ${order.pack.credits} credits`,
             prefill: order.prefill,
             theme: { color: "#C26B45" },
@@ -2344,6 +2520,54 @@
         await postJson("/api/workspace/config", { ...base, ...patch });
         await refreshSession();
       }
+
+      document.getElementById("train-tone-btn")?.addEventListener("click", async () => {
+        const samplesEl = document.getElementById("aiToneSamples");
+        const statusEl = document.getElementById("train-tone-status");
+        const btn = document.getElementById("train-tone-btn");
+        const samples = (samplesEl?.value || "").trim();
+        if (samples.split(/\n{2,}|\n/).map((s) => s.trim()).filter(Boolean).length < 3) {
+          statusEl.textContent = "Add at least 3 messages (separate them with a blank line).";
+          return;
+        }
+        btn.disabled = true;
+        statusEl.textContent = "Learning your tone…";
+        try {
+          const res = await postJson("/api/ai/train-tone", { samples });
+          const profileEl = document.getElementById("aiToneProfile");
+          if (profileEl) profileEl.value = res.toneProfile || "";
+          reflectToneProfile(res.toneProfile);
+          statusEl.textContent = "✓ Done — your AI now writes in your voice.";
+          await refreshSession();
+        } catch (err) {
+          statusEl.textContent = err.message || "Couldn't learn your tone. Try again.";
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      document.getElementById("preview-tone-btn")?.addEventListener("click", async () => {
+        const inputEl = document.getElementById("preview-tone-input");
+        const statusEl = document.getElementById("preview-tone-status");
+        const resultBox = document.getElementById("preview-tone-result");
+        const textEl = document.getElementById("preview-tone-text");
+        const btn = document.getElementById("preview-tone-btn");
+        const msg = (inputEl?.value || "").trim();
+        if (!msg) { statusEl.textContent = "Type a test customer message first."; return; }
+        btn.disabled = true;
+        statusEl.textContent = "Generating reply…";
+        resultBox.style.display = "none";
+        try {
+          const res = await postJson("/api/ai/preview-tone", { customerMessage: msg });
+          textEl.textContent = res.reply || "";
+          resultBox.style.display = "block";
+          statusEl.textContent = "";
+        } catch (err) {
+          statusEl.textContent = err.message || "Couldn't generate preview. Try again.";
+        } finally {
+          btn.disabled = false;
+        }
+      });
 
       let portfolioImages = [];
       function parsePortfolio(raw) {

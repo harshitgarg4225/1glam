@@ -145,21 +145,27 @@ export function findDeploymentConfigErrors(cfg: {
   return errors;
 }
 
-// Warns about misconfiguration at boot. Previously this threw; downgraded to
-// warn-only so the app can boot without DATABASE_URL/TOKEN_ENCRYPTION_KEY while
-// those env vars are being set up in the hosting environment.
+// Validates configuration at boot. In PRODUCTION these are fatal — we refuse to
+// start with a misconfiguration that would silently lose data, store OAuth tokens
+// in plaintext, or sign sessions/documents with a weak secret. In staging/dev we
+// only warn, so local work and previews stay frictionless.
 export function assertDeploymentConfig(): void {
   const errors = findDeploymentConfigErrors(appConfig);
-  if (errors.length) {
-    console.warn(
-      `[config] Running in "${appConfig.appEnv}" with missing recommended configuration:\n` +
-        errors.map((e) => `  • ${e}`).join("\n"),
-    );
-  }
   if (appConfig.sessionSecret.length < 32) {
-    console.warn(
-      "[security] SESSION_SECRET is shorter than 32 characters. " +
-        "Generate a strong secret with: openssl rand -hex 32",
+    errors.push(
+      "SESSION_SECRET must be at least 32 characters — it signs session cookies and document URLs. Generate one with: openssl rand -base64 32",
     );
   }
+
+  if (!errors.length) return;
+
+  const summary =
+    `Configuration problems detected in "${appConfig.appEnv}":\n` +
+    errors.map((e) => `  • ${e}`).join("\n");
+
+  if (appConfig.appEnv === "production") {
+    // Fail fast — never serve traffic from a misconfigured production instance.
+    throw new Error(summary);
+  }
+  console.warn(`[config] ${summary}`);
 }

@@ -1,8 +1,8 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, updateLeadRecord, updateBookingRecord } from "./booking.js";
-import { findWorkspaceByWorkspaceId } from "./database.js";
+import { countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, updateLeadRecord, updateBookingRecord, roundToPremiumNumber } from "./booking.js";
+import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
@@ -115,9 +115,6 @@ function parseAddons(raw: string): PublicAddon[] {
     .filter((a): a is PublicAddon => a !== null);
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function addDaysIso(days: number) {
   const date = new Date();
@@ -190,7 +187,7 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
 
   return {
     workspaceId: workspace.workspaceId,
-    businessName: config.businessName || workspace.name || "1Glam Artist",
+    businessName: config.businessName || workspace.name || "BusyDays",
     city: config.city || "",
     instagramHandle: config.instagramHandle || "",
     ownerWhatsApp: sanitizePhone(config.ownerWhatsApp),
@@ -267,30 +264,37 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
   const tokens = await getWorkspaceCredentials(workspace.email);
 
   const maxPerDay = Number(workspace.config.bookingMaxPerDay) || 0;
-  let waitlisted = false;
-  if (maxPerDay > 0) {
-    const activeCount = await countActiveLeadsForDate(workspace.email, tokens, input.eventDate);
-    if (activeCount >= maxPerDay) {
-      const waitlistEnabled = String(workspace.config.bookingWaitlistEnabled || "No").toLowerCase() === "yes";
-      if (!waitlistEnabled) {
-        throw new Error("That date is fully booked. Please choose another.");
-      }
-      waitlisted = true;
-    }
-  }
-
   const inboundMessage = buildInboundMessage(input);
 
-  const result = await createLeadForWorkspace(workspace.email, tokens, {
-    source: waitlisted ? "Waitlist" : "Booking Page",
-    clientName: input.clientName,
-    clientWhatsApp: input.clientWhatsApp,
-    clientInstagram: input.clientInstagram,
-    eventType: input.eventType,
-    eventDate: input.eventDate,
-    eventTime: input.eventTime,
-    locationText: input.locationText,
-    inboundMessage,
+  // Serialize the capacity check + lead creation per (workspace, date) so two
+  // simultaneous requests for the same fully-booked date can't both slip past
+  // the max-per-day cap. The lock is a no-op in single-instance/file mode.
+  const lockKey = lockKeyFromString(`book:${workspace.workspaceId}:${input.eventDate}`);
+  const { waitlisted, result } = await withSerializedLock(lockKey, async () => {
+    let waitlisted = false;
+    if (maxPerDay > 0) {
+      const activeCount = await countActiveLeadsForDate(workspace.email, tokens, input.eventDate);
+      if (activeCount >= maxPerDay) {
+        const waitlistEnabled = String(workspace.config.bookingWaitlistEnabled || "No").toLowerCase() === "yes";
+        if (!waitlistEnabled) {
+          throw new Error("That date is fully booked. Please choose another.");
+        }
+        waitlisted = true;
+      }
+    }
+
+    const result = await createLeadForWorkspace(workspace.email, tokens, {
+      source: waitlisted ? "Waitlist" : "Booking Page",
+      clientName: input.clientName,
+      clientWhatsApp: input.clientWhatsApp,
+      clientInstagram: input.clientInstagram,
+      eventType: input.eventType,
+      eventDate: input.eventDate,
+      eventTime: input.eventTime,
+      locationText: input.locationText,
+      inboundMessage,
+    });
+    return { waitlisted, result };
   });
 
   await logInteractionForWorkspace(workspace.email, tokens, {
@@ -373,7 +377,10 @@ export async function getPublicPaymentDetails(
   if (!eligibleStatuses.includes(lead.status)) return null;
 
   const { config } = workspace;
-  const advanceAmount = Math.round(
+  // Use the SAME rounding the booking confirmation uses (roundToPremiumNumber),
+  // otherwise the advance shown on the pay page would differ from the amount
+  // stored on the booking and printed on the invoice.
+  const advanceAmount = roundToPremiumNumber(
     (lead.finalApprovedPrice * (Number(config.advancePercentage) || 30)) / 100,
   );
   const balanceDue = Math.max(0, lead.finalApprovedPrice - advanceAmount);

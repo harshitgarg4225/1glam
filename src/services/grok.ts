@@ -1,4 +1,5 @@
 import { appConfig } from "../config.js";
+import { fetchWithTimeout } from "./http.js";
 
 export type GrokLeadIntelligence = {
   profileTier: "Low" | "Mid" | "High";
@@ -40,7 +41,7 @@ export async function enrichLeadWithGrok(input: {
 
   const userPrompt = JSON.stringify(input, null, 2);
 
-  const response = await fetch("https://api.x.ai/v1/responses", {
+  const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -99,15 +100,29 @@ export async function generateConversationReply(input: {
   holdExpiresAt?: string;
   latestMessage: string;
   memorySummary?: string;
+  language?: string;
+  signOff?: string;
+  toneProfile?: string;
 }): Promise<GrokConversationReply> {
   if (!appConfig.xaiApiKey) {
     return fallbackConversationReply(input);
   }
 
+  const voiceLines = [
+    input.language ? `Write in this language/style: ${input.language}.` : "",
+    input.signOff ? `End with this sign-off when natural: "${input.signOff}".` : "",
+    input.toneProfile
+      ? `Match the owner's personal writing voice, described as: ${input.toneProfile}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   const systemPrompt =
-    "You are a luxury makeup artist booking conversation agent for an Indian beauty business. " +
+    "You are a makeup artist booking conversation agent for an Indian beauty business. " +
     "Return strict JSON only with keys: reply, ownerSummary, memorySummary, openQuestions. " +
     "reply should be warm, polished, concise, and client-facing. " +
+    (voiceLines ? voiceLines + " " : "") +
     "ownerSummary should be brief internal context. " +
     "memorySummary should be a compact rolling summary for future turns. " +
     "openQuestions must be an array of concise strings for missing information. " +
@@ -116,7 +131,7 @@ export async function generateConversationReply(input: {
     "If an invoiceUrl exists for a confirmed booking, you may guide the client to payment. " +
     "If a contractUrl exists, you may guide the client to sign it.";
 
-  const response = await fetch("https://api.x.ai/v1/responses", {
+  const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -149,6 +164,64 @@ export async function generateConversationReply(input: {
       ? parsed.openQuestions.map((value) => String(value).trim()).filter(Boolean)
       : [],
   };
+}
+
+// Learns the owner's writing voice from a set of sample messages they selected
+// (e.g. 10 past replies to clients) and distils it into a short, reusable style
+// guide that gets injected into every future conversation reply. Returns a
+// compact descriptor, never throws: falls back to a neutral guide if AI is
+// unavailable or no usable samples are given.
+export async function deriveToneProfile(input: {
+  samples: string[];
+  language?: string;
+  signOff?: string;
+}): Promise<string> {
+  const cleanSamples = input.samples.map((s) => s.trim()).filter(Boolean).slice(0, 20);
+  if (!cleanSamples.length) return "";
+
+  if (!appConfig.xaiApiKey) {
+    // Heuristic fallback so the feature still does something useful offline.
+    const parts = [
+      input.language ? `Writes in ${input.language}.` : "",
+      "Warm, personal and concise, mirroring the owner's sample messages.",
+      input.signOff ? `Often signs off with "${input.signOff}".` : "",
+    ].filter(Boolean);
+    return parts.join(" ");
+  }
+
+  const systemPrompt =
+    "You analyse a person's past chat messages and write a SHORT style guide (3-5 sentences, max ~80 words) " +
+    "that another writer could follow to imitate their voice. Describe tone, formality, warmth, emoji use, " +
+    "sentence length, language/Hinglish mix, and any signature phrases or sign-offs. " +
+    "Output plain text only — no preamble, no JSON, no bullet points.";
+
+  try {
+    const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${appConfig.xaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: appConfig.xaiModel,
+        input: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content:
+              (input.language ? `Preferred language: ${input.language}\n` : "") +
+              (input.signOff ? `Preferred sign-off: ${input.signOff}\n` : "") +
+              `Here are the sample messages:\n\n${cleanSamples.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+          },
+        ],
+      }),
+    });
+    if (!response.ok) return "";
+    const payload = (await response.json()) as { output_text?: string };
+    return (payload.output_text ?? "").trim();
+  } catch {
+    return "";
+  }
 }
 
 export type GrokReviewReplies = {
@@ -184,7 +257,7 @@ export async function generateReviewReplies(input: {
     "Match the requested tone. End in the brand's voice; use the sign-off only if it fits naturally.";
 
   try {
-    const response = await fetch("https://api.x.ai/v1/responses", {
+    const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -319,7 +392,7 @@ function fallbackConversationReply(input: {
     ? ` We can tentatively hold the date until ${formatHoldExpiry(input.holdExpiresAt)}.`
     : "";
 
-  let reply = greeting;
+  let reply: string;
   if (missing.length) {
     reply = `${greeting} Could you please share your ${missing.join(
       " and ",
