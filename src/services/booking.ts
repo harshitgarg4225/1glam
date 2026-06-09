@@ -57,6 +57,8 @@ export type LeadRecord = {
   paymentStatus: string;
   quoteUrl: string;
   quoteGeneratedAt: string;
+  quoteVoidedAt: string;
+  quoteAdjustments: string;
 };
 
 export type BookingRecord = {
@@ -83,6 +85,10 @@ export type BookingRecord = {
   contractSentAt: string;
   invoiceGeneratedAt: string;
   remindersSent: string;
+  invoiceVoidedAt: string;
+  contractVoidedAt: string;
+  invoiceAdjustments: string;
+  contractAdjustments: string;
 };
 
 export type DashboardData = {
@@ -187,6 +193,8 @@ export async function createLeadForWorkspace(
     paymentStatus: "Not Started",
     quoteUrl: "",
     quoteGeneratedAt: "",
+    quoteVoidedAt: "",
+    quoteAdjustments: "",
   };
 
   await sheets.spreadsheets.values.append({
@@ -346,6 +354,10 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     contractSentAt: "",
     invoiceGeneratedAt: "",
     remindersSent: "",
+    invoiceVoidedAt: "",
+    contractVoidedAt: "",
+    invoiceAdjustments: "",
+    contractAdjustments: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -1046,6 +1058,8 @@ function leadToRow(lead: LeadRecord) {
     lead.paymentStatus,
     lead.quoteUrl,
     lead.quoteGeneratedAt,
+    lead.quoteVoidedAt,
+    lead.quoteAdjustments,
   ];
 }
 
@@ -1086,6 +1100,8 @@ function rowToLead(row: string[]): LeadRecord {
     paymentStatus: row[32] ?? "Not Started",
     quoteUrl: row[33] ?? "",
     quoteGeneratedAt: row[34] ?? "",
+    quoteVoidedAt: row[35] ?? "",
+    quoteAdjustments: row[36] ?? "",
   };
 }
 
@@ -1114,6 +1130,10 @@ function bookingToRow(booking: BookingRecord) {
     booking.contractSentAt,
     booking.invoiceGeneratedAt,
     booking.remindersSent,
+    booking.invoiceVoidedAt,
+    booking.contractVoidedAt,
+    booking.invoiceAdjustments,
+    booking.contractAdjustments,
   ];
 }
 
@@ -1142,6 +1162,10 @@ function rowToBooking(row: string[]): BookingRecord {
     contractSentAt: row[20] ?? "",
     invoiceGeneratedAt: row[21] ?? "",
     remindersSent: row[22] ?? "",
+    invoiceVoidedAt: row[23] ?? "",
+    contractVoidedAt: row[24] ?? "",
+    invoiceAdjustments: row[25] ?? "",
+    contractAdjustments: row[26] ?? "",
   };
 }
 

@@ -7,6 +7,7 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-
 
 const { isPublicHttpUrl } = await import("../src/services/http.ts");
 const { roundToPremiumNumber } = await import("../src/services/booking.ts");
+const { parseDocumentAdjustments } = await import("../src/services/documents.ts");
 
 // --- SSRF guard (isPublicHttpUrl) ---------------------------------------------
 
@@ -60,4 +61,33 @@ test("roundToPremiumNumber guards against NaN / non-finite input", () => {
   const price = 50000;
   const pct = undefined as unknown as number;
   assert.equal(roundToPremiumNumber((price * pct) / 100), 0);
+});
+
+// --- Document edit adjustments parser (parseDocumentAdjustments) --------------
+
+test("parseDocumentAdjustments returns empty object for blank/invalid input", () => {
+  assert.deepEqual(parseDocumentAdjustments(""), {});
+  assert.deepEqual(parseDocumentAdjustments(undefined), {});
+  assert.deepEqual(parseDocumentAdjustments("not json"), {});
+});
+
+test("parseDocumentAdjustments keeps a valid amount override and drops bad ones", () => {
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ amountOverride: 12000 })).amountOverride, 12000);
+  // Zero / negative / non-numeric overrides are ignored (fall back to auto price).
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ amountOverride: 0 })).amountOverride, undefined);
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ amountOverride: -5 })).amountOverride, undefined);
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ amountOverride: "abc" })).amountOverride, undefined);
+});
+
+test("parseDocumentAdjustments filters out line items missing a label or amount", () => {
+  const parsed = parseDocumentAdjustments(
+    JSON.stringify({
+      lineItems: [
+        { label: "Trial session", amount: 2000 },
+        { label: "", amount: 500 },
+        { label: "No price", amount: 0 },
+      ],
+    }),
+  );
+  assert.deepEqual(parsed.lineItems, [{ label: "Trial session", amount: 2000 }]);
 });
