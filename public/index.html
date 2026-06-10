@@ -3393,6 +3393,71 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         delete leadDrawer.dataset.leadId;
       }
 
+      // ─── Itemized order editor (in the lead drawer) ───
+      function parseLeadOrderItems(lead) {
+        try { const a = JSON.parse(lead.orderItems || "[]"); return Array.isArray(a) ? a : []; }
+        catch { return []; }
+      }
+      function orderRowHtml(it) {
+        it = it || {};
+        return `<div class="order-row" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+          <input data-oi-label type="text" placeholder="e.g. Bridal makeup" value="${escapeHtml(it.label || "")}" style="flex:2;min-width:0;" />
+          <input data-oi-qty type="number" min="0" step="1" placeholder="Qty" value="${it.quantity != null ? Number(it.quantity) : ""}" style="flex:0 0 52px;text-align:center;" />
+          <input data-oi-price type="number" min="0" step="1" placeholder="Price" value="${it.unitPrice != null ? Number(it.unitPrice) : ""}" style="flex:1;min-width:0;" />
+          <span data-oi-total style="flex:0 0 72px;text-align:right;font-weight:600;font-size:13px;">₹0</span>
+          <button type="button" class="button tiny secondary" data-oi-remove aria-label="Remove">×</button>
+        </div>`;
+      }
+      function orderEditorHtml(lead) {
+        const items = parseLeadOrderItems(lead);
+        const rows = (items.length ? items : [{}]).map(orderRowHtml).join("");
+        return `<div class="drawer-section">
+          <div class="drawer-section-title">Order details</div>
+          <div style="display:flex;gap:6px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
+            <span style="flex:2;">Line item</span><span style="flex:0 0 52px;text-align:center;">Qty</span><span style="flex:1;">Price</span><span style="flex:0 0 72px;text-align:right;">Total</span><span style="flex:0 0 26px;"></span>
+          </div>
+          <div data-order-grid>${rows}</div>
+          <button type="button" class="button tiny secondary" data-oi-add>+ Add line item</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
+            <strong>Order total</strong><strong data-order-total style="font-size:17px;color:var(--accent);">₹0</strong>
+          </div>
+          <button class="button small" type="button" data-order-save style="width:100%;margin-top:10px;">Save order &amp; price</button>
+          <p class="muted" style="font-size:12px;margin:8px 0 0;">This sets the quoted price and flows into the quote, invoice and contract.</p>
+        </div>`;
+      }
+      function computeOrderTotals() {
+        let grand = 0;
+        leadDrawerBody.querySelectorAll(".order-row").forEach((row) => {
+          const qty = Number(row.querySelector("[data-oi-qty]").value) || 0;
+          const price = Number(row.querySelector("[data-oi-price]").value) || 0;
+          const total = qty * price;
+          grand += total;
+          row.querySelector("[data-oi-total]").textContent = formatMoney(total);
+        });
+        const g = leadDrawerBody.querySelector("[data-order-total]");
+        if (g) g.textContent = formatMoney(grand);
+      }
+      async function saveOrder() {
+        const leadId = leadDrawer.dataset.leadId;
+        if (!leadId) return;
+        const items = [...leadDrawerBody.querySelectorAll(".order-row")].map((row) => ({
+          label: row.querySelector("[data-oi-label]").value.trim(),
+          quantity: Number(row.querySelector("[data-oi-qty]").value) || 0,
+          unitPrice: Number(row.querySelector("[data-oi-price]").value) || 0,
+        })).filter((it) => it.label && it.quantity > 0);
+        const saveBtn = leadDrawerBody.querySelector("[data-order-save]");
+        setLoading(saveBtn, "Saving…");
+        try {
+          const resp = await postJson(`/api/leads/${encodeURIComponent(leadId)}/order`, { items });
+          toast("Order saved.", "success");
+          if (resp && resp.lead) renderLeadDrawer(resp.lead);
+          refreshSession();
+        } catch (err) {
+          toast(err.message || "Couldn't save the order.", "error");
+          clearLoading(saveBtn, "Save order & price");
+        }
+      }
+
       function renderLeadDrawer(lead) {
         document.getElementById("drawer-client-name").textContent = lead.clientName || "Client details";
 
@@ -3428,13 +3493,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             ${lead.clientTags ? `<div class="drawer-row"><span class="drawer-row-label">Notes / tags</span><span class="drawer-row-value">${escapeHtml(lead.clientTags)}</span></div>` : ""}
           </div>
           ${lead.aiInsight ? `<div class="drawer-section"><div class="drawer-section-title">AI insight</div><div class="drawer-insight">${escapeHtml(lead.aiInsight)}</div></div>` : ""}
-          <div class="drawer-section">
-            <div class="drawer-section-title">Adjust price</div>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <input data-drawer-edit-price type="number" value="${lead.finalApprovedPrice || lead.initialAiPrice || ""}" style="flex:1;" placeholder="Enter amount" />
-              <button class="button small" data-drawer-action="edit" data-drawer-lead-id="${lead.leadId}">Update price</button>
-            </div>
-          </div>
+          ${orderEditorHtml(lead)}
           <div class="drawer-section">
             <div class="drawer-section-title">Send a message</div>
             <div style="display:flex;gap:8px;align-items:center;">
@@ -3454,7 +3513,28 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <button class="button secondary small" data-drawer-action="send-quote" data-drawer-lead-id="${lead.leadId}">Send quote</button>
             ${lead.status !== "Lost" && lead.status !== "Completed" ? `<button class="button secondary small danger" data-drawer-action="no" data-drawer-lead-id="${lead.leadId}">Decline</button>` : ""}
           </div>`;
+
+        computeOrderTotals();
       }
+
+      // Order editor interactions (delegated on the stable drawer body element).
+      leadDrawerBody.addEventListener("input", (e) => {
+        if (e.target.matches("[data-oi-qty], [data-oi-price]")) computeOrderTotals();
+      });
+      leadDrawerBody.addEventListener("click", (e) => {
+        if (e.target.closest("[data-oi-add]")) {
+          e.preventDefault();
+          leadDrawerBody.querySelector("[data-order-grid]").insertAdjacentHTML("beforeend", orderRowHtml());
+          computeOrderTotals();
+        } else if (e.target.closest("[data-oi-remove]")) {
+          e.preventDefault();
+          e.target.closest(".order-row").remove();
+          computeOrderTotals();
+        } else if (e.target.closest("[data-order-save]")) {
+          e.preventDefault();
+          saveOrder();
+        }
+      });
 
       document.getElementById("lead-drawer-close").addEventListener("click", closeLeadDrawer);
       leadDrawerOverlay.addEventListener("click", closeLeadDrawer);
