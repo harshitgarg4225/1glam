@@ -82,6 +82,7 @@ import {
   buildInvoicePdfBytes,
   buildQuotePdfBytes,
   generateContractPdfBytes,
+  parseDocumentAdjustments,
 } from "./services/documents.js";
 import { isDocumentType, verifyDocumentToken } from "./services/document-links.js";
 import {
@@ -1354,6 +1355,10 @@ app.post("/api/leads/:leadId/send-quote", async (req, res, next) => {
       return res.status(400).json({ error: "Approve the lead before sending a quote." });
     }
 
+    if (lead.quoteVoidedAt) {
+      return res.status(400).json({ error: "This quote is voided. Clear the void or regenerate before sending." });
+    }
+
     const channelContext = resolveLeadMessagingContext(workspace, lead);
     if (!channelContext) {
       return res.status(400).json({ error: "Lead does not have a connected messaging channel." });
@@ -1474,6 +1479,10 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
+    if (booking.invoiceVoidedAt) {
+      return res.status(400).json({ error: "This invoice is voided. Clear the void or regenerate before sending." });
+    }
+
     const lead = await getLeadRecord(
       req.session.profile.email,
       req.session.googleTokens,
@@ -1566,7 +1575,10 @@ app.get("/api/bookings/:bookingId/invoice/preview", async (req, res, next) => {
     if (!workspace || !booking) {
       return res.status(404).json({ error: "Booking not found" });
     }
-    const bytes = await buildInvoicePdfBytes(workspace, booking);
+    const bytes = await buildInvoicePdfBytes(workspace, booking, {
+      adjustments: parseDocumentAdjustments(booking.invoiceAdjustments),
+      voided: Boolean(booking.invoiceVoidedAt),
+    });
     streamPdfInline(res, bytes, `invoice-${booking.bookingId}.pdf`);
   } catch (error) {
     next(error);
@@ -1595,7 +1607,10 @@ app.get("/api/bookings/:bookingId/contract/preview", async (req, res, next) => {
     if (!lead) {
       return res.status(404).json({ error: "Lead not found for booking" });
     }
-    const bytes = await generateContractPdfBytes(workspace, lead, booking);
+    const bytes = await generateContractPdfBytes(workspace, lead, booking, {
+      adjustments: parseDocumentAdjustments(booking.contractAdjustments),
+      voided: Boolean(booking.contractVoidedAt),
+    });
     streamPdfInline(res, bytes, `contract-${booking.bookingId}.pdf`);
   } catch (error) {
     next(error);
@@ -1616,8 +1631,215 @@ app.get("/api/leads/:leadId/quote/preview", async (req, res, next) => {
     if (!workspace || !lead) {
       return res.status(404).json({ error: "Lead not found" });
     }
-    const bytes = await buildQuotePdfBytes(workspace, lead);
+    const bytes = await buildQuotePdfBytes(workspace, lead, {
+      adjustments: parseDocumentAdjustments(lead.quoteAdjustments),
+      voided: Boolean(lead.quoteVoidedAt),
+    });
     streamPdfInline(res, bytes, `quote-${lead.leadId}.pdf`);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Document management: edit / void / delete + unified list ----
+// Sanitizes an owner-supplied document edit into the JSON we persist on the
+// lead/booking row. Round-trips through the same parser the renderer uses so
+// what we store is exactly what will render.
+function sanitizeAdjustmentsInput(body: unknown): string {
+  const input = (body ?? {}) as {
+    amountOverride?: unknown;
+    lineItems?: unknown;
+    note?: unknown;
+  };
+  const lineItems = Array.isArray(input.lineItems)
+    ? input.lineItems
+        .map((item) => {
+          const it = (item ?? {}) as { label?: unknown; amount?: unknown };
+          return { label: String(it.label ?? "").slice(0, 80), amount: Number(it.amount) || 0 };
+        })
+        .filter((item) => item.label && item.amount)
+        .slice(0, 20)
+    : [];
+  const amountOverrideRaw = Number(input.amountOverride);
+  const adjustments = {
+    amountOverride: Number.isFinite(amountOverrideRaw) && amountOverrideRaw > 0 ? amountOverrideRaw : undefined,
+    lineItems: lineItems.length ? lineItems : undefined,
+    note: typeof input.note === "string" && input.note.trim() ? input.note.trim().slice(0, 600) : undefined,
+  };
+  // Empty edit clears the adjustments entirely.
+  if (!adjustments.amountOverride && !adjustments.lineItems && !adjustments.note) return "";
+  return JSON.stringify(adjustments);
+}
+
+async function requireDocSession(
+  req: express.Request,
+  res: express.Response,
+): Promise<{ email: string; tokens: NonNullable<typeof req.session.googleTokens> } | null> {
+  if (!req.session.profile || !req.session.googleTokens) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  return { email: req.session.profile.email, tokens: req.session.googleTokens };
+}
+
+const DOC_ACTIONS = new Set(["edit", "void", "delete"]);
+
+// Quote: edit / void / delete (operates on the lead row)
+app.post("/api/leads/:leadId/quote/:action", async (req, res, next) => {
+  try {
+    const ctx = await requireDocSession(req, res);
+    if (!ctx) return;
+    const action = req.params.action;
+    if (!DOC_ACTIONS.has(action)) return next();
+    const adjustments = action === "edit" ? sanitizeAdjustmentsInput(req.body) : undefined;
+    const updated = await updateLeadRecord(ctx.email, ctx.tokens, req.params.leadId, (current) => {
+      if (action === "edit") return { ...current, quoteAdjustments: adjustments ?? "" };
+      if (action === "void") return { ...current, quoteVoidedAt: new Date().toISOString() };
+      // delete: clear every quote field so the public link 410s
+      return { ...current, quoteUrl: "", quoteGeneratedAt: "", quoteVoidedAt: "", quoteAdjustments: "" };
+    });
+    if (!updated) return res.status(404).json({ error: "Lead not found" });
+    res.json({ ok: true, lead: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Invoice: edit / void / delete (operates on the booking row)
+app.post("/api/bookings/:bookingId/invoice/:action", async (req, res, next) => {
+  try {
+    const ctx = await requireDocSession(req, res);
+    if (!ctx) return;
+    const action = req.params.action;
+    if (!DOC_ACTIONS.has(action)) return next();
+    const adjustments = action === "edit" ? sanitizeAdjustmentsInput(req.body) : undefined;
+    const updated = await updateBookingRecord(ctx.email, ctx.tokens, req.params.bookingId, (current) => {
+      if (action === "edit") return { ...current, invoiceAdjustments: adjustments ?? "" };
+      if (action === "void") return { ...current, invoiceVoidedAt: new Date().toISOString() };
+      return { ...current, invoiceUrl: "", invoiceGeneratedAt: "", invoiceVoidedAt: "", invoiceAdjustments: "" };
+    });
+    if (!updated) return res.status(404).json({ error: "Booking not found" });
+    res.json({ ok: true, booking: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Contract: edit / void / delete (operates on the booking row)
+app.post("/api/bookings/:bookingId/contract/:action", async (req, res, next) => {
+  try {
+    const ctx = await requireDocSession(req, res);
+    if (!ctx) return;
+    const action = req.params.action;
+    if (!DOC_ACTIONS.has(action)) return next();
+    const adjustments = action === "edit" ? sanitizeAdjustmentsInput(req.body) : undefined;
+    const updated = await updateBookingRecord(ctx.email, ctx.tokens, req.params.bookingId, (current) => {
+      if (action === "edit") return { ...current, contractAdjustments: adjustments ?? "" };
+      if (action === "void") return { ...current, contractVoidedAt: new Date().toISOString(), contractStatus: "Voided" };
+      return {
+        ...current,
+        contractUrl: "",
+        contractSentAt: "",
+        contractStatus: "Draft",
+        contractVoidedAt: "",
+        contractAdjustments: "",
+      };
+    });
+    if (!updated) return res.status(404).json({ error: "Booking not found" });
+    res.json({ ok: true, booking: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Unified document list across all leads (quotes) and bookings (invoices,
+// contracts). One row per issued document, with derived status for the table.
+app.get("/api/documents", async (req, res, next) => {
+  try {
+    const ctx = await requireDocSession(req, res);
+    if (!ctx) return;
+    const { leads, bookings } = await getDashboardData(ctx.email, ctx.tokens);
+
+    type DocRow = {
+      kind: "quote" | "invoice" | "contract";
+      recordId: string;
+      leadId: string;
+      number: string;
+      client: string;
+      eventType: string;
+      eventDate: string;
+      amount: number;
+      status: string;
+      generatedAt: string;
+      url: string;
+      edited: boolean;
+      payable: boolean;
+    };
+    const docs: DocRow[] = [];
+
+    for (const lead of leads) {
+      if (!lead.quoteUrl && !lead.quoteGeneratedAt) continue;
+      const voided = Boolean(lead.quoteVoidedAt);
+      const sent = lead.status !== "New" && Boolean(lead.lastContactedAt);
+      docs.push({
+        kind: "quote",
+        recordId: lead.leadId,
+        leadId: lead.leadId,
+        number: `Q-${lead.leadId}`,
+        client: lead.clientName,
+        eventType: lead.eventType,
+        eventDate: lead.eventDate,
+        amount: lead.finalApprovedPrice || lead.initialAiPrice,
+        status: voided ? "Voided" : sent ? "Sent" : "Draft",
+        generatedAt: lead.quoteGeneratedAt,
+        url: lead.quoteUrl,
+        edited: Boolean(lead.quoteAdjustments),
+        payable: false,
+      });
+    }
+
+    for (const booking of bookings) {
+      if (booking.invoiceUrl || booking.invoiceGeneratedAt) {
+        const voided = Boolean(booking.invoiceVoidedAt);
+        const paid = booking.paymentStatus === "Paid in Full";
+        docs.push({
+          kind: "invoice",
+          recordId: booking.bookingId,
+          leadId: booking.leadId,
+          number: `INV-${booking.bookingId}`,
+          client: booking.clientName,
+          eventType: booking.eventType,
+          eventDate: booking.eventDate,
+          amount: booking.finalPrice,
+          status: voided ? "Voided" : paid ? "Paid" : booking.paymentStatus || "Issued",
+          generatedAt: booking.invoiceGeneratedAt,
+          url: booking.invoiceUrl,
+          edited: Boolean(booking.invoiceAdjustments),
+          payable: !voided && !paid,
+        });
+      }
+      if (booking.contractUrl || booking.contractSentAt) {
+        const voided = Boolean(booking.contractVoidedAt);
+        docs.push({
+          kind: "contract",
+          recordId: booking.bookingId,
+          leadId: booking.leadId,
+          number: `CTR-${booking.bookingId}`,
+          client: booking.clientName,
+          eventType: booking.eventType,
+          eventDate: booking.eventDate,
+          amount: booking.finalPrice,
+          status: voided ? "Voided" : booking.contractStatus || "Draft",
+          generatedAt: booking.contractSentAt,
+          url: booking.contractUrl,
+          edited: Boolean(booking.contractAdjustments),
+          payable: false,
+        });
+      }
+    }
+
+    docs.sort((a, b) => (b.generatedAt || "").localeCompare(a.generatedAt || ""));
+    res.json({ documents: docs });
   } catch (error) {
     next(error);
   }
@@ -1646,7 +1868,12 @@ app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
     if (type === "quote") {
       const lead = await getLeadRecord(workspace.email, workspace.googleTokens, recordId);
       if (!lead) return res.status(404).send("Document not found.");
-      const bytes = await buildQuotePdfBytes(workspace, lead);
+      // A deleted document has its URL field cleared — revoke the public link.
+      if (!lead.quoteUrl) return res.status(410).send("This document is no longer available.");
+      const bytes = await buildQuotePdfBytes(workspace, lead, {
+        adjustments: parseDocumentAdjustments(lead.quoteAdjustments),
+        voided: Boolean(lead.quoteVoidedAt),
+      });
       return streamPdfInline(res, bytes, `quote-${recordId}.pdf`);
     }
 
@@ -1654,14 +1881,22 @@ app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
     if (!booking) return res.status(404).send("Document not found.");
 
     if (type === "invoice") {
-      const bytes = await buildInvoicePdfBytes(workspace, booking);
+      if (!booking.invoiceUrl) return res.status(410).send("This document is no longer available.");
+      const bytes = await buildInvoicePdfBytes(workspace, booking, {
+        adjustments: parseDocumentAdjustments(booking.invoiceAdjustments),
+        voided: Boolean(booking.invoiceVoidedAt),
+      });
       return streamPdfInline(res, bytes, `invoice-${recordId}.pdf`);
     }
 
     // contract
     const lead = await getLeadRecord(workspace.email, workspace.googleTokens, booking.leadId);
     if (!lead) return res.status(404).send("Document not found.");
-    const bytes = await generateContractPdfBytes(workspace, lead, booking);
+    if (!booking.contractUrl) return res.status(410).send("This document is no longer available.");
+    const bytes = await generateContractPdfBytes(workspace, lead, booking, {
+      adjustments: parseDocumentAdjustments(booking.contractAdjustments),
+      voided: Boolean(booking.contractVoidedAt),
+    });
     return streamPdfInline(res, bytes, `contract-${recordId}.pdf`);
   } catch (error) {
     next(error);
@@ -1735,6 +1970,10 @@ app.post("/api/bookings/:bookingId/send-contract", async (req, res, next) => {
     );
     if (!workspace || !booking) {
       return res.status(404).json({ error: "Booking not found" });
+    }
+
+    if (booking.contractVoidedAt) {
+      return res.status(400).json({ error: "This contract is voided. Clear the void or regenerate before sending." });
     }
 
     const lead = await getLeadRecord(

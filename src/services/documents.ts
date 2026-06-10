@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont, type PDFPage } from "pdf-lib";
 import { fetchWithTimeout, isPublicHttpUrl } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
@@ -13,19 +13,81 @@ type UploadedDriveFile = {
   fileUrl: string;
 };
 
+// Stamps a large diagonal "VOID" across the page so a voided document is
+// unmistakable if it was already shared or downloaded before being voided.
+function drawVoidWatermark(page: PDFPage, font: PDFFont) {
+  page.drawText("VOID", {
+    x: 110,
+    y: 360,
+    size: 150,
+    font,
+    color: rgb(0.85, 0.16, 0.16),
+    rotate: degrees(30),
+    opacity: 0.16,
+  });
+}
+
 type InvoiceStage = {
   label: string;
   amount: number;
 };
+
+// Owner-supplied edits to a document, persisted as JSON on the lead/booking row.
+// Lets an owner override the headline amount, add custom line items, and attach
+// a note — without changing the underlying lead/booking pricing.
+export type DocumentAdjustments = {
+  amountOverride?: number;
+  lineItems?: { label: string; amount: number }[];
+  note?: string;
+};
+
+export type DocumentRenderOptions = {
+  voided?: boolean;
+  adjustments?: DocumentAdjustments;
+};
+
+// Tolerant parser: bad/empty JSON yields no adjustments rather than throwing.
+export function parseDocumentAdjustments(raw: string | undefined | null): DocumentAdjustments {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as DocumentAdjustments;
+    const lineItems = Array.isArray(parsed.lineItems)
+      ? parsed.lineItems
+          .map((item) => ({ label: String(item?.label ?? "").slice(0, 80), amount: Number(item?.amount) || 0 }))
+          .filter((item) => item.label && item.amount)
+      : undefined;
+    const amountOverride =
+      Number.isFinite(Number(parsed.amountOverride)) && Number(parsed.amountOverride) > 0
+        ? Number(parsed.amountOverride)
+        : undefined;
+    const note = typeof parsed.note === "string" ? parsed.note.slice(0, 600) : undefined;
+    return { amountOverride, lineItems, note };
+  } catch {
+    return {};
+  }
+}
+
+// Given an auto-derived base amount and the owner's adjustments, returns the
+// effective total and the extra pricing lines to render. amountOverride replaces
+// the base; line items are added on top.
+function applyAdjustments(base: number, adj: DocumentAdjustments | undefined) {
+  const effectiveBase = adj?.amountOverride && adj.amountOverride > 0 ? adj.amountOverride : base;
+  const items = adj?.lineItems ?? [];
+  const itemsTotal = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const extraLines: [string, string][] = items.map((item) => [item.label, inr(item.amount)]);
+  return { total: effectiveBase + itemsTotal, extraLines, note: adj?.note?.trim() || "" };
+}
 
 // Builds the quote PDF bytes in memory (no Drive upload). Used for both the
 // in-app preview and the Drive-backed shareable document.
 export async function buildQuotePdfBytes(
   workspace: WorkspaceRecord,
   lead: LeadRecord,
+  options: DocumentRenderOptions = {},
 ): Promise<Uint8Array> {
   const quoteNumber = `Q-${lead.leadId}`;
-  const quotedAmount = lead.finalApprovedPrice || lead.initialAiPrice;
+  const autoQuoted = lead.finalApprovedPrice || lead.initialAiPrice;
+  const { total: quotedAmount, extraLines, note } = applyAdjustments(autoQuoted, options.adjustments);
   const advanceAmount = premiumRound(
     (quotedAmount * workspace.config.advancePercentage) / 100,
   );
@@ -64,6 +126,7 @@ export async function buildQuotePdfBytes(
     heading: "Quote Summary",
     lines: [
       ...gstLines(quotedAmount, workspace.config.gstPercentage),
+      ...extraLines,
       ["Quoted Amount", inr(quotedAmount)],
       ["Advance To Confirm", inr(advanceAmount)],
       ["Hold Expires", lead.holdExpiresAt ? formatDateTime(lead.holdExpiresAt) : "On request"],
@@ -72,6 +135,7 @@ export async function buildQuotePdfBytes(
   }, bold, regular, theme);
 
   const quoteParts = [
+    note,
     workspace.config.quoteIntro,
     workspace.config.paymentTerms,
     workspace.config.cancellationPolicy,
@@ -83,6 +147,7 @@ export async function buildQuotePdfBytes(
     { x: 56, y: y - 30, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
   );
 
+  if (options.voided) drawVoidWatermark(page, bold);
   drawFooter(page, workspace, regular, theme);
   return pdf.save();
 }
@@ -108,9 +173,13 @@ export async function generateQuoteDocument(
 export async function buildInvoicePdfBytes(
   workspace: WorkspaceRecord,
   booking: BookingRecord,
+  options: DocumentRenderOptions = {},
 ): Promise<Uint8Array> {
   const invoiceNumber = `INV-${booking.bookingId}`;
-  const stage = resolveInvoiceStage(booking);
+  const baseStage = resolveInvoiceStage(booking);
+  const adjusted = applyAdjustments(baseStage.amount, options.adjustments);
+  const stage: InvoiceStage = { label: baseStage.label, amount: adjusted.total };
+  const { extraLines, note } = adjusted;
   const theme = getDocumentTheme(workspace.config.documentTemplate);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
@@ -145,6 +214,7 @@ export async function buildInvoicePdfBytes(
     heading: `${stage.label} Invoice`,
     lines: [
       ...gstLines(stage.amount, workspace.config.gstPercentage),
+      ...extraLines,
       ["Invoice Amount", inr(stage.amount)],
       ["Total Booking Value", inr(booking.finalPrice)],
       ["Advance", inr(booking.advanceAmount)],
@@ -175,18 +245,19 @@ export async function buildInvoicePdfBytes(
       );
       drawParagraph(
         page,
-        workspace.config.paymentTerms,
+        [note, workspace.config.paymentTerms].filter(Boolean).join("\n\n"),
         { x: 220, y: y - 100, size: 11, font: regular, color: theme.paragraph, maxWidth: 300 },
       );
     }
   } else {
     drawParagraph(
       page,
-      workspace.config.paymentTerms,
+      [note, workspace.config.paymentTerms].filter(Boolean).join("\n\n"),
       { x: 56, y: y - 40, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
     );
   }
 
+  if (options.voided) drawVoidWatermark(page, bold);
   drawFooter(page, workspace, regular, theme);
   return pdf.save();
 }
@@ -209,8 +280,10 @@ export async function generateContractPdfBytes(
   workspace: WorkspaceRecord,
   lead: LeadRecord,
   booking: BookingRecord,
+  options: DocumentRenderOptions = {},
 ) {
   const contractNumber = `CTR-${booking.bookingId}`;
+  const adjusted = applyAdjustments(booking.finalPrice, options.adjustments);
   const theme = getDocumentTheme(workspace.config.documentTemplate);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
@@ -246,7 +319,8 @@ export async function generateContractPdfBytes(
   y = drawPricingBlock(page, {
     heading: "Commercial Terms",
     lines: [
-      ["Booking Value", inr(booking.finalPrice)],
+      ["Booking Value", inr(adjusted.total)],
+      ...adjusted.extraLines,
       ["Advance", inr(booking.advanceAmount)],
       ["Balance", inr(booking.balanceDue)],
       ["Payment Terms", workspace.config.advancePercentage ? `${workspace.config.advancePercentage}% advance` : "As agreed"],
@@ -255,8 +329,9 @@ export async function generateContractPdfBytes(
   }, bold, regular, theme);
 
   const contractBody = [
+    adjusted.note,
     workspace.config.contractTerms ||
-      `${workspace.config.businessName || workspace.config.ownerName} agrees to provide professional makeup services for the booking described above.`,
+      `${workspace.config.businessName || workspace.config.ownerName} agrees to provide professional services for the booking described above.`,
     workspace.config.paymentTerms,
     workspace.config.cancellationPolicy,
     "By signing this agreement, the client confirms the booking details and accepts the terms above.",
@@ -268,6 +343,7 @@ export async function generateContractPdfBytes(
     { x: 56, y: y - 32, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
   );
 
+  if (options.voided) drawVoidWatermark(page, bold);
   drawFooter(page, workspace, regular, theme);
   return pdf.save();
 }

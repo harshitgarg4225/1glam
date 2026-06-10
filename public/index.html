@@ -684,6 +684,7 @@
         <button class="tab-button active" type="button" data-tab="dashboard">Today</button>
         <button class="tab-button" type="button" data-tab="leads">Requests</button>
         <button class="tab-button" type="button" data-tab="bookings">Bookings</button>
+        <button class="tab-button" type="button" data-tab="documents">Documents</button>
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
         <button class="tab-button" type="button" data-tab="conversations">Messages</button>
         <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
@@ -1545,6 +1546,44 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         </form>
       </section>
 
+      <!-- Documents: unified list of every quote, invoice & contract -->
+      <section class="tab-panel" data-panel="documents">
+        <div class="panel section">
+          <div class="kicker">Paperwork</div>
+          <h2>Documents</h2>
+          <p class="muted" style="margin:0 0 16px;font-size:14px;">
+            Every quote, invoice and contract in one place. Preview, edit, send, void or delete — and move each client from quote to paid without leaving this screen.
+          </p>
+          <div class="filter-bar">
+            <input type="search" id="doc-search" class="grow" placeholder="Search client, number…" />
+            <select id="doc-filter-type">
+              <option value="">All types</option>
+              <option value="quote">Quotes</option>
+              <option value="invoice">Invoices</option>
+              <option value="contract">Contracts</option>
+            </select>
+            <select id="doc-filter-status">
+              <option value="">All statuses</option>
+              <option value="Draft">Draft</option>
+              <option value="Sent">Sent</option>
+              <option value="Signed">Signed</option>
+              <option value="Paid">Paid</option>
+              <option value="Voided">Voided</option>
+            </select>
+            <button class="button small secondary" type="button" id="doc-refresh">Refresh</button>
+            <span class="muted" id="doc-count"></span>
+          </div>
+          <div class="table-wrap cards-on-mobile">
+            <table>
+              <thead>
+                <tr><th>Document</th><th>Client</th><th>Event</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+              </thead>
+              <tbody id="documents-body"><tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       </div><!-- /tab-panels -->
     </main>
     <div class="toast-shelf" id="toast-shelf"></div>
@@ -1558,6 +1597,36 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         </div>
         <p class="muted" style="font-size:13px;margin:0 0 14px;">Tap a specialist to open WhatsApp with their booking brief ready to send — straight from your number.</p>
         <div id="notify-team-list"></div>
+      </div>
+    </div>
+
+    <!-- Document edit modal: override amount, add line items, attach a note -->
+    <div class="modal-overlay" id="doc-edit-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 style="margin:0;" id="doc-edit-title">Edit document</h3>
+          <button class="modal-close" type="button" id="doc-edit-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 14px;">Leave the amount blank to keep the auto-calculated price. Line items are added on top. Changes apply the next time the document is previewed, sent or opened.</p>
+        <form id="doc-edit-form">
+          <input type="hidden" id="doc-edit-kind" />
+          <input type="hidden" id="doc-edit-recordid" />
+          <div style="margin-bottom:12px;">
+            <label for="doc-edit-amount">Amount override (₹)</label>
+            <input type="number" id="doc-edit-amount" min="0" step="1" placeholder="Auto" />
+          </div>
+          <label>Extra line items</label>
+          <div id="doc-edit-lineitems" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
+          <button type="button" class="button tiny secondary" id="doc-edit-additem">+ Add line item</button>
+          <div style="margin:14px 0 0;">
+            <label for="doc-edit-note">Note on the document</label>
+            <textarea id="doc-edit-note" rows="2" placeholder="e.g. Includes complimentary trial session" style="width:100%;box-sizing:border-box;"></textarea>
+          </div>
+          <div class="action-row" style="margin-top:16px;">
+            <button class="button" type="submit" id="doc-edit-save">Save changes</button>
+            <button class="button secondary" type="button" id="doc-edit-clear">Clear edits</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -1646,6 +1715,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         tabMoreTrigger.classList.toggle("active", MORE_TABS.includes(name));
         tabMoreMenu.classList.remove("open");
         document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.getAttribute("data-panel") === name));
+        if (name === "documents") loadDocuments();
         if (name === "calendar") renderCalendar();
         if (name === "conversations") loadConversations();
         if (name === "team") loadTeam();
@@ -1746,6 +1816,175 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         if (["Lost"].includes(status)) return "pill danger";
         return "pill";
       }
+
+      // ─── Documents tab: unified quote / invoice / contract list ───
+      let documentsCache = [];
+      const DOC_LABELS = { quote: "Quote", invoice: "Invoice", contract: "Contract" };
+      const DOC_ICONS = { quote: "📝", invoice: "🧾", contract: "📜" };
+
+      async function loadDocuments() {
+        const body = document.getElementById("documents-body");
+        body.innerHTML = `<tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">Loading…</td></tr>`;
+        try {
+          const data = await getJson("/api/documents");
+          documentsCache = (data && data.documents) || [];
+          renderDocuments();
+        } catch (err) {
+          body.innerHTML = `<tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">Couldn't load documents. ${escapeHtml(err.message || "")}</td></tr>`;
+        }
+      }
+
+      function renderDocuments() {
+        const body = document.getElementById("documents-body");
+        const q = (document.getElementById("doc-search").value || "").toLowerCase().trim();
+        const typeF = document.getElementById("doc-filter-type").value;
+        const statusF = document.getElementById("doc-filter-status").value;
+        const rows = documentsCache.filter((d) => {
+          if (typeF && d.kind !== typeF) return false;
+          if (statusF && d.status !== statusF) return false;
+          if (q && !(`${d.number} ${d.client} ${d.eventType}`.toLowerCase().includes(q))) return false;
+          return true;
+        });
+        document.getElementById("doc-count").textContent = rows.length ? `${rows.length} document${rows.length === 1 ? "" : "s"}` : "";
+        if (!rows.length) {
+          body.innerHTML = `<tr><td colspan="6" class="muted" style="padding:32px;text-align:center;">No documents yet. Generate a quote from Requests, or an invoice/contract from Bookings.</td></tr>`;
+          return;
+        }
+        body.innerHTML = rows.map((d) => {
+          const voided = d.status === "Voided";
+          const nameCell = `<strong>${DOC_ICONS[d.kind]} ${escapeHtml(DOC_LABELS[d.kind])}</strong>${d.edited ? ` <span class="pill" style="font-size:10px;">edited</span>` : ""}<div class="muted mono" style="font-size:11px;">${escapeHtml(d.number)}</div>`;
+          const actions = [`<button class="button tiny secondary" data-doc-act="preview" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}">👁 Preview</button>`];
+          if (!voided) {
+            actions.push(`<button class="button tiny secondary" data-doc-act="send" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}">📤 Send</button>`);
+            actions.push(`<button class="button tiny secondary" data-doc-act="edit" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}">✏️ Edit</button>`);
+            if (d.payable && d.leadId) {
+              actions.push(`<button class="button tiny secondary" data-doc-act="paylink" data-lead="${escapeHtml(d.leadId)}">💳 Pay link</button>`);
+            }
+            actions.push(`<button class="button tiny secondary" data-doc-act="void" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}">⊘ Void</button>`);
+          }
+          actions.push(`<button class="button tiny secondary" data-doc-act="delete" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}" style="color:var(--danger);">🗑 Delete</button>`);
+          return `<tr style="${voided ? "opacity:0.6;" : ""}">
+            <td data-label="Document">${nameCell}</td>
+            <td data-label="Client">${escapeHtml(d.client || "—")}</td>
+            <td data-label="Event"><div>${escapeHtml(d.eventType || "—")}</div><div class="muted" style="font-size:12px;">${escapeHtml(formatDate(d.eventDate) || "")}</div></td>
+            <td data-label="Amount">${formatMoney(d.amount)}</td>
+            <td data-label="Status"><span class="${pillClass(d.status)}">${escapeHtml(d.status)}</span></td>
+            <td data-label="Actions"><div style="display:flex;gap:6px;flex-wrap:wrap;">${actions.join("")}</div></td>
+          </tr>`;
+        }).join("");
+      }
+
+      function docSendUrl(kind, id) {
+        if (kind === "quote") return `/api/leads/${encodeURIComponent(id)}/send-quote`;
+        if (kind === "invoice") return `/api/bookings/${encodeURIComponent(id)}/send-invoice`;
+        return `/api/bookings/${encodeURIComponent(id)}/send-contract`;
+      }
+      function docPreviewUrl(kind, id) {
+        if (kind === "quote") return `/api/leads/${encodeURIComponent(id)}/quote/preview`;
+        return `/api/bookings/${encodeURIComponent(id)}/${kind}/preview`;
+      }
+      function docActionUrl(kind, id, action) {
+        if (kind === "quote") return `/api/leads/${encodeURIComponent(id)}/quote/${action}`;
+        return `/api/bookings/${encodeURIComponent(id)}/${kind}/${action}`;
+      }
+
+      document.getElementById("documents-body").addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-doc-act]");
+        if (!btn) return;
+        const act = btn.getAttribute("data-doc-act");
+        const kind = btn.getAttribute("data-kind");
+        const id = btn.getAttribute("data-id");
+        if (act === "preview") { window.open(docPreviewUrl(kind, id), "_blank"); return; }
+        if (act === "paylink") {
+          const wsId = sessionState?.workspace?.workspaceId;
+          const leadId = btn.getAttribute("data-lead");
+          if (!wsId || !leadId) { toast("Pay link unavailable.", "error"); return; }
+          const payUrl = `${window.location.origin}/pay/${encodeURIComponent(wsId)}/${encodeURIComponent(leadId)}`;
+          try { await navigator.clipboard.writeText(payUrl); toast("Pay link copied — share it with your client.", "success"); }
+          catch { window.open(payUrl, "_blank"); }
+          return;
+        }
+        if (act === "edit") { openDocEdit(kind, id); return; }
+        if (act === "send") {
+          setLoading(btn, "Sending…");
+          try { await postJson(docSendUrl(kind, id), {}); toast(`${DOC_LABELS[kind]} sent.`, "success"); }
+          catch (err) { toast(err.message || "Couldn't send.", "error"); }
+          finally { clearLoading(btn, "📤 Send"); }
+          return;
+        }
+        if (act === "void") {
+          if (!confirm(`Void this ${DOC_LABELS[kind].toLowerCase()}? It stays on record with a VOID stamp but can't be sent.`)) return;
+          try { await postJson(docActionUrl(kind, id, "void"), {}); toast(`${DOC_LABELS[kind]} voided.`, "success"); await loadDocuments(); }
+          catch (err) { toast(err.message || "Couldn't void.", "error"); }
+          return;
+        }
+        if (act === "delete") {
+          if (!confirm(`Delete this ${DOC_LABELS[kind].toLowerCase()}? The shareable link will stop working. This can't be undone.`)) return;
+          try { await postJson(docActionUrl(kind, id, "delete"), {}); toast(`${DOC_LABELS[kind]} deleted.`, "success"); await loadDocuments(); }
+          catch (err) { toast(err.message || "Couldn't delete.", "error"); }
+          return;
+        }
+      });
+
+      document.getElementById("doc-search").addEventListener("input", debounce(renderDocuments, 150));
+      document.getElementById("doc-filter-type").addEventListener("change", renderDocuments);
+      document.getElementById("doc-filter-status").addEventListener("change", renderDocuments);
+      document.getElementById("doc-refresh").addEventListener("click", loadDocuments);
+
+      // ─── Document edit modal ───
+      const docEditModal = document.getElementById("doc-edit-modal");
+      function addLineItemRow(label = "", amount = "") {
+        const wrap = document.getElementById("doc-edit-lineitems");
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;gap:6px;align-items:center;";
+        row.innerHTML = `<input type="text" placeholder="Description" value="${escapeHtml(label)}" style="flex:2;" data-li-label />
+          <input type="number" placeholder="₹" value="${amount === "" ? "" : Number(amount)}" style="flex:1;" data-li-amount />
+          <button type="button" class="button tiny secondary" data-li-remove>×</button>`;
+        wrap.appendChild(row);
+      }
+      function openDocEdit(kind, id) {
+        const doc = documentsCache.find((d) => d.kind === kind && d.recordId === id);
+        document.getElementById("doc-edit-kind").value = kind;
+        document.getElementById("doc-edit-recordid").value = id;
+        document.getElementById("doc-edit-title").textContent = `Edit ${DOC_LABELS[kind].toLowerCase()}${doc ? " · " + doc.client : ""}`;
+        document.getElementById("doc-edit-amount").value = "";
+        document.getElementById("doc-edit-note").value = "";
+        document.getElementById("doc-edit-lineitems").innerHTML = "";
+        docEditModal.classList.add("open");
+      }
+      function closeDocEdit() { docEditModal.classList.remove("open"); }
+      document.getElementById("doc-edit-close").addEventListener("click", closeDocEdit);
+      docEditModal.addEventListener("click", (e) => { if (e.target === docEditModal) closeDocEdit(); });
+      document.getElementById("doc-edit-additem").addEventListener("click", () => addLineItemRow());
+      document.getElementById("doc-edit-lineitems").addEventListener("click", (e) => {
+        if (e.target.closest("[data-li-remove]")) e.target.closest("div").remove();
+      });
+      document.getElementById("doc-edit-clear").addEventListener("click", async () => {
+        const kind = document.getElementById("doc-edit-kind").value;
+        const id = document.getElementById("doc-edit-recordid").value;
+        try { await postJson(docActionUrl(kind, id, "edit"), {}); toast("Edits cleared.", "success"); closeDocEdit(); await loadDocuments(); }
+        catch (err) { toast(err.message || "Couldn't clear.", "error"); }
+      });
+      document.getElementById("doc-edit-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const kind = document.getElementById("doc-edit-kind").value;
+        const id = document.getElementById("doc-edit-recordid").value;
+        const amountRaw = document.getElementById("doc-edit-amount").value;
+        const lineItems = [...document.querySelectorAll("#doc-edit-lineitems > div")].map((row) => ({
+          label: row.querySelector("[data-li-label]").value.trim(),
+          amount: Number(row.querySelector("[data-li-amount]").value) || 0,
+        })).filter((it) => it.label && it.amount);
+        const payload = {
+          amountOverride: amountRaw ? Number(amountRaw) : undefined,
+          lineItems,
+          note: document.getElementById("doc-edit-note").value.trim() || undefined,
+        };
+        const saveBtn = document.getElementById("doc-edit-save");
+        setLoading(saveBtn, "Saving…");
+        try { await postJson(docActionUrl(kind, id, "edit"), payload); toast("Document updated.", "success"); closeDocEdit(); await loadDocuments(); }
+        catch (err) { toast(err.message || "Couldn't save.", "error"); }
+        finally { clearLoading(saveBtn, "Save changes"); }
+      });
 
       function updateStats(leads, bookings) {
         document.getElementById("stat-leads").textContent = String(leads.filter((l) => !["Lost", "Completed"].includes(l.status)).length);
