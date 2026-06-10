@@ -17,12 +17,14 @@ import { askBusinessAssistant, buildAssistantSnapshot } from "./services/assista
 import { workspaceConfigSchema } from "./schema.js";
 import {
   applyOwnerDecision,
+  cancelBooking,
   confirmLeadBooking,
   createLeadForWorkspace,
   findLatestLeadByActor,
   getBookingRecord,
   getLeadRecord,
   getDashboardData,
+  rescheduleBooking,
   updateBookingRecord,
   type BookingRecord,
   type LeadRecord,
@@ -33,11 +35,14 @@ import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
 import { closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, markWebhookEventProcessed, pingDatabase, saveWorkspace } from "./services/database.js";
 import {
+  createOrderWithKeys,
   createRazorpayOrder,
+  fetchOrderWithKeys,
   fetchRazorpayOrder,
   razorpayConfigured,
   razorpayTestMode,
   verifyCheckoutSignature,
+  verifyCheckoutSignatureWithSecret,
   verifyWebhookSignature,
 } from "./services/razorpay.js";
 import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford } from "./services/wallet.js";
@@ -444,6 +449,97 @@ app.get("/sign/:workspaceId/:bookingId", (_req, res) => {
   res.sendFile(path.join(process.cwd(), "public", "sign.html"));
 });
 
+// ─── Online advance payment (client pays into the OWNER's Razorpay account,
+// payment auto-confirmed — no screenshot, no manual marking) ───
+app.post("/api/public/:workspaceId/payment/:leadId/order", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const leadId = String(req.params.leadId ?? "");
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Payment details not found" });
+    const { razorpayKeyId, razorpayKeySecret } = workspace.config;
+    if (!razorpayKeyId || !razorpayKeySecret) {
+      return res.status(400).json({ error: "Online payment isn't enabled for this business." });
+    }
+    const details = await getPublicPaymentDetails(workspaceId, leadId);
+    if (!details) return res.status(404).json({ error: "Payment details not found" });
+    if (["Advance Paid", "Paid in Full"].includes(details.paymentStatus)) {
+      return res.status(409).json({ error: "This advance has already been paid." });
+    }
+    if (!(details.advanceAmount > 0)) {
+      return res.status(400).json({ error: "There's no advance due on this booking." });
+    }
+
+    const order = await createOrderWithKeys(
+      { keyId: razorpayKeyId, keySecret: razorpayKeySecret },
+      {
+        amountInr: details.advanceAmount,
+        receipt: leadId.slice(0, 40),
+        notes: { workspaceId, leadId, purpose: "advance" },
+      },
+    );
+    res.json({
+      ok: true,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: razorpayKeyId,
+      businessName: details.businessName,
+      clientName: details.clientName,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/public/:workspaceId/payment/:leadId/verify", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const leadId = String(req.params.leadId ?? "");
+    const orderId = typeof req.body?.orderId === "string" ? req.body.orderId : "";
+    const paymentId = typeof req.body?.paymentId === "string" ? req.body.paymentId : "";
+    const signature = typeof req.body?.signature === "string" ? req.body.signature : "";
+    if (!orderId || !paymentId || !signature) {
+      return res.status(400).json({ error: "Missing payment confirmation fields." });
+    }
+
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Payment details not found" });
+    const { razorpayKeyId, razorpayKeySecret } = workspace.config;
+    if (!razorpayKeyId || !razorpayKeySecret) {
+      return res.status(400).json({ error: "Online payment isn't enabled for this business." });
+    }
+
+    if (!verifyCheckoutSignatureWithSecret(razorpayKeySecret, { orderId, paymentId, signature })) {
+      return res.status(400).json({ error: "Payment signature didn't verify. If money was deducted it will be auto-refunded by Razorpay." });
+    }
+    // Trust the order's own notes (set server-side at creation), never the client.
+    const order = await fetchOrderWithKeys({ keyId: razorpayKeyId, keySecret: razorpayKeySecret }, orderId);
+    if (order.notes.leadId !== leadId || order.notes.workspaceId !== workspaceId || order.notes.purpose !== "advance") {
+      return res.status(400).json({ error: "Payment doesn't match this booking." });
+    }
+
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    const lead = await getLeadRecord(workspace.email, tokens, leadId);
+    if (!lead) return res.status(404).json({ error: "Booking not found" });
+    // Idempotent: a retried verify (or webhook race) never double-processes.
+    if (!["Advance Paid", "Paid in Full"].includes(lead.paymentStatus)) {
+      await updatePaymentStatus(workspace.email, tokens, leadId, "Advance Paid");
+      await logInteractionForWorkspace(workspace.email, tokens, {
+        leadId,
+        direction: "Inbound",
+        channel: "WhatsApp",
+        actor: lead.clientWhatsApp || leadId,
+        message: `Advance paid online via Razorpay (payment ${paymentId})`,
+        aiSummary: "Advance payment received and auto-confirmed via Razorpay",
+      }).catch(() => {});
+    }
+    res.json({ ok: true, paymentStatus: "Advance Paid" });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/public/contract/:workspaceId/:bookingId", async (req, res, next) => {
   try {
     const { workspaceId, bookingId } = req.params;
@@ -710,14 +806,21 @@ app.get("/auth/instagram/callback", (_req, res) => {
 function scrubWorkspaceTokens(workspace: WorkspaceRecord | null): WorkspaceRecord | null {
   if (!workspace) return null;
   const { googleTokens: _gt, ...rest } = workspace;
-  if (!rest.metaConnections) return rest as WorkspaceRecord;
-  const scrubbed: typeof rest.metaConnections = {};
-  for (const [ch, conn] of Object.entries(rest.metaConnections)) {
+  // Never ship the Razorpay key secret to the browser; the frontend only needs
+  // to know whether one is set.
+  const safeConfig = {
+    ...rest.config,
+    razorpayKeySecret: rest.config?.razorpayKeySecret ? "********" : "",
+  };
+  const base = { ...rest, config: safeConfig } as WorkspaceRecord;
+  if (!base.metaConnections) return base;
+  const scrubbed: typeof base.metaConnections = {};
+  for (const [ch, conn] of Object.entries(base.metaConnections)) {
     if (!conn) continue;
     const { accessToken: _at, pageAccessToken: _pt, ...safeConn } = conn;
     scrubbed[ch as MetaChannel] = safeConn as typeof conn;
   }
-  return { ...rest, metaConnections: scrubbed } as WorkspaceRecord;
+  return { ...base, metaConnections: scrubbed };
 }
 
 app.get("/api/session", async (req, res, next) => {
@@ -749,13 +852,19 @@ app.post("/api/workspace/config", async (req, res, next) => {
     }
 
     const parsed = workspaceConfigSchema.parse(req.body);
+    // The browser only ever sees a masked Razorpay secret — a blank or masked
+    // value on save means "keep what's stored", never "erase it".
+    if (!parsed.razorpayKeySecret || parsed.razorpayKeySecret === "********") {
+      const existing = await getWorkspaceByEmail(req.session.profile.email);
+      parsed.razorpayKeySecret = existing?.config.razorpayKeySecret || "";
+    }
     const workspace = await updateWorkspaceConfig(
       req.session.profile.email,
       parsed,
       req.session.googleTokens,
     );
 
-    res.json({ ok: true, workspace });
+    res.json({ ok: true, workspace: scrubWorkspaceTokens(workspace) });
   } catch (error) {
     next(error);
   }
@@ -1462,6 +1571,123 @@ app.post("/api/bookings/quick", async (req, res, next) => {
     }
 
     res.json({ ok: true, booking: result.booking, leadId: lead.leadId });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Move a booking to a new date/time. Calendar event, booking row, and lead row
+// all stay in lockstep.
+app.post("/api/bookings/:bookingId/reschedule", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const eventDate = typeof req.body?.eventDate === "string" ? req.body.eventDate : "";
+    const eventTime = typeof req.body?.eventTime === "string" ? req.body.eventTime : undefined;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+      return res.status(400).json({ error: "Pick the new date first." });
+    }
+    const booking = await rescheduleBooking(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      { eventDate, eventTime },
+    );
+    res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Cancel a booking: frees the calendar date, keeps the financial record.
+app.post("/api/bookings/:bookingId/cancel", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const booking = await cancelBooking(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Track expenses against a booking (travel, assistants, products) so Insights
+// can show profit, not just revenue.
+app.post("/api/bookings/:bookingId/expenses", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const raw = Array.isArray(req.body?.items) ? req.body.items : [];
+    const items = raw
+      .slice(0, 30)
+      .map((it: { label?: unknown; amount?: unknown }) => ({
+        label: String(it?.label ?? "").trim().slice(0, 80),
+        amount: Number(it?.amount) || 0,
+      }))
+      .filter((it: { label: string; amount: number }) => it.label && it.amount > 0);
+    const booking = await updateBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      (current) => ({ ...current, expenses: items.length ? JSON.stringify(items) : "" }),
+    );
+    res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// AI-drafts a warm follow-up nudge for a lead that's gone quiet, in the
+// owner's trained voice. Human-in-the-loop: the draft fills her reply box —
+// nothing is sent until she taps send.
+app.post("/api/leads/:leadId/draft-followup", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const lead = await getLeadRecord(req.session.profile.email, req.session.googleTokens, req.params.leadId);
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+    const daysQuiet = lead.lastContactedAt
+      ? Math.max(1, Math.floor((Date.now() - new Date(lead.lastContactedAt).getTime()) / 86_400_000))
+      : 3;
+    const memory = await loadConversationMemory(workspace.workspaceId, lead.leadId).catch(() => "");
+    const result = await generateConversationReply({
+      ownerName: workspace.config.ownerName,
+      brandName: workspace.config.businessName,
+      city: workspace.config.city,
+      channel: lead.source === "Instagram" ? "Instagram" : "WhatsApp",
+      clientName: lead.clientName,
+      leadStatus: lead.status,
+      eventType: lead.eventType,
+      eventDate: lead.eventDate,
+      eventTime: lead.eventTime,
+      locationText: lead.locationText,
+      currentPrice: lead.finalApprovedPrice || lead.initialAiPrice,
+      ownerDecision: lead.ownerDecision,
+      paymentStatus: lead.paymentStatus,
+      quoteUrl: lead.quoteUrl,
+      latestMessage: `(The client hasn't replied in ${daysQuiet} days. Write a short, warm follow-up nudge — no pressure, just keeping the conversation alive and offering to help with next steps.)`,
+      memorySummary: memory || undefined,
+      language: workspace.config.aiLanguage,
+      signOff: workspace.config.aiSignOff,
+      toneProfile: workspace.config.aiToneProfile,
+    });
+
+    let balanceCredits: number | null = null;
+    if (appConfig.xaiApiKey) {
+      balanceCredits = await meterUsage(req.session.profile.email, "aiReply");
+    }
+    res.json({ ok: true, reply: result.reply, balanceCredits });
   } catch (error) {
     next(error);
   }
@@ -2593,6 +2819,8 @@ app.get("/api/analytics", async (req, res, next) => {
     }
 
     const totalRevenue = bookings.reduce((s, b) => s + (Number(b.finalPrice) || 0), 0);
+    const totalExpenses = bookings.reduce((s, b) => s + sumExpenses(b.expenses), 0);
+    const totalProfit = totalRevenue - totalExpenses;
     const totalBookings = bookings.length;
     const totalLeads = leads.length;
     const conversionRate = totalLeads > 0 ? Math.round((totalBookings / totalLeads) * 100) : 0;
@@ -2600,7 +2828,7 @@ app.get("/api/analytics", async (req, res, next) => {
 
     res.json({
       ok: true,
-      summary: { totalRevenue, totalBookings, totalLeads, conversionRate, avgBookingValue },
+      summary: { totalRevenue, totalExpenses, totalProfit, totalBookings, totalLeads, conversionRate, avgBookingValue },
       months: months.map((m) => ({
         ...m,
         revenue: revenueByMonth[m.key],
@@ -3821,6 +4049,18 @@ function buildReviewRequestMessage(workspace: NonNullable<Awaited<ReturnType<typ
     .filter(Boolean)
     .join(" ")
     .trim();
+}
+
+// Tolerant expense parser: bad JSON or junk rows count as zero.
+function sumExpenses(raw: string): number {
+  if (!raw) return 0;
+  try {
+    const items = JSON.parse(raw) as Array<{ amount?: unknown }>;
+    if (!Array.isArray(items)) return 0;
+    return items.reduce((s, it) => s + (Number(it?.amount) > 0 ? Number(it.amount) : 0), 0);
+  } catch {
+    return 0;
+  }
 }
 
 // Built-in e-sign is the default; Leegality is used only when fully configured

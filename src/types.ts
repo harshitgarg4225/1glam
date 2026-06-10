@@ -72,6 +72,10 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reminderTemplateLang: string;
   reminderDaysBefore: string;
   autoPaymentReminders: string;
+  ownerAlertTemplate: string;
+  ownerAlertTemplateLang: string;
+  razorpayKeyId: string;
+  razorpayKeySecret: string;
   serviceBridalDesc: string;
   serviceEngagementDesc: string;
   serviceReceptionDesc: string;

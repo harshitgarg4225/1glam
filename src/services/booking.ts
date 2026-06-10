@@ -93,6 +93,7 @@ export type BookingRecord = {
   orderItems: string;
   contractSignedAt: string;
   contractSignerName: string;
+  expenses: string;
 };
 
 export type DashboardData = {
@@ -211,12 +212,48 @@ export async function createLeadForWorkspace(
     },
   });
 
+  // Ping the owner about client-initiated requests (booking page, DMs,
+  // webhooks) so nothing sits unseen until she opens the app. Her own manual
+  // adds don't need an alert.
+  if (input.source !== "Manual") {
+    void notifyOwnerOfNewLead(workspace, lead);
+  }
+
   return {
     lead,
     pricing,
     travel,
     aiLeadIntel,
   };
+}
+
+// Fire-and-forget WhatsApp alert to the owner's own number when a new request
+// lands. Same template-gating as every business-initiated message: silently
+// skips (and shows as "needs setup" in the automation panel) until the owner
+// alert template is configured and WhatsApp can send.
+async function notifyOwnerOfNewLead(workspace: WorkspaceRecord, lead: LeadRecord) {
+  try {
+    const templateName = String(workspace.config.ownerAlertTemplate || "").trim();
+    if (!templateName) return;
+
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    const connectionCanSend = whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    if (!connectionCanSend && !envCanSend) return;
+
+    const ownerPhone = String(workspace.config.ownerWhatsApp || "").replace(/[^\d]/g, "");
+    if (!ownerPhone) return;
+
+    await sendWhatsAppTemplate(
+      { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+      ownerPhone,
+      templateName,
+      String(workspace.config.ownerAlertTemplateLang || "en"),
+      [lead.clientName, lead.eventType, lead.eventDate],
+    );
+  } catch (error) {
+    console.error("Owner new-lead alert failed", error);
+  }
 }
 
 export async function applyOwnerDecision(
@@ -366,6 +403,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     orderItems: lead.record.orderItems || "",
     contractSignedAt: "",
     contractSignerName: "",
+    expenses: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -474,6 +512,105 @@ async function notifyTeamOfBooking(
       console.error(`Team notify send failed for ${artist.name}`, error);
     }
   }
+}
+
+// Wedding dates move constantly. Reschedule keeps the booking, the lead, and
+// the Google Calendar event in lockstep: the old event is removed and a fresh
+// one created on the new date (delete+create is simpler and as reliable as a
+// patch for all-day-style events).
+export async function rescheduleBooking(
+  email: string,
+  tokens: Credentials,
+  bookingId: string,
+  input: { eventDate: string; eventTime?: string },
+) {
+  const workspace = await getRequiredWorkspace(email);
+  const booking = await findBookingById(workspace, tokens, bookingId);
+  if (!booking) throw new Error("Booking not found");
+  if (booking.record.status === "Cancelled") throw new Error("This booking is cancelled — create a new one instead.");
+  const lead = await findLeadById(workspace, tokens, booking.record.leadId);
+
+  const eventTime = input.eventTime ?? booking.record.eventTime;
+  if (booking.record.confirmedCalendarEventId) {
+    await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, booking.record.confirmedCalendarEventId);
+  }
+  const leadForEvent: LeadRecord & { bookingId: string } = {
+    ...(lead?.record ?? leadFromBooking(booking.record)),
+    eventDate: input.eventDate,
+    eventTime,
+    bookingId,
+  };
+  const newEventId = await createConfirmedCalendarEvent(workspace, tokens, leadForEvent);
+
+  const updatedBooking: BookingRecord = {
+    ...booking.record,
+    eventDate: input.eventDate,
+    eventTime,
+    confirmedCalendarEventId: newEventId,
+  };
+  await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
+
+  if (lead) {
+    await updateLeadRow(workspace, tokens, lead.rowNumber, {
+      ...lead.record,
+      eventDate: input.eventDate,
+      eventTime,
+      confirmedCalendarEventId: newEventId,
+      lastContactedAt: new Date().toISOString(),
+    });
+  }
+  return updatedBooking;
+}
+
+// Cancel keeps the financial record (advance received stays on the row) but
+// frees the date: calendar event removed, booking marked Cancelled, lead Lost.
+export async function cancelBooking(email: string, tokens: Credentials, bookingId: string) {
+  const workspace = await getRequiredWorkspace(email);
+  const booking = await findBookingById(workspace, tokens, bookingId);
+  if (!booking) throw new Error("Booking not found");
+  if (booking.record.status === "Cancelled") return booking.record;
+
+  if (booking.record.confirmedCalendarEventId) {
+    await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, booking.record.confirmedCalendarEventId);
+  }
+
+  const updatedBooking: BookingRecord = {
+    ...booking.record,
+    status: "Cancelled",
+    confirmedCalendarEventId: "",
+  };
+  await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
+
+  const lead = await findLeadById(workspace, tokens, booking.record.leadId);
+  if (lead && lead.record.status !== "Lost") {
+    await updateLeadRow(workspace, tokens, lead.rowNumber, {
+      ...lead.record,
+      status: "Lost",
+      ownerNotes: [lead.record.ownerNotes, `Booking cancelled on ${new Date().toISOString().slice(0, 10)}`]
+        .filter(Boolean)
+        .join(" | "),
+      lastContactedAt: new Date().toISOString(),
+    });
+  }
+  return updatedBooking;
+}
+
+// Minimal lead-shaped record for the calendar event when the original lead row
+// is missing (e.g. manually deleted from the sheet).
+function leadFromBooking(booking: BookingRecord): LeadRecord {
+  return {
+    leadId: booking.leadId, createdAt: booking.bookedAt, source: "Manual",
+    clientName: booking.clientName, clientWhatsApp: booking.clientWhatsApp, clientInstagram: "",
+    eventType: booking.eventType, eventDate: booking.eventDate, eventTime: booking.eventTime,
+    locationText: booking.venue, distanceKm: 0, travelTimeMin: 0, outstationFlag: "No",
+    profileTier: "Mid", followers: 0, clientTags: "", aiInsight: "", suggestedReply: "",
+    demandCount: 0, scarcityTag: "", holdExpiresAt: "", initialAiPrice: booking.finalPrice,
+    finalApprovedPrice: booking.finalPrice, discountPercent: 0, ownerDecision: "YES",
+    ownerNotes: "", status: "Confirmed", assignedArtist: booking.assignedArtist,
+    lastContactedAt: "", tentativeCalendarEventId: "", confirmedCalendarEventId: "",
+    bookingId: booking.bookingId, paymentStatus: booking.paymentStatus, quoteUrl: "",
+    quoteGeneratedAt: "", quoteVoidedAt: "", quoteAdjustments: "", orderItems: booking.orderItems,
+  };
 }
 
 export async function updatePaymentStatus(
@@ -1147,6 +1284,7 @@ function bookingToRow(booking: BookingRecord) {
     booking.orderItems,
     booking.contractSignedAt,
     booking.contractSignerName,
+    booking.expenses,
   ];
 }
 
@@ -1182,6 +1320,7 @@ function rowToBooking(row: string[]): BookingRecord {
     orderItems: row[27] ?? "",
     contractSignedAt: row[28] ?? "",
     contractSignerName: row[29] ?? "",
+    expenses: row[30] ?? "",
   };
 }
 
