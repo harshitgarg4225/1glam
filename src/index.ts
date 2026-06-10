@@ -85,7 +85,7 @@ import {
   generateContractPdfBytes,
   parseDocumentAdjustments,
 } from "./services/documents.js";
-import { isDocumentType, verifyDocumentToken } from "./services/document-links.js";
+import { buildPublicDocumentUrl, isDocumentType, signDocumentToken, verifyDocumentToken } from "./services/document-links.js";
 import {
   checkLeegalityDocumentDetails,
   createLeegalityContract,
@@ -435,6 +435,95 @@ app.post("/api/public/:workspaceId/book", publicWriteLimiter, async (req, res, n
 
 app.get("/pay/:workspaceId/:leadId", (_req, res) => {
   res.sendFile(path.join(process.cwd(), "public", "pay.html"));
+});
+
+// Built-in contract signing page (no Leegality needed). The link carries the
+// same HMAC token as the public contract PDF, so only the client who received
+// the contract can open or sign it.
+app.get("/sign/:workspaceId/:bookingId", (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "public", "sign.html"));
+});
+
+app.get("/api/public/contract/:workspaceId/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const sig = typeof req.query.sig === "string" ? req.query.sig : "";
+    if (!verifyDocumentToken("contract", workspaceId, bookingId, sig)) {
+      return res.status(404).json({ error: "Contract not found" });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace || !workspace.googleTokens) {
+      return res.status(404).json({ error: "Contract not found" });
+    }
+    const booking = await getBookingRecord(workspace.email, workspace.googleTokens, bookingId);
+    if (!booking) return res.status(404).json({ error: "Contract not found" });
+    if (booking.contractVoidedAt) return res.status(410).json({ error: "This contract has been voided." });
+
+    res.json({
+      ok: true,
+      businessName: workspace.config.businessName || workspace.name,
+      clientName: booking.clientName,
+      eventType: booking.eventType,
+      eventDate: booking.eventDate,
+      eventTime: booking.eventTime,
+      venue: booking.venue,
+      finalPrice: booking.finalPrice,
+      advanceAmount: booking.advanceAmount,
+      signed: Boolean(booking.contractSignedAt),
+      signedAt: booking.contractSignedAt,
+      signerName: booking.contractSignerName,
+      pdfUrl: buildPublicDocumentUrl("contract", workspaceId, bookingId),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/public/contract/:workspaceId/:bookingId/sign", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const bookingId = String(req.params.bookingId ?? "");
+    const sig = typeof req.body?.sig === "string" ? req.body.sig : "";
+    const signerName = typeof req.body?.signerName === "string" ? req.body.signerName.trim().slice(0, 120) : "";
+    if (!verifyDocumentToken("contract", workspaceId, bookingId, sig)) {
+      return res.status(404).json({ error: "Contract not found" });
+    }
+    if (signerName.length < 2) {
+      return res.status(400).json({ error: "Please type your full name to sign." });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace || !workspace.googleTokens) {
+      return res.status(404).json({ error: "Contract not found" });
+    }
+    const booking = await getBookingRecord(workspace.email, workspace.googleTokens, bookingId);
+    if (!booking) return res.status(404).json({ error: "Contract not found" });
+    if (booking.contractVoidedAt) return res.status(410).json({ error: "This contract has been voided." });
+    // Idempotent: a second tap (or a re-opened page) doesn't overwrite the record.
+    if (booking.contractSignedAt) {
+      return res.json({ ok: true, alreadySigned: true, signedAt: booking.contractSignedAt, signerName: booking.contractSignerName });
+    }
+
+    const signedAt = new Date().toISOString();
+    const updated = await updateBookingRecord(workspace.email, workspace.googleTokens, bookingId, (current) => ({
+      ...current,
+      contractStatus: "Signed",
+      contractSignedAt: signedAt,
+      contractSignerName: signerName,
+    }));
+
+    await logInteractionForWorkspace(workspace.email, workspace.googleTokens, {
+      leadId: booking.leadId,
+      direction: "Inbound",
+      channel: "WhatsApp",
+      actor: booking.clientWhatsApp || bookingId,
+      message: `Contract digitally accepted by ${signerName}`,
+      aiSummary: "Client signed the booking contract via the secure signing link",
+    }).catch(() => {});
+
+    res.json({ ok: true, signedAt: updated.contractSignedAt, signerName: updated.contractSignerName });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/public/:workspaceId/payment/:leadId", async (req, res, next) => {
@@ -1893,6 +1982,58 @@ app.post("/api/bookings/:bookingId/contract/:action", async (req, res, next) => 
 
 // Unified document list across all leads (quotes) and bookings (invoices,
 // contracts). One row per issued document, with derived status for the table.
+// Sample document preview: lets the owner SEE her quote/invoice/contract design
+// (theme, logo, intro, terms, GST) with realistic dummy data — no real lead
+// needed. Used from Settings while she's tweaking the design.
+app.get("/api/documents/sample/:type", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const type = String(req.params.type ?? "");
+    if (!isDocumentType(type)) return res.status(404).json({ error: "Unknown document type" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const eventDate = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const price = Number(workspace.config.basePriceBridal) || 25000;
+    const advance = Math.round((price * (Number(workspace.config.advancePercentage) || 30)) / 100);
+    const sampleLead = {
+      leadId: "SAMPLE", createdAt: new Date().toISOString(), source: "Instagram",
+      clientName: "Priya Sharma (Sample)", clientWhatsApp: "+91 98765 43210", clientInstagram: "priya.sample",
+      eventType: "Bridal", eventDate, eventTime: "10:00", locationText: `${workspace.config.city || "Your city"}`,
+      distanceKm: 0, travelTimeMin: 0, outstationFlag: "No", profileTier: "Mid", followers: 0,
+      clientTags: "", aiInsight: "", suggestedReply: "", demandCount: 0, scarcityTag: "",
+      holdExpiresAt: "", initialAiPrice: price, finalApprovedPrice: price, discountPercent: 0,
+      ownerDecision: "YES", ownerNotes: "", status: "Confirmed", assignedArtist: workspace.config.ownerName,
+      lastContactedAt: "", tentativeCalendarEventId: "", confirmedCalendarEventId: "", bookingId: "SAMPLE-B",
+      paymentStatus: "Advance Due", quoteUrl: "sample", quoteGeneratedAt: new Date().toISOString(),
+      quoteVoidedAt: "", quoteAdjustments: "", orderItems: "",
+    } as LeadRecord;
+    const sampleBooking = {
+      bookingId: "SAMPLE-B", leadId: "SAMPLE", bookedAt: new Date().toISOString(),
+      clientName: sampleLead.clientName, clientWhatsApp: sampleLead.clientWhatsApp,
+      eventType: "Bridal", eventDate, eventTime: "10:00", venue: sampleLead.locationText,
+      assignedArtist: workspace.config.ownerName, finalPrice: price, advanceAmount: advance,
+      balanceDue: Math.max(0, price - advance), tentativeCalendarEventId: "", confirmedCalendarEventId: "",
+      contractUrl: "sample", invoiceUrl: "sample", paymentStatus: "Advance Due", status: "Confirmed",
+      contractStatus: "Draft", contractSentAt: "", invoiceGeneratedAt: new Date().toISOString(),
+      remindersSent: "", invoiceVoidedAt: "", contractVoidedAt: "", invoiceAdjustments: "",
+      contractAdjustments: "", orderItems: "", contractSignedAt: "", contractSignerName: "",
+    } as BookingRecord;
+
+    const bytes =
+      type === "quote"
+        ? await buildQuotePdfBytes(workspace, sampleLead)
+        : type === "invoice"
+          ? await buildInvoicePdfBytes(workspace, sampleBooking)
+          : await generateContractPdfBytes(workspace, sampleLead, sampleBooking);
+    return streamPdfInline(res, bytes, `sample-${type}.pdf`);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/documents", async (req, res, next) => {
   try {
     const ctx = await requireDocSession(req, res);
@@ -2035,6 +2176,8 @@ app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
     const bytes = await generateContractPdfBytes(workspace, lead, booking, {
       adjustments: parseDocumentAdjustments(booking.contractAdjustments),
       voided: Boolean(booking.contractVoidedAt),
+      signedBy: booking.contractSignerName || undefined,
+      signedAt: booking.contractSignedAt || undefined,
     });
     return streamPdfInline(res, bytes, `contract-${recordId}.pdf`);
   } catch (error) {
@@ -2067,29 +2210,48 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
       return res.status(404).json({ error: "Lead not found for booking" });
     }
 
-    const contract = await createLeegalityContract(workspace, lead, booking);
+    // Leegality is the premium e-sign path when configured; otherwise the
+    // built-in signing page makes contracts work with zero external setup.
+    if (leegalityAvailable(workspace)) {
+      const contract = await createLeegalityContract(workspace, lead, booking);
+      const updatedBooking = await updateBookingRecord(
+        req.session.profile.email,
+        req.session.googleTokens,
+        req.params.bookingId,
+        (current) => ({
+          ...current,
+          contractUrl: contract.contractUrl || current.contractUrl,
+          contractStatus: contract.contractStatus || "Sent",
+          contractSentAt: new Date().toISOString(),
+        }),
+      );
+
+      await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        direction: "Outbound",
+        channel: "Leegality",
+        actor: booking.bookingId,
+        message: `Contract create request sent to Leegality for booking ${booking.bookingId}`,
+        aiSummary: `Leegality create sent${contract.documentId ? ` (documentId ${contract.documentId})` : ""}`,
+      });
+
+      return res.json({ ok: true, booking: updatedBooking, contract });
+    }
+
+    const signingUrl = buildContractSigningUrl(workspace.workspaceId, booking.bookingId);
     const updatedBooking = await updateBookingRecord(
       req.session.profile.email,
       req.session.googleTokens,
       req.params.bookingId,
       (current) => ({
         ...current,
-        contractUrl: contract.contractUrl || current.contractUrl,
-        contractStatus: contract.contractStatus || "Sent",
-        contractSentAt: new Date().toISOString(),
+        contractUrl: current.contractUrl || signingUrl,
+        contractStatus: current.contractStatus === "Signed" ? "Signed" : "Sent",
+        contractSentAt: current.contractSentAt || new Date().toISOString(),
       }),
     );
 
-    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
-      leadId: lead.leadId,
-      direction: "Outbound",
-      channel: "Leegality",
-      actor: booking.bookingId,
-      message: `Contract create request sent to Leegality for booking ${booking.bookingId}`,
-      aiSummary: `Leegality create sent${contract.documentId ? ` (documentId ${contract.documentId})` : ""}`,
-    });
-
-    res.json({ ok: true, booking: updatedBooking, contract });
+    res.json({ ok: true, booking: updatedBooking });
   } catch (error) {
     next(error);
   }
@@ -2131,18 +2293,33 @@ app.post("/api/bookings/:bookingId/send-contract", async (req, res, next) => {
 
     let currentBooking = booking;
     if (!currentBooking.contractUrl && currentBooking.contractStatus !== "Signed") {
-      const contract = await createLeegalityContract(workspace, lead, currentBooking);
-      currentBooking = await updateBookingRecord(
-        req.session.profile.email,
-        req.session.googleTokens,
-        req.params.bookingId,
-        (existing) => ({
-          ...existing,
-          contractUrl: contract.contractUrl || existing.contractUrl,
-          contractStatus: contract.contractStatus || "Sent",
-          contractSentAt: existing.contractSentAt || new Date().toISOString(),
-        }),
-      );
+      if (leegalityAvailable(workspace)) {
+        const contract = await createLeegalityContract(workspace, lead, currentBooking);
+        currentBooking = await updateBookingRecord(
+          req.session.profile.email,
+          req.session.googleTokens,
+          req.params.bookingId,
+          (existing) => ({
+            ...existing,
+            contractUrl: contract.contractUrl || existing.contractUrl,
+            contractStatus: contract.contractStatus || "Sent",
+            contractSentAt: existing.contractSentAt || new Date().toISOString(),
+          }),
+        );
+      } else {
+        const signingUrl = buildContractSigningUrl(workspace.workspaceId, currentBooking.bookingId);
+        currentBooking = await updateBookingRecord(
+          req.session.profile.email,
+          req.session.googleTokens,
+          req.params.bookingId,
+          (existing) => ({
+            ...existing,
+            contractUrl: existing.contractUrl || signingUrl,
+            contractStatus: existing.contractStatus === "Signed" ? "Signed" : "Sent",
+            contractSentAt: existing.contractSentAt || new Date().toISOString(),
+          }),
+        );
+      }
     }
 
     const message = buildContractShareMessage(workspace, currentBooking);
@@ -2204,6 +2381,12 @@ app.post("/api/bookings/:bookingId/contract/sync", async (req, res, next) => {
     );
     if (!lead) {
       return res.status(404).json({ error: "Lead not found for booking" });
+    }
+
+    // Built-in contracts update live when the client signs — nothing to pull.
+    const syncWorkspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!syncWorkspace || !leegalityAvailable(syncWorkspace)) {
+      return res.json({ ok: true, booking });
     }
 
     const details = await checkLeegalityDocumentDetails(booking.bookingId);
@@ -3638,6 +3821,21 @@ function buildReviewRequestMessage(workspace: NonNullable<Awaited<ReturnType<typ
     .filter(Boolean)
     .join(" ")
     .trim();
+}
+
+// Built-in e-sign is the default; Leegality is used only when fully configured
+// (env keys + per-workspace profile ID).
+function leegalityAvailable(workspace: { config: { contractTemplateUrl: string } }) {
+  return Boolean(appConfig.leegalityCreateUrl && appConfig.leegalityApiKey && workspace.config.contractTemplateUrl);
+}
+
+// The signing page link a client receives. Same HMAC token as the public
+// document URL, so possession of the contract link is what authorizes signing.
+function buildContractSigningUrl(workspaceId: string, bookingId: string) {
+  const sig = signDocumentToken("contract", workspaceId, bookingId);
+  const url = new URL(`/sign/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}`, appConfig.baseUrl);
+  url.searchParams.set("sig", sig);
+  return url.toString();
 }
 
 function buildCollectionReminderMessage(

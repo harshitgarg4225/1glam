@@ -1105,6 +1105,19 @@
 
       <!-- Conversations -->
       <section class="tab-panel" data-panel="conversations">
+        <div class="panel section" id="ai-status-card" style="margin-bottom:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">🤖 Your AI assistant</div>
+              <h2 style="margin-bottom:4px;" id="ai-status-title">AI auto-reply is off</h2>
+              <p class="muted" style="margin:0;font-size:13.5px;" id="ai-status-sub">When on, the AI replies to routine client questions in your voice — it never quotes a price or confirms a booking without you.</p>
+            </div>
+            <div class="action-row" style="flex-wrap:wrap;gap:8px;">
+              <button class="button" type="button" id="ai-toggle-btn">Turn on auto-reply</button>
+              <button class="button secondary" type="button" id="ai-train-btn">Teach it your voice</button>
+            </div>
+          </div>
+        </div>
         <div class="panel section">
           <div class="kicker">Client history</div>
           <h2>Messages</h2>
@@ -1490,6 +1503,11 @@
                 </div>
                 <div><label for="reminderDaysBefore">Remind clients this many days before</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
                 <div><label for="reviewRequestDaysAfter">Ask for a review this many days after</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
+                <div>
+                  <label for="autoPaymentReminders">Auto-remind clients about payments?</label>
+                  <select id="autoPaymentReminders" name="autoPaymentReminders"><option>Yes</option><option>No</option></select>
+                  <p class="muted" style="margin:4px 0 0;font-size:12px;">Gentle nudges for unpaid advances (2, 5, 8 days after booking) and the balance (2 days before the event). Needs your payment-reminder WhatsApp template.</p>
+                </div>
               </div>
             </div>
           </details>
@@ -1553,6 +1571,12 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                 <p class="muted" style="margin:0 0 8px;font-size:13px;">Pick a style for your quotes, invoices, and contracts. It applies to every PDF you create.</p>
                 <input type="hidden" name="documentTemplate" id="documentTemplate" value="classic" />
                 <div class="template-grid" id="template-grid"></div>
+                <p class="muted" style="margin:12px 0 6px;font-size:13px;">See exactly what your clients will receive — with sample data, your logo, and your terms. <strong>Save settings first</strong> to preview unsaved changes.</p>
+                <div class="action-row" style="flex-wrap:wrap;gap:6px;">
+                  <a class="button small secondary" href="/api/documents/sample/quote" target="_blank" rel="noreferrer">👁 Preview sample quote</a>
+                  <a class="button small secondary" href="/api/documents/sample/invoice" target="_blank" rel="noreferrer">👁 Preview sample invoice</a>
+                  <a class="button small secondary" href="/api/documents/sample/contract" target="_blank" rel="noreferrer">👁 Preview sample contract</a>
+                </div>
               </div>
               <div class="section-grid" style="margin-top:20px;">
                 <div class="wide">
@@ -2634,8 +2658,8 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             </td>
             <td data-label="Status">
               <span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span>
-              ${booking.contractStatus ? `<br><span class="pill ${booking.contractStatus === "Signed" ? "success" : booking.contractStatus === "Sent" ? "warning" : ""}" style="margin-top:4px;font-size:10px;">${escapeHtml(booking.contractStatus)}</span>` : ""}
-              ${booking.contractSentAt ? `<br><span class="muted" style="font-size:11px;">Sent ${formatDate(booking.contractSentAt)}</span>` : ""}
+              ${booking.contractStatus ? `<br><span class="pill ${booking.contractStatus === "Signed" ? "success" : booking.contractStatus === "Sent" ? "warning" : ""}" style="margin-top:4px;font-size:10px;">${booking.contractStatus === "Signed" ? "✍️ " : ""}${escapeHtml(booking.contractStatus)}</span>` : ""}
+              ${booking.contractSignerName ? `<br><span class="muted" style="font-size:11px;">by ${escapeHtml(booking.contractSignerName)}${booking.contractSignedAt ? " · " + formatDate(booking.contractSignedAt) : ""}</span>` : booking.contractSentAt ? `<br><span class="muted" style="font-size:11px;">Sent ${formatDate(booking.contractSentAt)}</span>` : ""}
             </td>
             <td data-label="Actions">
               ${(booking.paymentStatus === "Advance Due")
@@ -2888,9 +2912,21 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       });
 
       // ---- Reviews ----
+      let gmbAutoSearched = false;
       async function loadReviews() {
         renderGmbState();
         refreshGmbMode();
+        // We already know her business name and city — search for her so the
+        // review link is one tap away instead of a typing exercise.
+        const cfg = sessionState?.workspace?.config;
+        if (!gmbAutoSearched && cfg && !cfg.googleReviewLink && cfg.businessName) {
+          gmbAutoSearched = true;
+          const queryBox = document.getElementById("gmb-query");
+          if (queryBox && !queryBox.value.trim()) {
+            queryBox.value = `${cfg.businessName} ${cfg.city || ""}`.trim();
+            document.getElementById("gmb-search-btn")?.click();
+          }
+        }
         const tbody = document.getElementById("reviews-table-body");
         const statsEl = document.getElementById("reviews-stats");
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>`;
@@ -3452,6 +3488,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
       // ---- Conversations ----
       async function loadConversations(force) {
+        renderAiStatusCard();
         const list = document.getElementById("conversations-list");
         if (interactionsCache && !force) { renderConversations(); return; }
         list.innerHTML = `<p class="muted">Loading conversations…</p>`;
@@ -4355,6 +4392,46 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           askInput.value = chip.getAttribute("data-ask");
           submitAsk(askInput.value);
         }));
+
+      // ─── AI auto-reply status card on Messages (one-tap control) ───
+      function renderAiStatusCard() {
+        const cfg = sessionState?.workspace?.config;
+        if (!cfg) return;
+        const on = String(cfg.autoReplyEnabled || "No") === "Yes";
+        const title = document.getElementById("ai-status-title");
+        const btn = document.getElementById("ai-toggle-btn");
+        if (!title || !btn) return;
+        title.textContent = on ? "AI auto-reply is on ✓" : "AI auto-reply is off";
+        btn.textContent = on ? "Turn off auto-reply" : "Turn on auto-reply";
+        btn.classList.toggle("secondary", on);
+        document.getElementById("ai-status-sub").textContent = on
+          ? "The AI is answering routine client questions in your voice. It never quotes a price or confirms a booking without you — those still wait for your approval."
+          : "When on, the AI replies to routine client questions in your voice — it never quotes a price or confirms a booking without you.";
+      }
+      document.getElementById("ai-toggle-btn")?.addEventListener("click", async () => {
+        const btn = document.getElementById("ai-toggle-btn");
+        const cfg = { ...(sessionState?.workspace?.config || {}) };
+        if (!cfg.businessName) { toast("Finish your quick setup first.", "error"); return; }
+        cfg.autoReplyEnabled = String(cfg.autoReplyEnabled || "No") === "Yes" ? "No" : "Yes";
+        setLoading(btn, "Saving…");
+        try {
+          await postJson("/api/workspace/config", cfg);
+          await refreshSession();
+          renderAiStatusCard();
+          toast(cfg.autoReplyEnabled === "Yes" ? "AI auto-reply is on. It drafts and sends safe replies in your voice." : "AI auto-reply is off. It will still draft replies for you to send.", "success");
+        } catch (error) {
+          toast(error.message, "error");
+        } finally {
+          clearLoading(btn);
+        }
+      });
+      document.getElementById("ai-train-btn")?.addEventListener("click", () => {
+        activateTab("setup");
+        setTimeout(() => {
+          const aiSection = [...document.querySelectorAll("#setup-form details summary, details summary")].find((s) => s.textContent.includes("AI assistant"));
+          if (aiSection) { aiSection.closest("details").open = true; aiSection.scrollIntoView({ behavior: "smooth", block: "start" }); }
+        }, 100);
+      });
 
       // ─── Quick setup wizard: the essentials without opening full Settings ───
       const quickSetupModal = document.getElementById("quick-setup-modal");

@@ -9,6 +9,7 @@ import { appConfig } from "../config.js";
 // Stable advisory-lock keys so only one instance runs each daily job.
 const REMINDER_LOCK_KEY = 918_273_001;
 const REVIEW_LOCK_KEY = 918_273_002;
+const PAYMENT_LOCK_KEY = 918_273_003;
 
 export function startReminderScheduler() {
   const now = new Date();
@@ -29,6 +30,9 @@ export function startReminderScheduler() {
     withDistributedLock(REVIEW_LOCK_KEY, runReviewRequestJob)
       .then((r) => { if (!r.ran) logger.info("[reviews] skipped — another instance holds the lock"); })
       .catch((err) => captureException(err, { job: "reviews" }));
+    withDistributedLock(PAYMENT_LOCK_KEY, runPaymentReminderJob)
+      .then((r) => { if (!r.ran) logger.info("[payments] skipped — another instance holds the lock"); })
+      .catch((err) => captureException(err, { job: "payments" }));
     setTimeout(tick, 24 * 60 * 60 * 1000);
   };
 
@@ -176,6 +180,108 @@ async function runReviewRequestJob() {
       captureException(err, { workspace: workspace.email });
     }
   }
+}
+
+// Automatic payment collection. Two cases, both deduplicated through the
+// booking's remindersSent markers so the daily job never nags twice:
+//   - Advance still due: gentle nudges 2, 5, and 8 days after booking.
+//   - Balance still due: one reminder 2 days before the event.
+// Gated per workspace by autoPaymentReminders (on by default) and, like every
+// business-initiated WhatsApp message, requires an approved template.
+const ADVANCE_NUDGE_DAYS = [2, 5, 8];
+
+export function dueAdvanceMarker(bookedAt: string, remindersSent: string, now: Date = new Date()): string | null {
+  const booked = new Date(bookedAt);
+  if (isNaN(booked.getTime())) return null;
+  const daysSince = Math.floor((now.getTime() - booked.getTime()) / 86_400_000);
+  const sent = (remindersSent || "").split(",").map((s) => s.trim());
+  // Highest eligible nudge not yet sent — so a booking that's 9 days old with
+  // no nudges sent gets one message (the latest), not three at once.
+  for (let i = ADVANCE_NUDGE_DAYS.length - 1; i >= 0; i--) {
+    if (daysSince >= ADVANCE_NUDGE_DAYS[i]) {
+      const marker = `payadv${i + 1}`;
+      return sent.includes(marker) ? null : marker;
+    }
+  }
+  return null;
+}
+
+export function balanceReminderDue(eventDate: string, remindersSent: string, now: Date = new Date()): boolean {
+  if (!eventDate) return false;
+  const sent = (remindersSent || "").split(",").map((s) => s.trim());
+  if (sent.includes("paybal")) return false;
+  const event = new Date(`${eventDate}T00:00:00Z`);
+  if (isNaN(event.getTime())) return false;
+  const daysUntil = Math.ceil((event.getTime() - now.getTime()) / 86_400_000);
+  return daysUntil >= 0 && daysUntil <= 2;
+}
+
+async function runPaymentReminderJob() {
+  logger.info("[payments] running daily payment-reminder job");
+  const workspaces = await listWorkspaces();
+
+  for (const workspace of workspaces) {
+    if (String(workspace.config.autoPaymentReminders || "Yes") === "No") continue;
+
+    const templateName = String(workspace.config.collectionTemplate || "").trim();
+    if (!templateName) continue;
+
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    const connectionCanSend =
+      whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    if (!connectionCanSend && !envCanSend) continue;
+
+    try {
+      const tokens = await getWorkspaceCredentials(workspace.email);
+      const bookings = await listActiveBookings(workspace.email, tokens);
+
+      for (const booking of bookings) {
+        if (!booking.clientWhatsApp) continue;
+        const recipientPhone = booking.clientWhatsApp.replace(/[^\d]/g, "");
+
+        let kind: "advance" | "balance" | null = null;
+        let marker = "";
+        if (booking.paymentStatus === "Advance Due" && booking.advanceAmount > 0) {
+          const m = dueAdvanceMarker(booking.bookedAt, booking.remindersSent);
+          if (m) { kind = "advance"; marker = m; }
+        } else if (booking.paymentStatus === "Advance Paid" && booking.balanceDue > 0) {
+          if (balanceReminderDue(booking.eventDate, booking.remindersSent)) {
+            kind = "balance"; marker = "paybal";
+          }
+        }
+        if (!kind) continue;
+
+        const amount = kind === "balance" ? booking.balanceDue : booking.advanceAmount;
+        try {
+          await sendWhatsAppTemplate(
+            { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+            recipientPhone,
+            templateName,
+            String(workspace.config.collectionTemplateLang || "en"),
+            [booking.clientName, kind, String(amount), booking.eventDate],
+          );
+
+          await markBookingReminderSent(workspace.email, tokens, booking.bookingId, marker);
+
+          await logInteractionForWorkspace(workspace.email, tokens, {
+            leadId: booking.leadId,
+            direction: "Outbound",
+            channel: "WhatsApp",
+            actor: recipientPhone,
+            message: `Automatic ${kind} payment reminder sent (₹${amount})`,
+            aiSummary: `Automated ${kind} collection reminder (${marker})`,
+          });
+        } catch (err) {
+          captureException(err, { bookingId: booking.bookingId, kind });
+        }
+      }
+    } catch (err) {
+      captureException(err, { workspace: workspace.email });
+    }
+  }
+
+  logger.info("[payments] daily payment-reminder job complete");
 }
 
 function parseFirstPositiveInt(raw: string): number | null {

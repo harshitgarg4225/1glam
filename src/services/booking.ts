@@ -91,6 +91,8 @@ export type BookingRecord = {
   invoiceAdjustments: string;
   contractAdjustments: string;
   orderItems: string;
+  contractSignedAt: string;
+  contractSignerName: string;
 };
 
 export type DashboardData = {
@@ -362,6 +364,8 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     invoiceAdjustments: "",
     contractAdjustments: "",
     orderItems: lead.record.orderItems || "",
+    contractSignedAt: "",
+    contractSignerName: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -1141,6 +1145,8 @@ function bookingToRow(booking: BookingRecord) {
     booking.invoiceAdjustments,
     booking.contractAdjustments,
     booking.orderItems,
+    booking.contractSignedAt,
+    booking.contractSignerName,
   ];
 }
 
@@ -1174,6 +1180,8 @@ function rowToBooking(row: string[]): BookingRecord {
     invoiceAdjustments: row[25] ?? "",
     contractAdjustments: row[26] ?? "",
     orderItems: row[27] ?? "",
+    contractSignedAt: row[28] ?? "",
+    contractSignerName: row[29] ?? "",
   };
 }
 

@@ -71,6 +71,7 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reminderTemplate: string;
   reminderTemplateLang: string;
   reminderDaysBefore: string;
+  autoPaymentReminders: string;
   serviceBridalDesc: string;
   serviceEngagementDesc: string;
   serviceReceptionDesc: string;
