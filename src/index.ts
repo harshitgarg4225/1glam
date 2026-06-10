@@ -12,7 +12,8 @@ import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
 import { appConfig, assertDeploymentConfig } from "./config.js";
-import { createLeadSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema } from "./api-schema.js";
+import { createLeadSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema, quickBookingSchema } from "./api-schema.js";
+import { askBusinessAssistant, buildAssistantSnapshot } from "./services/assistant.js";
 import { workspaceConfigSchema } from "./schema.js";
 import {
   applyOwnerDecision,
@@ -790,6 +791,42 @@ app.post("/api/gmb/draft-reply", async (req, res, next) => {
   }
 });
 
+// "Ask BusyDays": answers the owner's natural-language question about her own
+// leads, bookings, and money from a compact snapshot of her live data.
+app.post("/api/assistant/ask", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const question = typeof req.body?.question === "string" ? req.body.question.trim().slice(0, 500) : "";
+    if (question.length < 3) {
+      return res.status(400).json({ error: "Type a question first." });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const { leads, bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const snapshot = buildAssistantSnapshot(leads, bookings);
+    const answer = await askBusinessAssistant({
+      ownerName: workspace.config.ownerName,
+      brandName: workspace.config.businessName,
+      city: workspace.config.city,
+      question,
+      snapshot,
+    });
+    if (!answer) {
+      return res.status(503).json({ error: "The AI assistant isn't available right now. Please try again in a moment." });
+    }
+    let balanceCredits: number | null = null;
+    if (appConfig.xaiApiKey) {
+      balanceCredits = await meterUsage(req.session.profile.email, "aiAssistant");
+    }
+    res.json({ ok: true, answer, balanceCredits, lowBalance: balanceCredits !== null && isLowBalance(balanceCredits) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Auto mode only: lists live reviews from Google Business Profile. Returns
 // apiAvailable:false (so the UI shows assisted mode) until the project is
 // allowlisted and the artist has granted the business.manage scope.
@@ -1295,6 +1332,47 @@ app.post("/api/leads/:leadId/payment", async (req, res, next) => {
     );
 
     res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One-tap walk-in booking: lead + confirm in a single call. For the client who
+// booked over the phone or in person — the owner shouldn't have to walk her
+// through the request pipeline.
+app.post("/api/bookings/quick", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const parsed = quickBookingSchema.parse(req.body);
+    const email = req.session.profile.email;
+    const tokens = req.session.googleTokens;
+
+    const { lead } = await createLeadForWorkspace(email, tokens, {
+      source: "Manual",
+      clientName: parsed.clientName,
+      clientWhatsApp: parsed.clientWhatsApp,
+      eventType: parsed.eventType,
+      eventDate: parsed.eventDate,
+      eventTime: parsed.eventTime,
+      locationText: parsed.locationText,
+    });
+
+    // The price she actually agreed with the client beats the AI estimate.
+    await updateLeadRecord(email, tokens, lead.leadId, (record) => ({
+      ...record,
+      finalApprovedPrice: parsed.price,
+      ownerDecision: "YES",
+    }));
+
+    const result = await confirmLeadBooking(email, tokens, lead.leadId);
+
+    if (parsed.advancePaid) {
+      await updatePaymentStatus(email, tokens, lead.leadId, "Advance Paid");
+    }
+
+    res.json({ ok: true, booking: result.booking, leadId: lead.leadId });
   } catch (error) {
     next(error);
   }
