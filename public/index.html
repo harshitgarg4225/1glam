@@ -928,6 +928,13 @@
           <h2 id="upcoming-title">Your upcoming jobs</h2>
           <div id="upcoming-jobs"></div>
         </div>
+        <div class="panel section" id="automation-panel" style="margin-bottom:20px;display:none;">
+          <details id="automation-details">
+            <summary class="more-summary" style="font-size:15px;font-weight:600;color:var(--text);" id="automation-summary">What’s running automatically</summary>
+            <p class="muted" style="margin:10px 0 12px;font-size:13px;">BusyDays works for you in the background. Here’s what’s live and what needs one more step.</p>
+            <div id="automation-rows"></div>
+          </details>
+        </div>
         <div class="panel section">
           <div class="kicker">Overview</div>
           <h2>At a glance</h2>
@@ -1213,6 +1220,25 @@
             </div>
             <div id="gmb-results"></div>
             <div class="status" id="gmb-status"></div>
+            <button class="button small secondary" type="button" id="gmb-create-toggle" style="margin-top:10px;">Don't have a Google listing yet? Create one →</button>
+            <div id="gmb-create-guide" class="mini-card" style="display:none;margin-top:12px;">
+              <div class="kicker">Create your Google Business Profile — free, ~5 minutes</div>
+              <p class="muted" style="margin:8px 0 12px;font-size:13.5px;">A Google listing is how clients find you on Google and Maps, and where your reviews live. You don't need an office or shop — Google lets travelling artists register as a <strong>service-area business</strong> with no address shown.</p>
+              <ol style="margin:0 0 14px 18px;padding:0;font-size:13.5px;line-height:1.9;color:var(--text);">
+                <li>Tap the button below — it opens Google's free setup page.</li>
+                <li>Enter your business name exactly as clients know you<span id="gmb-guide-name"></span>.</li>
+                <li>For business type, choose <strong>"Service business"</strong> — you visit clients, they don't visit you. No address needed.</li>
+                <li>For category, type <strong>"Make-up artist"</strong>.</li>
+                <li>For service area, add the cities you work in — your home city plus anywhere you travel for bookings.</li>
+                <li>Add your WhatsApp number and your booking page link (from <strong>My Page</strong>).</li>
+                <li>Google will verify you — usually a quick video call or phone code. Once verified, come back here.</li>
+              </ol>
+              <div class="action-row" style="flex-wrap:wrap;gap:8px;">
+                <a class="button" href="https://business.google.com/create" target="_blank" rel="noreferrer">Open Google setup (free)</a>
+                <button class="button secondary" type="button" id="gmb-recheck-btn">I've created it — find my business</button>
+              </div>
+              <p class="muted" style="margin:10px 0 0;font-size:12px;">New listings can take a little while to appear in search after verification. If we can't find you right away, try again later — we'll keep this guide here.</p>
+            </div>
           </div>
         </div>
 
@@ -1804,6 +1830,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <div class="wizard-field" style="flex:1;"><label for="qb-date">Date</label><input id="qb-date" name="eventDate" type="date" required /></div>
             <div class="wizard-field" style="flex:1;"><label for="qb-time">Time (optional)</label><input id="qb-time" name="eventTime" type="time" /></div>
           </div>
+          <div id="qb-conflict" style="margin-bottom:14px;"></div>
           <div class="wizard-field"><label for="qb-venue">Where?</label><input id="qb-venue" name="locationText" required placeholder="Venue or area, city" /></div>
           <div class="wizard-field"><label for="qb-price">Agreed price (₹)</label><input id="qb-price" name="price" type="number" min="1" required /></div>
           <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:16px;cursor:pointer;">
@@ -2380,6 +2407,52 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         return diff;
       }
 
+      // For an artist who travels between cities, the biggest real-world risk is
+      // saying yes to two places on the same day. Returns everything already
+      // committed (confirmed bookings + confirmed/awaiting leads) on a date.
+      function leadById(leadId) {
+        return (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId) || null;
+      }
+
+      // Travel context for a confirmed booking, pulled from its originating lead
+      // (the booking row itself doesn't carry distance).
+      function travelBadgeHtml(booking) {
+        const lead = leadById(booking.leadId);
+        if (!lead) return "";
+        const bits = [];
+        if (lead.outstationFlag === "Yes") bits.push(`<span class="pill warning" style="font-size:10px;">✈️ Outstation</span>`);
+        if (Number(lead.distanceKm) > 0) bits.push(`<span class="muted" style="font-size:11.5px;">${lead.distanceKm} km${lead.travelTimeMin ? " · ~" + lead.travelTimeMin + " min travel" : ""}</span>`);
+        return bits.length ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:3px;">${bits.join("")}</div>` : "";
+      }
+
+      function commitmentsOnDate(dateStr, excludeLeadId) {
+        if (!dateStr) return [];
+        const out = [];
+        for (const b of sessionState?.dashboard?.bookings || []) {
+          if (b.eventDate === dateStr) out.push({ name: b.clientName, place: b.venue, kind: "confirmed booking", time: b.eventTime, leadId: b.leadId });
+        }
+        const bookedLeadIds = new Set(out.map((c) => c.leadId));
+        for (const l of sessionState?.dashboard?.leads || []) {
+          if (l.leadId === excludeLeadId || bookedLeadIds.has(l.leadId)) continue;
+          if (l.eventDate === dateStr && ["Awaiting Client", "Confirmed", "Payment Received"].includes(l.status)) {
+            out.push({ name: l.clientName, place: l.locationText, kind: l.status === "Awaiting Client" ? "pending hold" : "confirmed request", time: l.eventTime, leadId: l.leadId });
+          }
+        }
+        return out;
+      }
+
+      function conflictWarningHtml(dateStr, excludeLeadId) {
+        const clashes = commitmentsOnDate(dateStr, excludeLeadId);
+        if (!clashes.length) return "";
+        const lines = clashes.slice(0, 3).map((c) =>
+          `${escapeHtml(c.name)}${c.time ? " at " + escapeHtml(c.time) : ""}${c.place ? " — " + escapeHtml(c.place) : ""} (${c.kind})`).join("<br>");
+        return `
+          <div style="background:var(--warning-soft);border:1px solid #F9D175;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.6;">
+            <strong>⚠️ You already have ${clashes.length === 1 ? "a commitment" : clashes.length + " commitments"} on this date:</strong><br>${lines}
+            <br><span class="muted">Check your travel time between venues before you say yes.</span>
+          </div>`;
+      }
+
       function leadCard(lead) {
         const editValue = lead.finalApprovedPrice || lead.initialAiPrice || 0;
         const reply = escapeHtml(lead.suggestedReply || "");
@@ -2408,6 +2481,11 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           : "";
         const payChip = lead.paymentStatus
           ? `<span class="${pillClass(lead.paymentStatus)}" style="font-size:11px;">${escapeHtml(lead.paymentStatus)}</span>`
+          : "";
+
+        const hasClash = ["New", "Awaiting Client"].includes(lead.status) && commitmentsOnDate(lead.eventDate, lead.leadId).length > 0;
+        const clashHtml = hasClash
+          ? `<div style="font-size:11.5px;color:var(--warning);font-weight:600;margin-top:4px;">⚠️ Same-day clash — check before approving</div>`
           : "";
 
         const contactedDays = daysSince(lead.lastContactedAt);
@@ -2470,6 +2548,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             </div>
             ${lead.aiInsight ? `<p class="card-meta" style="font-style:italic;margin:6px 0 0;border-left:2px solid var(--line);padding-left:8px;line-height:1.5;">${escapeHtml(lead.aiInsight)}</p>` : ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0;">${quoteChip}${payChip}</div>
+            ${clashHtml}
             ${lastContactHtml}
             ${waBtn}
             ${primaryBtn}
@@ -2650,7 +2729,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
               <span class="muted">${escapeHtml(booking.clientWhatsApp)}</span><br>
               <span class="muted" style="font-size:12px;">💇 ${booking.assignedArtist ? escapeHtml(booking.assignedArtist) : "<em>No specialist assigned</em>"}</span>
             </td>
-            <td data-label="Event">${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(formatDay(booking.eventDate))}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span></td>
+            <td data-label="Event">${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(formatDay(booking.eventDate))}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span>${travelBadgeHtml(booking)}</td>
             <td data-label="Payment">
               <strong>${formatMoney(booking.finalPrice)}</strong><br>
               <span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br>
@@ -2708,6 +2787,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         renderBookings();
         renderClients();
         renderSetupChecklist();
+        renderAutomationPanel();
       }
 
       // The home screen answers "what do I have coming up?" — the first thing a
@@ -2746,6 +2826,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                   ${b.eventTime ? "🕒 " + escapeHtml(b.eventTime) + " · " : ""}💇 ${b.assignedArtist ? escapeHtml(b.assignedArtist) : "<em>No specialist assigned</em>"}
                 </div>
                 ${b.venue ? `<div class="upcoming-meta">📍 ${mapHref ? `<a href="${mapHref}" target="_blank" rel="noreferrer">${escapeHtml(b.venue)}</a>` : escapeHtml(b.venue)}</div>` : ""}
+                ${travelBadgeHtml(b)}
               </div>
               <div class="upcoming-right">
                 <span class="${paid}" style="font-size:11px;">${escapeHtml(b.paymentStatus || b.status)}</span>
@@ -2967,7 +3048,11 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         try {
           const payload = await getJson(`/api/gmb/search?q=${encodeURIComponent(q)}`);
           if (!payload?.ok) throw new Error(payload?.error || "Search failed");
-          if (!payload.candidates.length) { results.innerHTML = `<p class="muted" style="font-size:13px;">No matches found. Try adding your city or area name.</p>`; return; }
+          if (!payload.candidates.length) {
+            results.innerHTML = `<p class="muted" style="font-size:13px;">No matches found on Google. If you haven't created your free Google listing yet, the guide below walks you through it step by step.</p>`;
+            showGmbCreateGuide();
+            return;
+          }
           results.innerHTML = payload.candidates.map((c) => `
             <div class="gmb-result">
               <div class="gmb-result-info">
@@ -2983,6 +3068,32 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           clearLoading(searchBtn);
         }
       });
+      // Guided Google Business Profile creation for artists with no listing yet
+      // (most freelancers). Travelling artists register as a service-area
+      // business, so no studio address is required.
+      function showGmbCreateGuide() {
+        const guide = document.getElementById("gmb-create-guide");
+        if (!guide) return;
+        const cfg = sessionState?.workspace?.config;
+        const nameHint = document.getElementById("gmb-guide-name");
+        if (nameHint && cfg?.businessName) nameHint.textContent = ` — "${cfg.businessName}"`;
+        guide.style.display = "";
+      }
+      document.getElementById("gmb-create-toggle")?.addEventListener("click", () => {
+        const guide = document.getElementById("gmb-create-guide");
+        if (guide.style.display === "none") showGmbCreateGuide();
+        else guide.style.display = "none";
+      });
+      document.getElementById("gmb-recheck-btn")?.addEventListener("click", () => {
+        const cfg = sessionState?.workspace?.config;
+        const queryBox = document.getElementById("gmb-query");
+        if (queryBox && !queryBox.value.trim() && cfg?.businessName) {
+          queryBox.value = `${cfg.businessName} ${cfg.city || ""}`.trim();
+        }
+        document.getElementById("gmb-search-btn")?.click();
+        document.getElementById("gmb-create-guide")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+
       document.getElementById("gmb-query").addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.preventDefault(); document.getElementById("gmb-search-btn").click(); }
       });
@@ -3909,6 +4020,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <div class="drawer-row"><span class="drawer-row-label">Location</span><span class="drawer-row-value">${escapeHtml(lead.locationText)}${lead.outstationFlag === "Yes" ? " · <strong>Outstation</strong>" : ""}</span></div>
             ${lead.distanceKm ? `<div class="drawer-row"><span class="drawer-row-label">Distance</span><span class="drawer-row-value">${lead.distanceKm} km${lead.travelTimeMin ? " · ~" + lead.travelTimeMin + " min" : ""}</span></div>` : ""}
           </div>
+          ${!["Confirmed", "Payment Received", "Completed", "Lost"].includes(lead.status) && conflictWarningHtml(lead.eventDate, lead.leadId) ? `<div>${conflictWarningHtml(lead.eventDate, lead.leadId)}</div>` : ""}
           <div class="drawer-section">
             <div class="drawer-section-title">Quote &amp; status</div>
             <div style="margin-bottom:10px;">${priceStr}</div>
@@ -4250,6 +4362,80 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         if (item) activateTab(item.getAttribute("data-attention-tab"));
       });
 
+      // ─── Automation health: plain-language view of what's live vs waiting ───
+      // Every automation silently skips when a prerequisite is missing; a
+      // non-technical owner has no other way to know what's actually running.
+      function renderAutomationPanel() {
+        const panel = document.getElementById("automation-panel");
+        const cfg = sessionState?.workspace?.config;
+        if (!panel || !cfg) { if (panel) panel.style.display = "none"; return; }
+        const wa = sessionState?.workspace?.metaConnections?.whatsapp;
+        const waConnected = wa?.status === "connected";
+
+        const rows = [
+          {
+            on: waConnected,
+            label: "WhatsApp sending",
+            okText: "Connected — quotes, invoices, and reminders go out from your number.",
+            fixText: "Connect WhatsApp so documents and reminders can reach clients automatically.",
+            tab: "channels",
+          },
+          {
+            on: !!(cfg.upiId && cfg.upiId.trim()),
+            label: "Online advance payments",
+            okText: "Clients can pay your advance from the link in every quote and reminder.",
+            fixText: "Add your UPI ID so clients can pay the advance to lock their date.",
+            wizard: true,
+          },
+          {
+            on: waConnected && !!(cfg.reminderTemplate || "").trim(),
+            label: "Pre-event reminders",
+            okText: `Clients get reminded ${escapeHtml(cfg.reminderDaysBefore || "7,1")} days before their event.`,
+            fixText: waConnected ? "Add your reminder WhatsApp template name in Settings to switch this on." : "Needs WhatsApp connected, plus your reminder template name in Settings.",
+            tab: waConnected ? "setup" : "channels",
+          },
+          {
+            on: waConnected && String(cfg.autoPaymentReminders || "Yes") !== "No" && !!(cfg.collectionTemplate || "").trim(),
+            label: "Payment chasing",
+            okText: "Unpaid advances get gentle nudges automatically; balances are reminded before the event.",
+            fixText: waConnected ? "Add your payment-reminder WhatsApp template name in Settings to switch this on." : "Needs WhatsApp connected, plus your payment-reminder template in Settings.",
+            tab: waConnected ? "setup" : "channels",
+          },
+          {
+            on: waConnected && !!(cfg.reviewRequestDaysAfter || "").trim() && !!(cfg.reviewTemplate || "").trim() && !!(cfg.googleReviewLink || "").trim(),
+            label: "Review collection",
+            okText: `Clients are asked for a Google review ${escapeHtml((cfg.reviewRequestDaysAfter || "").trim() || "a few")} days after their event.`,
+            fixText: !(cfg.googleReviewLink || "").trim() ? "Set up your Google review link in the Reviews tab first." : "Add your review template name and 'days after' in Settings.",
+            tab: !(cfg.googleReviewLink || "").trim() ? "reviews" : "setup",
+          },
+          {
+            on: String(cfg.autoReplyEnabled || "No") === "Yes",
+            label: "AI replies to clients",
+            okText: "The AI answers routine questions in your voice. Prices and confirmations still wait for you.",
+            fixText: "Turn on auto-reply in Messages — the AI never quotes a price or confirms a booking without you.",
+            tab: "conversations",
+          },
+        ];
+
+        const liveCount = rows.filter((r) => r.on).length;
+        panel.style.display = "";
+        document.getElementById("automation-summary").textContent =
+          `What's running automatically — ${liveCount} of ${rows.length} live`;
+        document.getElementById("automation-rows").innerHTML = rows.map((r) => `
+          <div class="notify-row">
+            <div class="notify-row-info">
+              <strong>${r.on ? "✅" : "⚪"} ${escapeHtml(r.label)}</strong>
+              <span>${r.on ? r.okText : r.fixText}</span>
+            </div>
+            ${r.on ? "" : `<button class="button small secondary" type="button" ${r.wizard ? 'data-automation-wizard="1"' : `data-automation-go="${r.tab}"`}>Set up</button>`}
+          </div>`).join("");
+      }
+      document.getElementById("automation-rows")?.addEventListener("click", (e) => {
+        if (e.target.closest("[data-automation-wizard]")) { openQuickSetup(); return; }
+        const go = e.target.closest("[data-automation-go]");
+        if (go) activateTab(go.getAttribute("data-automation-go"));
+      });
+
       // ─── Clients directory: one row per person across requests + bookings ───
       function clientKeyOf(phone, name) {
         const digits = String(phone || "").replace(/\D/g, "");
@@ -4329,11 +4515,15 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       function openQuickBooking() {
         quickBookingForm.reset();
         document.getElementById("qb-status").textContent = "";
+        document.getElementById("qb-conflict").innerHTML = "";
         const dateInput = document.getElementById("qb-date");
         dateInput.min = new Date().toISOString().slice(0, 10);
         quickBookingModal.classList.add("open");
         setTimeout(() => document.getElementById("qb-name").focus(), 50);
       }
+      document.getElementById("qb-date")?.addEventListener("change", (e) => {
+        document.getElementById("qb-conflict").innerHTML = conflictWarningHtml(e.target.value);
+      });
       function closeQuickBooking() { quickBookingModal.classList.remove("open"); }
       document.getElementById("quick-booking-btn")?.addEventListener("click", openQuickBooking);
       document.getElementById("quick-booking-close")?.addEventListener("click", closeQuickBooking);
