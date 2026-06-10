@@ -59,6 +59,7 @@ export type LeadRecord = {
   quoteGeneratedAt: string;
   quoteVoidedAt: string;
   quoteAdjustments: string;
+  orderItems: string;
 };
 
 export type BookingRecord = {
@@ -89,6 +90,7 @@ export type BookingRecord = {
   contractVoidedAt: string;
   invoiceAdjustments: string;
   contractAdjustments: string;
+  orderItems: string;
 };
 
 export type DashboardData = {
@@ -195,6 +197,7 @@ export async function createLeadForWorkspace(
     quoteGeneratedAt: "",
     quoteVoidedAt: "",
     quoteAdjustments: "",
+    orderItems: "",
   };
 
   await sheets.spreadsheets.values.append({
@@ -358,6 +361,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     contractVoidedAt: "",
     invoiceAdjustments: "",
     contractAdjustments: "",
+    orderItems: lead.record.orderItems || "",
   };
 
   const updatedLead: LeadRecord = {
@@ -1060,6 +1064,7 @@ function leadToRow(lead: LeadRecord) {
     lead.quoteGeneratedAt,
     lead.quoteVoidedAt,
     lead.quoteAdjustments,
+    lead.orderItems,
   ];
 }
 
@@ -1102,6 +1107,7 @@ function rowToLead(row: string[]): LeadRecord {
     quoteGeneratedAt: row[34] ?? "",
     quoteVoidedAt: row[35] ?? "",
     quoteAdjustments: row[36] ?? "",
+    orderItems: row[37] ?? "",
   };
 }
 
@@ -1134,6 +1140,7 @@ function bookingToRow(booking: BookingRecord) {
     booking.contractVoidedAt,
     booking.invoiceAdjustments,
     booking.contractAdjustments,
+    booking.orderItems,
   ];
 }
 
@@ -1166,6 +1173,7 @@ function rowToBooking(row: string[]): BookingRecord {
     contractVoidedAt: row[24] ?? "",
     invoiceAdjustments: row[25] ?? "",
     contractAdjustments: row[26] ?? "",
+    orderItems: row[27] ?? "",
   };
 }
 

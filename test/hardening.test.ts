@@ -7,7 +7,7 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-
 
 const { isPublicHttpUrl } = await import("../src/services/http.ts");
 const { roundToPremiumNumber } = await import("../src/services/booking.ts");
-const { parseDocumentAdjustments } = await import("../src/services/documents.ts");
+const { parseDocumentAdjustments, parseOrderItems } = await import("../src/services/documents.ts");
 
 // --- SSRF guard (isPublicHttpUrl) ---------------------------------------------
 
@@ -90,4 +90,33 @@ test("parseDocumentAdjustments filters out line items missing a label or amount"
     }),
   );
   assert.deepEqual(parsed.lineItems, [{ label: "Trial session", amount: 2000 }]);
+});
+
+// --- Itemized order parser (parseOrderItems) ---------------------------------
+
+test("parseOrderItems computes line totals and the rolled-up order total", () => {
+  const parsed = parseOrderItems(
+    JSON.stringify([
+      { label: "Bridal makeup", quantity: 1, unitPrice: 25000 },
+      { label: "Bridesmaids", quantity: 3, unitPrice: 5000 },
+    ]),
+  );
+  assert.equal(parsed.items.length, 2);
+  assert.equal(parsed.items[1].amount, 15000);
+  assert.equal(parsed.total, 40000);
+  assert.equal(parsed.lines.length, 2);
+});
+
+test("parseOrderItems drops rows with no label or zero quantity, and tolerates junk", () => {
+  assert.deepEqual(parseOrderItems("").items, []);
+  assert.deepEqual(parseOrderItems("not json").items, []);
+  const parsed = parseOrderItems(
+    JSON.stringify([
+      { label: "Valid", quantity: 2, unitPrice: 100 },
+      { label: "", quantity: 5, unitPrice: 100 },
+      { label: "Zero qty", quantity: 0, unitPrice: 100 },
+    ]),
+  );
+  assert.equal(parsed.items.length, 1);
+  assert.equal(parsed.total, 200);
 });

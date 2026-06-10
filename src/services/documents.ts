@@ -67,6 +67,41 @@ export function parseDocumentAdjustments(raw: string | undefined | null): Docume
   }
 }
 
+// A single line of the itemized order, edited in the lead drawer.
+export type OrderItem = { label: string; quantity: number; unitPrice: number };
+
+// Parses the persisted order-items JSON into clean rows plus the rolled-up
+// total and the pre-formatted pricing lines used on every document.
+export function parseOrderItems(raw: string | undefined | null): {
+  items: (OrderItem & { amount: number })[];
+  total: number;
+  lines: [string, string][];
+} {
+  if (!raw) return { items: [], total: 0, lines: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { items: [], total: 0, lines: [] };
+  }
+  const source = Array.isArray(parsed) ? parsed : [];
+  const items = source
+    .map((item) => {
+      const it = (item ?? {}) as { label?: unknown; quantity?: unknown; unitPrice?: unknown };
+      const label = String(it.label ?? "").slice(0, 80);
+      const quantity = Number(it.quantity) || 0;
+      const unitPrice = Number(it.unitPrice) || 0;
+      return { label, quantity, unitPrice, amount: quantity * unitPrice };
+    })
+    .filter((it) => it.label && it.quantity > 0);
+  const total = items.reduce((sum, it) => sum + it.amount, 0);
+  const lines: [string, string][] = items.map((it) => [
+    `${it.label}  (${it.quantity} × ${inr(it.unitPrice)})`,
+    inr(it.amount),
+  ]);
+  return { items, total, lines };
+}
+
 // Given an auto-derived base amount and the owner's adjustments, returns the
 // effective total and the extra pricing lines to render. amountOverride replaces
 // the base; line items are added on top.
@@ -86,7 +121,8 @@ export async function buildQuotePdfBytes(
   options: DocumentRenderOptions = {},
 ): Promise<Uint8Array> {
   const quoteNumber = `Q-${lead.leadId}`;
-  const autoQuoted = lead.finalApprovedPrice || lead.initialAiPrice;
+  const order = parseOrderItems(lead.orderItems);
+  const autoQuoted = order.total > 0 ? order.total : lead.finalApprovedPrice || lead.initialAiPrice;
   const { total: quotedAmount, extraLines, note } = applyAdjustments(autoQuoted, options.adjustments);
   const advanceAmount = premiumRound(
     (quotedAmount * workspace.config.advancePercentage) / 100,
@@ -125,6 +161,7 @@ export async function buildQuotePdfBytes(
   y = drawPricingBlock(page, {
     heading: "Quote Summary",
     lines: [
+      ...order.lines,
       ...gstLines(quotedAmount, workspace.config.gstPercentage),
       ...extraLines,
       ["Quoted Amount", inr(quotedAmount)],
@@ -176,6 +213,7 @@ export async function buildInvoicePdfBytes(
   options: DocumentRenderOptions = {},
 ): Promise<Uint8Array> {
   const invoiceNumber = `INV-${booking.bookingId}`;
+  const order = parseOrderItems(booking.orderItems);
   const baseStage = resolveInvoiceStage(booking);
   const adjusted = applyAdjustments(baseStage.amount, options.adjustments);
   const stage: InvoiceStage = { label: baseStage.label, amount: adjusted.total };
@@ -213,6 +251,7 @@ export async function buildInvoicePdfBytes(
   y = drawPricingBlock(page, {
     heading: `${stage.label} Invoice`,
     lines: [
+      ...order.lines,
       ...gstLines(stage.amount, workspace.config.gstPercentage),
       ...extraLines,
       ["Invoice Amount", inr(stage.amount)],
@@ -283,7 +322,8 @@ export async function generateContractPdfBytes(
   options: DocumentRenderOptions = {},
 ) {
   const contractNumber = `CTR-${booking.bookingId}`;
-  const adjusted = applyAdjustments(booking.finalPrice, options.adjustments);
+  const order = parseOrderItems(booking.orderItems);
+  const adjusted = applyAdjustments(order.total > 0 ? order.total : booking.finalPrice, options.adjustments);
   const theme = getDocumentTheme(workspace.config.documentTemplate);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
@@ -319,6 +359,7 @@ export async function generateContractPdfBytes(
   y = drawPricingBlock(page, {
     heading: "Commercial Terms",
     lines: [
+      ...order.lines,
       ["Booking Value", inr(adjusted.total)],
       ...adjusted.extraLines,
       ["Advance", inr(booking.advanceAmount)],

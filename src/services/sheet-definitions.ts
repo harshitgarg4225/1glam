@@ -46,6 +46,7 @@ export const leadHeaders = [
   "Quote Generated At",
   "Quote Voided At",
   "Quote Adjustments",
+  "Order Items",
 ] as const;
 
 export const bookingHeaders = [
@@ -76,6 +77,7 @@ export const bookingHeaders = [
   "Contract Voided At",
   "Invoice Adjustments",
   "Contract Adjustments",
+  "Order Items",
 ] as const;
 
 export const artistHeaders = [

@@ -1705,6 +1705,41 @@ app.post("/api/leads/:leadId/quote/:action", async (req, res, next) => {
   }
 });
 
+// Itemized order editor (lead drawer): line item / quantity / price / total.
+// Saving keeps the lead's headline price in sync with the order total so the
+// advance, booking value, and every document reflect what was entered.
+app.post("/api/leads/:leadId/order", async (req, res, next) => {
+  try {
+    const ctx = await requireDocSession(req, res);
+    if (!ctx) return;
+    const rawItems = Array.isArray((req.body as { items?: unknown })?.items)
+      ? ((req.body as { items: unknown[] }).items)
+      : [];
+    const clean = rawItems
+      .map((item) => {
+        const it = (item ?? {}) as { label?: unknown; quantity?: unknown; unitPrice?: unknown };
+        return {
+          label: String(it.label ?? "").slice(0, 80),
+          quantity: Number(it.quantity) || 0,
+          unitPrice: Number(it.unitPrice) || 0,
+        };
+      })
+      .filter((it) => it.label && it.quantity > 0)
+      .slice(0, 50);
+    const total = clean.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+    const orderItems = clean.length ? JSON.stringify(clean) : "";
+    const updated = await updateLeadRecord(ctx.email, ctx.tokens, req.params.leadId, (current) => ({
+      ...current,
+      orderItems,
+      finalApprovedPrice: clean.length ? total : current.finalApprovedPrice,
+    }));
+    if (!updated) return res.status(404).json({ error: "Lead not found" });
+    res.json({ ok: true, lead: updated, total });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Invoice: edit / void / delete (operates on the booking row)
 app.post("/api/bookings/:bookingId/invoice/:action", async (req, res, next) => {
   try {
