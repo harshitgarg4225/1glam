@@ -72,6 +72,7 @@ export const workspaceConfigSchema = z.object({
   reminderTemplate: z.string().optional().default(""),
   reminderTemplateLang: z.string().optional().default("en"),
   reminderDaysBefore: z.string().optional().default("7,1"),
+  autoPaymentReminders: z.string().optional().default("Yes"),
   serviceBridalDesc: z.string().optional().default(""),
   serviceEngagementDesc: z.string().optional().default(""),
   serviceReceptionDesc: z.string().optional().default(""),

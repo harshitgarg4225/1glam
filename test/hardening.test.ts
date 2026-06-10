@@ -205,3 +205,34 @@ test("quickBookingSchema rejects missing price, bad phone, and bad date", () => 
   assert.throws(() => quickBookingSchema.parse({ ...base, clientWhatsApp: "abc" }));
   assert.throws(() => quickBookingSchema.parse({ ...base, eventDate: "15-08-2026" }));
 });
+
+// --- Automatic payment reminders (dueAdvanceMarker / balanceReminderDue) -------
+
+const { dueAdvanceMarker, balanceReminderDue } = await import("../src/services/reminders.ts");
+
+test("dueAdvanceMarker nudges at 2/5/8 days and never repeats a sent marker", () => {
+  const now = new Date("2026-06-10T12:00:00Z");
+  const bookedAt = (daysAgo) => new Date(now.getTime() - daysAgo * 86_400_000).toISOString();
+  // Too fresh — no nudge yet.
+  assert.equal(dueAdvanceMarker(bookedAt(1), "", now), null);
+  // First nudge at 2 days.
+  assert.equal(dueAdvanceMarker(bookedAt(2), "", now), "payadv1");
+  // 6 days old with nothing sent: sends the latest eligible nudge only.
+  assert.equal(dueAdvanceMarker(bookedAt(6), "", now), "payadv2");
+  // 9 days old, third nudge — unless already sent.
+  assert.equal(dueAdvanceMarker(bookedAt(9), "", now), "payadv3");
+  assert.equal(dueAdvanceMarker(bookedAt(9), "7, payadv3", now), null);
+  // Junk bookedAt never throws.
+  assert.equal(dueAdvanceMarker("not a date", "", now), null);
+});
+
+test("balanceReminderDue fires within 2 days of the event, once", () => {
+  const now = new Date("2026-06-10T12:00:00Z");
+  assert.equal(balanceReminderDue("2026-06-12", "", now), true);
+  assert.equal(balanceReminderDue("2026-06-11", "7,1", now), true);
+  // Already sent / too far away / past event / junk → no.
+  assert.equal(balanceReminderDue("2026-06-12", "paybal", now), false);
+  assert.equal(balanceReminderDue("2026-06-20", "", now), false);
+  assert.equal(balanceReminderDue("2026-06-01", "", now), false);
+  assert.equal(balanceReminderDue("", "", now), false);
+});

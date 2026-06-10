@@ -72,6 +72,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     reminderTemplate: "",
     reminderTemplateLang: "en",
     reminderDaysBefore: "7,1",
+    autoPaymentReminders: "Yes",
     serviceBridalDesc: "",
     serviceEngagementDesc: "",
     serviceReceptionDesc: "",

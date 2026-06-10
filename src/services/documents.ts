@@ -44,6 +44,10 @@ export type DocumentAdjustments = {
 export type DocumentRenderOptions = {
   voided?: boolean;
   adjustments?: DocumentAdjustments;
+  // When the client has accepted via the built-in signing page, the contract
+  // PDF carries a digital-acceptance block instead of a blank signature line.
+  signedBy?: string;
+  signedAt?: string;
 };
 
 // Tolerant parser: bad/empty JSON yields no adjustments rather than throwing.
@@ -378,11 +382,22 @@ export async function generateContractPdfBytes(
     "By signing this agreement, the client confirms the booking details and accepts the terms above.",
   ].filter(Boolean).join("\n\n");
 
-  drawParagraph(
+  const bodyBottom = drawParagraph(
     page,
     contractBody,
     { x: 56, y: y - 32, size: 11, font: regular, color: theme.paragraph, maxWidth: 480 },
   );
+
+  if (options.signedBy) {
+    const sigY = Math.max(70, (typeof bodyBottom === "number" ? bodyBottom : 140) - 28);
+    const when = options.signedAt
+      ? new Date(options.signedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+      : "";
+    page.drawText("DIGITALLY ACCEPTED", { x: 56, y: sigY, size: 10, font: bold, color: rgb(0.09, 0.4, 0.2) });
+    page.drawText(`Accepted by ${options.signedBy}${when ? ` on ${when}` : ""} via secure signing link.`, {
+      x: 56, y: sigY - 14, size: 10, font: regular, color: theme.paragraph,
+    });
+  }
 
   if (options.voided) drawVoidWatermark(page, bold);
   drawFooter(page, workspace, regular, theme);
@@ -676,6 +691,7 @@ function drawParagraph(
     });
     y -= input.size + 4;
   }
+  return y;
 }
 
 async function buildUpiQrPng(
