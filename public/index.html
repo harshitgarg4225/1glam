@@ -9,6 +9,12 @@
     <meta name="description" content="BusyDays is booking software for appointment-based professionals. Zero stress managing your calendar, zero missed DMs, zero missed bookings." />
     <meta property="og:title" content="BusyDays — Software for appointment-based professionals" />
     <meta property="og:description" content="Zero stress managing your calendar. Zero missed DMs. Zero missed bookings." />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#C26B45" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="BusyDays" />
     <style>
       :root {
         --bg: #FAF8F5;
@@ -661,6 +667,68 @@
         .filter-bar { gap: 7px; }
         .view-toggle-btn { padding: 6px 10px; font-size: 12px; }
       }
+
+      /* ─── Tab notification badges ─── */
+      .tab-badge {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 16px; height: 16px; padding: 0 4px;
+        background: var(--accent); color: #fff;
+        font-size: 10px; font-weight: 700; border-radius: 999px;
+        margin-left: 4px; line-height: 1; vertical-align: middle;
+      }
+
+      /* ─── Lead staleness indicator ─── */
+      .stale-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
+      .stale-dot.fresh { background: var(--sage); }
+      .stale-dot.warm { background: #E0A23C; }
+      .stale-dot.cold { background: var(--danger); }
+      .card-last-contact { font-size: 11px; color: var(--muted); margin-top: 4px; }
+      .card-last-contact.cold { color: var(--danger); font-weight: 600; }
+
+      /* ─── "Needs attention" section ─── */
+      .attention-item {
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 14px; border-radius: var(--radius);
+        background: var(--warning-soft); border: 1px solid #F9D175;
+        margin-bottom: 8px; cursor: pointer; transition: opacity 0.15s;
+      }
+      .attention-item:hover { opacity: 0.85; }
+      .attention-item.danger { background: var(--danger-soft); border-color: #F7BCBC; }
+      .attention-item-icon { font-size: 18px; flex-shrink: 0; }
+      .attention-item-body { flex: 1; min-width: 0; }
+      .attention-item-title { font-size: 13.5px; font-weight: 600; }
+      .attention-item-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+      .attention-item-action { font-size: 12px; color: var(--accent); font-weight: 600; flex-shrink: 0; }
+
+      /* ─── Global search modal ─── */
+      .search-modal { width: min(580px, 100%); padding: 0; border-radius: var(--radius-lg); overflow: hidden; max-height: 80vh; display: flex; flex-direction: column; }
+      .search-modal-input-wrap { display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+      .search-modal-icon { font-size: 18px; flex-shrink: 0; }
+      .search-modal-input { flex: 1; border: none; background: transparent; font: inherit; font-size: 16px; outline: none; color: var(--text); }
+      .search-modal-kbd { font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; flex-shrink: 0; }
+      .search-results { flex: 1; overflow-y: auto; padding: 8px; }
+      .search-result-group { margin-bottom: 8px; }
+      .search-result-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 4px 8px 6px; }
+      .search-result-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 10px; border-radius: var(--radius-sm); cursor: pointer;
+        transition: background 0.1s;
+      }
+      .search-result-item:hover, .search-result-item.focused { background: var(--surface); }
+      .search-result-icon { font-size: 16px; flex-shrink: 0; width: 28px; text-align: center; }
+      .search-result-body { flex: 1; min-width: 0; }
+      .search-result-title { font-size: 14px; font-weight: 600; }
+      .search-result-sub { font-size: 12px; color: var(--muted); }
+      .search-result-right { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+      .search-empty { padding: 32px; text-align: center; color: var(--muted); font-size: 14px; }
+
+      /* ─── Payment summary row in bookings ─── */
+      .payment-summary { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin-top: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
+      .payment-summary-item { font-size: 12.5px; color: var(--muted); }
+      .payment-summary-item strong { color: var(--text); }
+
+      /* ─── Quick copy button in topbar ─── */
+      .topbar-share-btn { font-size: 12px; }
     </style>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
@@ -674,6 +742,8 @@
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
           <button id="credits-pill" class="requires-auth credits-pill" type="button" title="Wallet & credits" style="display:none;">💳 <span id="credits-pill-value">—</span></button>
+          <button id="share-link-btn" class="requires-auth button secondary topbar-share-btn" type="button" title="Copy booking link" style="display:none;">🔗 Booking link</button>
+          <button id="global-search-btn" class="requires-auth icon-btn" type="button" title="Search (Ctrl+K)" style="display:none;">🔍</button>
           <a href="/auth/google" id="connect-link" class="button" style="text-decoration:none;">Connect Google Account</a>
           <button id="settings-icon-btn" class="requires-auth icon-btn" type="button" title="Settings" style="display:none;">⚙️</button>
           <button id="logout-button" class="button secondary" type="button" style="display:none;">Log out</button>
@@ -682,11 +752,11 @@
 
       <nav class="tabs requires-auth" id="tab-nav">
         <button class="tab-button active" type="button" data-tab="dashboard">Today</button>
-        <button class="tab-button" type="button" data-tab="leads">Requests</button>
-        <button class="tab-button" type="button" data-tab="bookings">Bookings</button>
+        <button class="tab-button" type="button" data-tab="leads">Requests<span class="tab-badge" id="badge-leads" style="display:none;"></span></button>
+        <button class="tab-button" type="button" data-tab="bookings">Bookings<span class="tab-badge" id="badge-bookings" style="display:none;"></span></button>
         <button class="tab-button" type="button" data-tab="documents">Documents</button>
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
-        <button class="tab-button" type="button" data-tab="conversations">Messages</button>
+        <button class="tab-button" type="button" data-tab="conversations">Messages<span class="tab-badge" id="badge-messages" style="display:none;"></span></button>
         <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
         <button class="tab-button" type="button" data-tab="mypage">My Page</button>
         <div class="tab-more-wrap">
@@ -803,20 +873,25 @@
           <p class="muted" style="margin-bottom:14px;font-size:14px;">A few quick steps and you’re ready to take bookings. Clients can’t book until these are done.</p>
           <div id="setup-steps" class="setup-steps"></div>
         </div>
+        <div class="panel section" id="attention-section" style="display:none;margin-bottom:20px;border-left:3px solid var(--accent);">
+          <div class="kicker" style="color:var(--accent);">Needs your attention</div>
+          <div id="attention-items"></div>
+        </div>
         <div class="panel section" style="margin-bottom:20px;">
-          <div class="kicker">What's next</div>
+          <div class="kicker">What’s next</div>
           <h2 id="upcoming-title">Your upcoming jobs</h2>
           <div id="upcoming-jobs"></div>
         </div>
         <div class="panel section">
           <div class="kicker">Overview</div>
           <h2>At a glance</h2>
-          <div class="stat-grid">
-            <div class="stat"><strong id="stat-leads">0</strong> Open requests</div>
-            <div class="stat"><strong id="stat-bookings">0</strong> Confirmed bookings</div>
-            <div class="stat"><strong id="stat-awaiting">0</strong> Waiting on client</div>
+          <div class="stat-grid" style="grid-template-columns:repeat(2,1fr);gap:10px;" id="stats-grid">
+            <div class="stat"><strong id="stat-leads">0</strong><span>Open requests</span></div>
+            <div class="stat"><strong id="stat-bookings">0</strong><span>Confirmed bookings</span></div>
+            <div class="stat"><strong id="stat-awaiting">0</strong><span>Awaiting client</span></div>
+            <div class="stat"><strong id="stat-revenue">₹0</strong><span>Confirmed upcoming revenue</span></div>
           </div>
-          <div id="snapshot-content" class="lead stack" style="font-size:16px;">
+          <div id="snapshot-content" class="lead stack" style="font-size:16px;margin-top:14px;">
             Sign in to see your live requests, approvals, and confirmed bookings.
           </div>
           <div class="workspace stack" id="workspace-summary"></div>
@@ -877,7 +952,7 @@
           </details>
 
           <div class="filter-bar" style="margin-top:18px;">
-            <input type="search" id="lead-search" class="grow" placeholder="Search by name, place…" />
+            <input type="search" id="lead-search" class="grow" placeholder="Search by name, place… (/ to focus)" />
             <select id="lead-filter-event">
               <option value="">All occasions</option>
               <option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option>
@@ -885,6 +960,13 @@
             <select id="lead-filter-source">
               <option value="">All sources</option>
               <option>Instagram</option><option>WhatsApp</option><option value="Manual">In person / phone</option>
+            </select>
+            <select id="lead-filter-date">
+              <option value="">All dates</option>
+              <option value="7">Next 7 days</option>
+              <option value="30">Next 30 days</option>
+              <option value="90">Next 3 months</option>
+              <option value="past">Past events</option>
             </select>
             <div class="view-toggle">
               <button class="view-toggle-btn active" type="button" id="view-board-btn">⊞ Board</button>
@@ -912,8 +994,15 @@
               <option value="">All payment states</option>
               <option>Advance Due</option><option>Advance Paid</option><option>Paid in Full</option>
             </select>
+            <select id="booking-filter-date">
+              <option value="">All dates</option>
+              <option value="30">Next 30 days</option>
+              <option value="90">Next 3 months</option>
+              <option value="past">Past events</option>
+            </select>
             <span class="muted" id="booking-count"></span>
           </div>
+          <div id="booking-payment-summary" class="payment-summary" style="display:none;"></div>
           <div class="table-wrap cards-on-mobile">
             <table>
               <thead>
@@ -1588,6 +1677,20 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
     </main>
     <div class="toast-shelf" id="toast-shelf"></div>
 
+    <!-- Global search modal (Ctrl/Cmd + K) -->
+    <div class="modal-overlay" id="global-search-modal">
+      <div class="modal search-modal">
+        <div class="search-modal-input-wrap">
+          <span class="search-modal-icon">🔍</span>
+          <input type="search" id="global-search-input" class="search-modal-input" placeholder="Search clients, bookings, documents…" autocomplete="off" />
+          <span class="search-modal-kbd">ESC</span>
+        </div>
+        <div class="search-results" id="global-search-results">
+          <div class="search-empty">Start typing to search across all your data</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Notify-team modal: one-tap WhatsApp briefs to freelance specialists -->
     <div class="modal-overlay" id="notify-team-modal">
       <div class="modal">
@@ -1986,20 +2089,102 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         finally { clearLoading(saveBtn, "Save changes"); }
       });
 
+      function daysSince(isoString) {
+        if (!isoString) return null;
+        return Math.floor((Date.now() - new Date(isoString).getTime()) / 86400000);
+      }
+
       function updateStats(leads, bookings) {
-        document.getElementById("stat-leads").textContent = String(leads.filter((l) => !["Lost", "Completed"].includes(l.status)).length);
+        const openLeads = leads.filter((l) => !["Lost", "Completed"].includes(l.status));
+        document.getElementById("stat-leads").textContent = String(openLeads.length);
         document.getElementById("stat-bookings").textContent = String(bookings.length);
         document.getElementById("stat-awaiting").textContent = String(leads.filter((l) => l.status === "Awaiting Client").length);
+
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const upcomingRevenue = bookings
+          .filter((b) => { const d = new Date(b.eventDate); return !isNaN(d) && d >= today; })
+          .reduce((s, b) => s + Number(b.finalPrice || 0), 0);
+        document.getElementById("stat-revenue").textContent = formatMoney(upcomingRevenue);
+
+        // Notification badges
+        const newLeads = openLeads.filter((l) => l.status === "New").length;
+        const advanceDue = bookings.filter((b) => (b.paymentStatus || "") === "Advance Due").length;
+        setBadge("badge-leads", newLeads);
+        setBadge("badge-bookings", advanceDue);
       }
+
+      function setBadge(id, count) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (count > 0) { el.textContent = count > 99 ? "99+" : String(count); el.style.display = ""; }
+        else el.style.display = "none";
+      }
+
       function renderSnapshot(leads, bookings) {
         const awaiting = leads.filter((l) => l.status === "Awaiting Client").length;
-        const revenue = bookings.reduce((s, b) => s + Number(b.finalPrice || 0), 0);
+        const unread = (sessionState?.dashboard?.interactions || []).filter((i) => i.direction === "inbound" && !i.read).length;
+        setBadge("badge-messages", unread);
         const waitingLine = awaiting > 0
           ? `${awaiting} ${awaiting === 1 ? "client is" : "clients are"} yet to reply. `
           : "";
         snapshotContent.innerHTML = `
-          <p class="lead" style="font-size:16px;">${waitingLine}You have ${bookings.length} confirmed ${bookings.length === 1 ? "booking" : "bookings"} in your calendar.</p>
-          ${revenue > 0 ? `<p class="lead" style="font-size:16px;">Confirmed earnings so far: <strong>${formatMoney(revenue)}</strong></p>` : ""}`;
+          <p class="lead" style="font-size:16px;">${waitingLine}You have ${bookings.length} confirmed ${bookings.length === 1 ? "booking" : "bookings"} in your calendar.</p>`;
+      }
+
+      function renderAttentionItems(leads, bookings) {
+        const section = document.getElementById("attention-section");
+        const container = document.getElementById("attention-items");
+        if (!section || !container) return;
+
+        const items = [];
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+
+        // New unreviewed leads
+        const newLeads = leads.filter((l) => l.status === "New");
+        if (newLeads.length) {
+          items.push({ icon: "📩", title: `${newLeads.length} new request${newLeads.length > 1 ? "s" : ""} waiting for your decision`, sub: newLeads.map((l) => l.clientName).slice(0, 3).join(", ") + (newLeads.length > 3 ? ` +${newLeads.length - 3} more` : ""), tab: "leads", danger: false });
+        }
+
+        // Stale leads (no contact in 3+ days, still open)
+        const staleLeads = leads.filter((l) => {
+          if (["Lost", "Completed", "New"].includes(l.status)) return false;
+          const ds = daysSince(l.lastContactedAt);
+          return ds !== null && ds >= 3;
+        });
+        if (staleLeads.length) {
+          items.push({ icon: "⏳", title: `${staleLeads.length} lead${staleLeads.length > 1 ? "s" : ""} with no contact in 3+ days`, sub: staleLeads.map((l) => l.clientName).slice(0, 3).join(", ") + (staleLeads.length > 3 ? ` +${staleLeads.length - 3} more` : ""), tab: "leads", danger: false });
+        }
+
+        // Advance payments overdue (event date passed, advance still due)
+        const overdueAdvance = bookings.filter((b) => {
+          const d = new Date(b.eventDate); d.setHours(0,0,0,0);
+          return d < today && (b.paymentStatus || "") === "Advance Due";
+        });
+        if (overdueAdvance.length) {
+          items.push({ icon: "💸", title: `${overdueAdvance.length} booking${overdueAdvance.length > 1 ? "s" : ""} with advance payment still outstanding`, sub: overdueAdvance.map((b) => b.clientName).join(", "), tab: "bookings", danger: true });
+        }
+
+        // Events in next 48 hours with advance not collected
+        const imminent = bookings.filter((b) => {
+          const d = new Date(b.eventDate); d.setHours(0,0,0,0);
+          const daysAway = Math.ceil((d - today) / 86400000);
+          return daysAway >= 0 && daysAway <= 2 && (b.paymentStatus || "") === "Advance Due";
+        });
+        if (imminent.length) {
+          items.push({ icon: "🚨", title: `${imminent.length} upcoming event${imminent.length > 1 ? "s" : ""} in 2 days — advance not received`, sub: imminent.map((b) => `${b.clientName} (${formatDay(b.eventDate)})`).join(", "), tab: "bookings", danger: true });
+        }
+
+        if (!items.length) { section.style.display = "none"; return; }
+        section.style.display = "";
+        container.innerHTML = items.map((item) => `
+          <div class="attention-item ${item.danger ? "danger" : ""}" data-attention-tab="${item.tab}">
+            <span class="attention-item-icon">${item.icon}</span>
+            <div class="attention-item-body">
+              <div class="attention-item-title">${escapeHtml(item.title)}</div>
+              ${item.sub ? `<div class="attention-item-sub">${escapeHtml(item.sub)}</div>` : ""}
+            </div>
+            <span class="attention-item-action">View →</span>
+          </div>`).join("");
       }
 
       function assignOptions(current) {
@@ -2060,6 +2245,14 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           ? `<span class="${pillClass(lead.paymentStatus)}" style="font-size:11px;">${escapeHtml(lead.paymentStatus)}</span>`
           : "";
 
+        const contactedDays = daysSince(lead.lastContactedAt);
+        const isNewLead = lead.status === "New";
+        const staleClass = !isNewLead && contactedDays !== null && contactedDays >= 3 ? "cold" : contactedDays !== null && contactedDays >= 1 ? "warm" : "fresh";
+        const staleLabel = contactedDays === null ? "" : contactedDays === 0 ? "Contacted today" : contactedDays === 1 ? "Contacted yesterday" : `Last contact ${contactedDays}d ago`;
+        const lastContactHtml = staleLabel && !isNewLead
+          ? `<div class="card-last-contact ${staleClass === "cold" ? "cold" : ""}">${staleClass !== "fresh" ? `<span class="stale-dot ${staleClass}"></span>` : ""}${escapeHtml(staleLabel)}</div>`
+          : "";
+
         const initial = (lead.clientName || "?")[0].toUpperCase();
 
         return `
@@ -2112,6 +2305,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             </div>
             ${lead.aiInsight ? `<p class="card-meta" style="font-style:italic;margin:6px 0 0;border-left:2px solid var(--line);padding-left:8px;line-height:1.5;">${escapeHtml(lead.aiInsight)}</p>` : ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0;">${quoteChip}${payChip}</div>
+            ${lastContactHtml}
             ${waBtn}
             ${primaryBtn}
             <div class="assign-row" style="margin-top:8px;">
@@ -2125,9 +2319,19 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const q = (document.getElementById("lead-search").value || "").toLowerCase();
         const ev = document.getElementById("lead-filter-event").value;
         const src = document.getElementById("lead-filter-source").value;
+        const dateRange = document.getElementById("lead-filter-date")?.value || "";
+        const today = new Date(); today.setHours(0, 0, 0, 0);
         return leads.filter((l) => {
           if (ev && l.eventType !== ev) return false;
           if (src && l.source !== src) return false;
+          if (dateRange) {
+            const d = l.eventDate ? new Date(l.eventDate) : null;
+            if (!d || isNaN(d)) return dateRange !== "past";
+            if (dateRange === "past") return d < today;
+            const days = parseInt(dateRange, 10);
+            const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + days);
+            return d >= today && d <= cutoff;
+          }
           if (q) {
             const hay = `${l.clientName} ${l.locationText} ${l.clientTags} ${l.leadId}`.toLowerCase();
             if (!hay.includes(q)) return false;
@@ -2230,9 +2434,19 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const q = (document.getElementById("booking-search").value || "").toLowerCase();
         const ev = document.getElementById("booking-filter-event").value;
         const pay = document.getElementById("booking-filter-payment").value;
+        const dateRange = document.getElementById("booking-filter-date")?.value || "";
+        const today = new Date(); today.setHours(0, 0, 0, 0);
         return bookings.filter((b) => {
           if (ev && b.eventType !== ev) return false;
           if (pay && (b.paymentStatus || "") !== pay) return false;
+          if (dateRange) {
+            const d = b.eventDate ? new Date(b.eventDate) : null;
+            if (!d || isNaN(d)) return dateRange !== "past";
+            if (dateRange === "past") return d < today;
+            const days = parseInt(dateRange, 10);
+            const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + days);
+            return d >= today && d <= cutoff;
+          }
           if (q) {
             const hay = `${b.clientName} ${b.venue} ${b.bookingId}`.toLowerCase();
             if (!hay.includes(q)) return false;
@@ -2244,6 +2458,22 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       function renderBookings() {
         const bookings = filteredBookings();
         document.getElementById("booking-count").textContent = `${bookings.length} shown`;
+
+        // Payment summary bar
+        const summaryEl = document.getElementById("booking-payment-summary");
+        if (summaryEl && bookings.length) {
+          const totalRevenue = bookings.reduce((s, b) => s + Number(b.finalPrice || 0), 0);
+          const totalAdvanceDue = bookings.filter((b) => (b.paymentStatus || "") === "Advance Due").reduce((s, b) => s + Number(b.advanceAmount || 0), 0);
+          const totalAdvancePaid = bookings.filter((b) => ["Advance Paid", "Paid in Full"].includes(b.paymentStatus || "")).reduce((s, b) => s + Number(b.advanceAmount || 0), 0);
+          summaryEl.style.display = "";
+          summaryEl.innerHTML = `
+            <div class="payment-summary-item"><strong>${formatMoney(totalRevenue)}</strong> total confirmed</div>
+            <div class="payment-summary-item" style="color:var(--warning);"><strong>${formatMoney(totalAdvanceDue)}</strong> advances pending</div>
+            <div class="payment-summary-item" style="color:var(--success);"><strong>${formatMoney(totalAdvancePaid)}</strong> advances collected</div>`;
+        } else if (summaryEl) {
+          summaryEl.style.display = "none";
+        }
+
         if (!bookings.length) {
           bookingsBody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📅</div><h3>No bookings yet</h3><p>When you confirm a request, it appears here with invoice and contract tools.</p></div></td></tr>`;
           return;
@@ -2267,26 +2497,33 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
               ${booking.contractSentAt ? `<br><span class="muted" style="font-size:11px;">Sent ${formatDate(booking.contractSentAt)}</span>` : ""}
             </td>
             <td data-label="Actions">
+              ${(booking.paymentStatus === "Advance Due")
+                ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
+                    <button class="button small" data-booking-action="advance" data-booking-id="${booking.bookingId}" style="background:var(--sage);">✓ Mark advance paid</button>
+                  </div>`
+                : (booking.paymentStatus === "Advance Paid")
+                ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
+                    <button class="button small" data-booking-action="full" data-booking-id="${booking.bookingId}" style="background:var(--sage);">✓ Mark paid in full</button>
+                  </div>`
+                : ""}
               <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
-                <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Notify team</button>
-                <a href="/api/bookings/${booking.bookingId}/invoice/preview" target="_blank" rel="noreferrer" class="button small secondary">👁 Preview invoice</a>
-                <a href="/api/bookings/${booking.bookingId}/contract/preview" target="_blank" rel="noreferrer" class="button small secondary">👁 Preview contract</a>
+                <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Team</button>
                 ${booking.invoiceUrl
-                  ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open invoice</a>`
+                  ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Invoice</a>`
                   : `<button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Create invoice</button>`}
                 ${booking.contractUrl
-                  ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Open contract</a>`
+                  ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Contract</a>`
                   : `<button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create contract</button>`}
               </div>
-              <details style="margin-top:10px;">
-                <summary class="more-summary">More actions</summary>
-                <div class="action-row" style="margin-top:10px;align-items:center;flex-wrap:wrap;">
+              <details style="margin-top:8px;">
+                <summary class="more-summary">More</summary>
+                <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:5px;">
+                  <a href="/api/bookings/${booking.bookingId}/invoice/preview" target="_blank" rel="noreferrer" class="button small secondary">👁 Invoice</a>
+                  <a href="/api/bookings/${booking.bookingId}/contract/preview" target="_blank" rel="noreferrer" class="button small secondary">👁 Contract</a>
                   <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send invoice</button>
                   <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
-                  <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync contract</button>
-                </div>
-                <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;">
-                  <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask for review</button>
+                  <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync status</button>
+                  <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask review</button>
                   <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Advance reminder</button>
                   <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance reminder</button>
                 </div>
@@ -2299,6 +2536,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const leads = session.dashboard?.leads || [];
         const bookings = session.dashboard?.bookings || [];
         updateStats(leads, bookings);
+        renderAttentionItems(leads, bookings);
         renderUpcoming(bookings);
         renderSnapshot(leads, bookings);
         renderLeads();
@@ -3200,6 +3438,10 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         connectLink.style.display = "none";
         const settingsIconBtn = document.getElementById("settings-icon-btn");
         if (settingsIconBtn) settingsIconBtn.style.display = "inline-flex";
+        const shareLinkBtn = document.getElementById("share-link-btn");
+        if (shareLinkBtn) shareLinkBtn.style.display = "inline-flex";
+        const globalSearchBtn = document.getElementById("global-search-btn");
+        if (globalSearchBtn) globalSearchBtn.style.display = "inline-flex";
         const _initial = (payload.profile.name || "?")[0].toUpperCase();
         loginState.innerHTML = `
           <div style="display:flex;align-items:center;gap:10px;">
@@ -3747,6 +3989,8 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           else if (action === "review") { await postJson(`/api/bookings/${bookingId}/send-review`, {}); toast("Review request sent.", "success"); }
           else if (action === "advance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); toast("Advance reminder sent.", "success"); }
           else if (action === "balance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); toast("Balance reminder sent.", "success"); }
+          else if (action === "advance") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Advance Paid" }); toast("Marked as advance paid.", "success"); }
+          else if (action === "full") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Paid in Full" }); toast("Marked as paid in full.", "success"); }
           await refreshSession();
         } catch (error) {
           toast(error.message, "error");
@@ -3816,6 +4060,108 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
       const params = new URLSearchParams(window.location.search);
       if (params.get("meta_connected") || params.get("instagram_login_ready")) sessionStorage.setItem("activeTab", "channels");
+
+      // ─── "Needs attention" section clicks ───
+      document.getElementById("attention-items")?.addEventListener("click", (e) => {
+        const item = e.target.closest("[data-attention-tab]");
+        if (item) activateTab(item.getAttribute("data-attention-tab"));
+      });
+
+      // ─── Booking-link share button in topbar ───
+      document.getElementById("share-link-btn")?.addEventListener("click", () => {
+        const wsId = sessionState?.workspace?.workspaceId;
+        if (!wsId) return;
+        const url = `${window.location.origin}/book/${encodeURIComponent(wsId)}`;
+        navigator.clipboard?.writeText(url).then(() => toast("Booking link copied!", "success")).catch(() => toast(url, "success"));
+      });
+
+      // ─── Date-range filter triggers ───
+      document.getElementById("lead-filter-date")?.addEventListener("change", renderLeads);
+      document.getElementById("booking-filter-date")?.addEventListener("change", renderBookings);
+
+      // ─── Global search ───
+      const globalSearchModal = document.getElementById("global-search-modal");
+      const globalSearchInput = document.getElementById("global-search-input");
+      const globalSearchResults = document.getElementById("global-search-results");
+
+      function openGlobalSearch() {
+        if (!sessionState?.dashboard) return;
+        globalSearchModal.classList.add("open");
+        globalSearchInput.value = "";
+        globalSearchResults.innerHTML = `<div class="search-empty">Start typing to search across all your data</div>`;
+        setTimeout(() => globalSearchInput.focus(), 50);
+      }
+      function closeGlobalSearch() { globalSearchModal.classList.remove("open"); }
+
+      function runGlobalSearch(q) {
+        if (!q.trim()) { globalSearchResults.innerHTML = `<div class="search-empty">Start typing to search across all your data</div>`; return; }
+        const qlo = q.toLowerCase();
+        const leads = (sessionState?.dashboard?.leads || []).filter((l) =>
+          `${l.clientName} ${l.locationText} ${l.eventType} ${l.clientWhatsApp}`.toLowerCase().includes(qlo));
+        const bookings = (sessionState?.dashboard?.bookings || []).filter((b) =>
+          `${b.clientName} ${b.venue} ${b.eventType} ${b.clientWhatsApp}`.toLowerCase().includes(qlo));
+
+        if (!leads.length && !bookings.length) {
+          globalSearchResults.innerHTML = `<div class="search-empty">No results for "${escapeHtml(q)}"</div>`;
+          return;
+        }
+        let html = "";
+        if (leads.length) {
+          html += `<div class="search-result-group"><div class="search-result-group-label">Requests (${leads.length})</div>`;
+          html += leads.slice(0, 6).map((l) => `
+            <div class="search-result-item" data-sr-lead="${l.leadId}">
+              <span class="search-result-icon">👤</span>
+              <div class="search-result-body">
+                <div class="search-result-title">${escapeHtml(l.clientName)}</div>
+                <div class="search-result-sub">${escapeHtml(l.eventType)} · ${escapeHtml(formatDay(l.eventDate))} · ${escapeHtml(l.locationText)}</div>
+              </div>
+              <span class="search-result-right">${escapeHtml(l.status)}</span>
+            </div>`).join("");
+          html += `</div>`;
+        }
+        if (bookings.length) {
+          html += `<div class="search-result-group"><div class="search-result-group-label">Bookings (${bookings.length})</div>`;
+          html += bookings.slice(0, 6).map((b) => `
+            <div class="search-result-item" data-sr-booking="${b.bookingId}">
+              <span class="search-result-icon">📅</span>
+              <div class="search-result-body">
+                <div class="search-result-title">${escapeHtml(b.clientName)}</div>
+                <div class="search-result-sub">${escapeHtml(b.eventType)} · ${escapeHtml(formatDay(b.eventDate))} · ${escapeHtml(b.venue)}</div>
+              </div>
+              <span class="search-result-right">${escapeHtml(b.paymentStatus || b.status)}</span>
+            </div>`).join("");
+          html += `</div>`;
+        }
+        globalSearchResults.innerHTML = html;
+      }
+
+      globalSearchInput?.addEventListener("input", (e) => runGlobalSearch(e.target.value));
+      globalSearchModal?.addEventListener("click", (e) => {
+        if (e.target === globalSearchModal) closeGlobalSearch();
+        const leadItem = e.target.closest("[data-sr-lead]");
+        if (leadItem) {
+          const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadItem.getAttribute("data-sr-lead"));
+          if (lead) { closeGlobalSearch(); activateTab("leads"); setTimeout(() => openLeadDrawer(lead), 100); }
+          return;
+        }
+        const bookingItem = e.target.closest("[data-sr-booking]");
+        if (bookingItem) { closeGlobalSearch(); activateTab("bookings"); }
+      });
+      document.getElementById("global-search-btn")?.addEventListener("click", openGlobalSearch);
+
+      // ─── Keyboard shortcuts ───
+      document.addEventListener("keydown", (e) => {
+        const inInput = e.target.matches("input, textarea, select, [contenteditable]");
+        // Escape closes search or drawer
+        if (e.key === "Escape") { closeGlobalSearch(); return; }
+        // Cmd/Ctrl+K opens global search
+        if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); openGlobalSearch(); return; }
+        if (inInput) return;
+        // / focuses lead search
+        if (e.key === "/" ) { e.preventDefault(); activateTab("leads"); setTimeout(() => document.getElementById("lead-search")?.focus(), 50); return; }
+        // N opens add-client form
+        if (e.key === "n" || e.key === "N") { activateTab("leads"); const c = document.getElementById("add-client-collapse"); if (c) { c.open = true; c.scrollIntoView({ behavior: "smooth", block: "start" }); } return; }
+      });
 
       refreshSession()
         .then(() => { const stored = sessionStorage.getItem("activeTab"); if (stored) { activateTab(stored); sessionStorage.removeItem("activeTab"); } })

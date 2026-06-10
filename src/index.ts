@@ -1300,6 +1300,32 @@ app.post("/api/leads/:leadId/payment", async (req, res, next) => {
   }
 });
 
+// Update payment status via bookingId (convenience endpoint used from bookings table).
+app.post("/api/bookings/:bookingId/payment", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { bookingId } = req.params;
+    const parsed = paymentStatusSchema.parse(req.body);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      bookingId,
+    );
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    const result = await updatePaymentStatus(
+      req.session.profile.email,
+      req.session.googleTokens,
+      booking.leadId,
+      parsed.paymentStatus,
+    );
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/leads/:leadId/quote", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
