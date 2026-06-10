@@ -8,6 +8,8 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-
 const { isPublicHttpUrl } = await import("../src/services/http.ts");
 const { roundToPremiumNumber } = await import("../src/services/booking.ts");
 const { parseDocumentAdjustments, parseOrderItems } = await import("../src/services/documents.ts");
+const { buildAssistantSnapshot } = await import("../src/services/assistant.ts");
+const { quickBookingSchema } = await import("../src/api-schema.ts");
 
 // --- SSRF guard (isPublicHttpUrl) ---------------------------------------------
 
@@ -119,4 +121,87 @@ test("parseOrderItems drops rows with no label or zero quantity, and tolerates j
   );
   assert.equal(parsed.items.length, 1);
   assert.equal(parsed.total, 200);
+});
+
+// --- AI assistant snapshot (buildAssistantSnapshot) ----------------------------
+
+function leadFixture(over = {}) {
+  return {
+    leadId: "L1", createdAt: "2026-06-01T00:00:00Z", source: "Instagram",
+    clientName: "Priya", clientWhatsApp: "+919900112233", clientInstagram: "",
+    eventType: "Bridal", eventDate: "2026-07-01", eventTime: "", locationText: "Mumbai",
+    distanceKm: 0, travelTimeMin: 0, outstationFlag: "No", profileTier: "Mid",
+    followers: 0, clientTags: "", aiInsight: "", suggestedReply: "", demandCount: 0,
+    scarcityTag: "", holdExpiresAt: "", initialAiPrice: 20000, finalApprovedPrice: 25000,
+    discountPercent: 0, ownerDecision: "", ownerNotes: "", status: "New",
+    assignedArtist: "", lastContactedAt: "2026-06-05T00:00:00Z",
+    tentativeCalendarEventId: "", confirmedCalendarEventId: "", bookingId: "",
+    paymentStatus: "Not Started", quoteUrl: "", quoteGeneratedAt: "", quoteVoidedAt: "",
+    quoteAdjustments: "", orderItems: "", ...over,
+  };
+}
+
+function bookingFixture(over = {}) {
+  return {
+    bookingId: "B1", leadId: "L1", bookedAt: "2026-06-02T00:00:00Z",
+    clientName: "Priya", clientWhatsApp: "+919900112233", eventType: "Bridal",
+    eventDate: "2026-07-01", eventTime: "10:00", venue: "Taj, Mumbai",
+    assignedArtist: "", finalPrice: 25000, advanceAmount: 7500, balanceDue: 17500,
+    tentativeCalendarEventId: "", confirmedCalendarEventId: "", contractUrl: "",
+    invoiceUrl: "", paymentStatus: "Advance Due", status: "Confirmed",
+    contractStatus: "", contractSentAt: "", invoiceGeneratedAt: "", remindersSent: "",
+    invoiceVoidedAt: "", contractVoidedAt: "", invoiceAdjustments: "",
+    contractAdjustments: "", orderItems: "", ...over,
+  };
+}
+
+test("buildAssistantSnapshot computes totals and filters closed leads", () => {
+  const leads = [
+    leadFixture(),
+    leadFixture({ leadId: "L2", status: "Lost" }),
+    leadFixture({ leadId: "L3", status: "Completed" }),
+  ];
+  const bookings = [
+    bookingFixture(),
+    bookingFixture({ bookingId: "B2", eventDate: "2020-01-01", finalPrice: 9000, paymentStatus: "Paid in Full" }),
+  ];
+  const snap = buildAssistantSnapshot(leads, bookings, new Date("2026-06-10T00:00:00Z"));
+  assert.equal(snap.today, "2026-06-10");
+  assert.equal(snap.openLeads.length, 1); // Lost + Completed excluded
+  assert.equal(snap.totals.openLeadCount, 1);
+  assert.equal(snap.totals.bookingCount, 2);
+  // Only the future booking counts toward upcoming revenue.
+  assert.equal(snap.totals.confirmedUpcomingRevenue, 25000);
+  // Only the Advance Due booking contributes to pending advances.
+  assert.equal(snap.totals.advancesPending, 7500);
+});
+
+test("buildAssistantSnapshot caps rows so a huge workspace can't blow up the prompt", () => {
+  const leads = Array.from({ length: 80 }, (_, i) => leadFixture({ leadId: `L${i}` }));
+  const bookings = Array.from({ length: 80 }, (_, i) => bookingFixture({ bookingId: `B${i}` }));
+  const snap = buildAssistantSnapshot(leads, bookings);
+  assert.ok(snap.openLeads.length <= 40);
+  assert.ok(snap.bookings.length <= 40);
+  assert.equal(snap.totals.openLeadCount, 80); // totals still reflect everything
+});
+
+// --- Quick walk-in booking schema (quickBookingSchema) -------------------------
+
+test("quickBookingSchema accepts a valid walk-in booking and coerces types", () => {
+  const parsed = quickBookingSchema.parse({
+    clientName: "Meera", clientWhatsApp: "+91 98765 43210", eventType: "Party",
+    eventDate: "2026-08-15", locationText: "Bandra, Mumbai", price: "12000",
+  });
+  assert.equal(parsed.price, 12000);
+  assert.equal(parsed.advancePaid, false);
+});
+
+test("quickBookingSchema rejects missing price, bad phone, and bad date", () => {
+  const base = {
+    clientName: "Meera", clientWhatsApp: "+919876543210", eventType: "Party",
+    eventDate: "2026-08-15", locationText: "Mumbai", price: 5000,
+  };
+  assert.throws(() => quickBookingSchema.parse({ ...base, price: 0 }));
+  assert.throws(() => quickBookingSchema.parse({ ...base, clientWhatsApp: "abc" }));
+  assert.throws(() => quickBookingSchema.parse({ ...base, eventDate: "15-08-2026" }));
 });

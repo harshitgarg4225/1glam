@@ -729,6 +729,34 @@
 
       /* ─── Quick copy button in topbar ─── */
       .topbar-share-btn { font-size: 12px; }
+
+      /* ─── Ask BusyDays (AI assistant) ─── */
+      .ask-box { display: flex; gap: 8px; margin-top: 12px; }
+      .ask-box input { flex: 1; }
+      .ask-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+      .ask-chip { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
+      .ask-chip:hover { border-color: var(--accent); color: var(--accent); }
+      .ask-answer { margin-top: 14px; padding: 14px 16px; border-radius: var(--radius); background: var(--accent-soft); border: 1px solid #F0D9CC; font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; display: none; }
+      .ask-answer.show { display: block; }
+
+      /* ─── Clients directory ─── */
+      .client-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); margin-bottom: 8px; cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; }
+      .client-row:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.07); border-color: var(--accent); }
+      .client-row-main { flex: 1; min-width: 0; }
+      .client-row-name { font-weight: 600; font-size: 15px; }
+      .client-row-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+      .client-row-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+      .client-row-spend { font-weight: 700; font-size: 14.5px; }
+      .client-row-visits { font-size: 12px; color: var(--muted); }
+      @media (max-width: 640px) {
+        .client-row { flex-wrap: wrap; }
+        .client-row-stats { flex-direction: row; width: 100%; justify-content: space-between; align-items: center; }
+      }
+
+      /* ─── Quick-setup wizard ─── */
+      .wizard-field { margin-bottom: 14px; }
+      .wizard-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+      .wizard-field .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
     </style>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
@@ -742,6 +770,7 @@
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
           <button id="credits-pill" class="requires-auth credits-pill" type="button" title="Wallet & credits" style="display:none;">💳 <span id="credits-pill-value">—</span></button>
+          <button id="quick-booking-btn" class="requires-auth button topbar-share-btn" type="button" title="Add a booking in one step" style="display:none;">➕ New booking</button>
           <button id="share-link-btn" class="requires-auth button secondary topbar-share-btn" type="button" title="Copy booking link" style="display:none;">🔗 Booking link</button>
           <button id="global-search-btn" class="requires-auth icon-btn" type="button" title="Search (Ctrl+K)" style="display:none;">🔍</button>
           <a href="/auth/google" id="connect-link" class="button" style="text-decoration:none;">Connect Google Account</a>
@@ -754,6 +783,7 @@
         <button class="tab-button active" type="button" data-tab="dashboard">Today</button>
         <button class="tab-button" type="button" data-tab="leads">Requests<span class="tab-badge" id="badge-leads" style="display:none;"></span></button>
         <button class="tab-button" type="button" data-tab="bookings">Bookings<span class="tab-badge" id="badge-bookings" style="display:none;"></span></button>
+        <button class="tab-button" type="button" data-tab="clients">Clients</button>
         <button class="tab-button" type="button" data-tab="documents">Documents</button>
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
         <button class="tab-button" type="button" data-tab="conversations">Messages<span class="tab-badge" id="badge-messages" style="display:none;"></span></button>
@@ -878,6 +908,22 @@
           <div id="attention-items"></div>
         </div>
         <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">✨ Ask BusyDays</div>
+          <h2>Ask anything about your business</h2>
+          <p class="muted" style="margin:0;font-size:13.5px;">Your AI assistant knows your requests, bookings, and payments. Ask in plain words.</p>
+          <form class="ask-box" id="ask-form">
+            <input type="text" id="ask-input" placeholder="e.g. Who hasn't paid their advance yet?" maxlength="500" autocomplete="off" />
+            <button class="button" type="submit" id="ask-btn">Ask</button>
+          </form>
+          <div class="ask-chips">
+            <button class="ask-chip" type="button" data-ask="Who hasn't paid their advance yet?">Who hasn't paid?</button>
+            <button class="ask-chip" type="button" data-ask="What do I have coming up in the next 7 days?">What's coming up this week?</button>
+            <button class="ask-chip" type="button" data-ask="Which clients should I follow up with today and why?">Who should I follow up with?</button>
+            <button class="ask-chip" type="button" data-ask="How much confirmed revenue do I have, and how much of it is still unpaid?">How's my money looking?</button>
+          </div>
+          <div class="ask-answer" id="ask-answer"></div>
+        </div>
+        <div class="panel section" style="margin-bottom:20px;">
           <div class="kicker">What’s next</div>
           <h2 id="upcoming-title">Your upcoming jobs</h2>
           <div id="upcoming-jobs"></div>
@@ -982,8 +1028,13 @@
       <!-- Bookings (filterable table) -->
       <section class="tab-panel" data-panel="bookings">
         <div class="panel section">
-          <div class="kicker">Confirmed Work</div>
-          <h2>Bookings</h2>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">Confirmed Work</div>
+              <h2>Bookings</h2>
+            </div>
+            <button class="button" type="button" data-open-quick-booking>➕ New booking</button>
+          </div>
           <div class="filter-bar">
             <input type="search" id="booking-search" class="grow" placeholder="Search client, venue, booking id..." />
             <select id="booking-filter-event">
@@ -1015,11 +1066,30 @@
         </div>
       </section>
 
+      <!-- Clients (directory aggregated from requests + bookings) -->
+      <section class="tab-panel" data-panel="clients">
+        <div class="panel section">
+          <div class="kicker">Your people</div>
+          <h2>Clients</h2>
+          <p class="muted" style="margin:0 0 14px;font-size:13.5px;">Everyone who has ever reached out or booked, in one place — with what they've spent and when you last saw them.</p>
+          <div class="filter-bar">
+            <input type="search" id="client-search" class="grow" placeholder="Search by name or number…" />
+            <span class="muted" id="client-count"></span>
+          </div>
+          <div id="clients-list" style="margin-top:14px;"></div>
+        </div>
+      </section>
+
       <!-- Calendar -->
       <section class="tab-panel" data-panel="calendar">
         <div class="panel section">
-          <div class="kicker">Schedule</div>
-          <h2>Calendar</h2>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">Schedule</div>
+              <h2>Calendar</h2>
+            </div>
+            <button class="button" type="button" data-open-quick-booking>➕ New booking</button>
+          </div>
           <div class="cal-toolbar">
             <button class="button small secondary" type="button" data-cal-mode="MONTH">Month</button>
             <button class="button small secondary" type="button" data-cal-mode="WEEK">Week</button>
@@ -1691,6 +1761,76 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       </div>
     </div>
 
+    <!-- Quick booking: walk-in / phone booking in one step, no pipeline -->
+    <div class="modal-overlay" id="quick-booking-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 style="margin:0;">➕ New booking</h3>
+          <button class="modal-close" type="button" id="quick-booking-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 14px;">For a client you've already said yes to — on the phone or in person. This confirms the booking and puts it on your calendar in one go.</p>
+        <form id="quick-booking-form">
+          <div class="wizard-field"><label for="qb-name">Client name</label><input id="qb-name" name="clientName" required /></div>
+          <div class="wizard-field"><label for="qb-phone">Their WhatsApp number</label><input id="qb-phone" name="clientWhatsApp" required placeholder="+91…" /></div>
+          <div class="wizard-field">
+            <label for="qb-event">Occasion</label>
+            <select id="qb-event" name="eventType"><option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option></select>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <div class="wizard-field" style="flex:1;"><label for="qb-date">Date</label><input id="qb-date" name="eventDate" type="date" required /></div>
+            <div class="wizard-field" style="flex:1;"><label for="qb-time">Time (optional)</label><input id="qb-time" name="eventTime" type="time" /></div>
+          </div>
+          <div class="wizard-field"><label for="qb-venue">Where?</label><input id="qb-venue" name="locationText" required placeholder="Venue or area, city" /></div>
+          <div class="wizard-field"><label for="qb-price">Agreed price (₹)</label><input id="qb-price" name="price" type="number" min="1" required /></div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:16px;cursor:pointer;">
+            <input type="checkbox" id="qb-advance-paid" name="advancePaid" style="width:auto;" />
+            They've already paid the advance
+          </label>
+          <button class="button" type="submit" id="qb-submit" style="width:100%;">Confirm booking</button>
+          <div class="status" id="qb-status"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Quick setup wizard: the 5 essentials without opening full Settings -->
+    <div class="modal-overlay" id="quick-setup-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 style="margin:0;">Quick setup — 2 minutes</h3>
+          <button class="modal-close" type="button" id="quick-setup-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 14px;">Just the essentials so clients can book and pay you. Everything else has sensible defaults you can change later in Settings.</p>
+        <form id="quick-setup-form">
+          <div class="wizard-field">
+            <label for="qs-business">Your business name</label>
+            <input id="qs-business" name="businessName" required placeholder="e.g. Glow by Aisha" />
+            <div class="hint">Shown at the top of your booking page and on quotes.</div>
+          </div>
+          <div class="wizard-field">
+            <label for="qs-whatsapp">Your WhatsApp number</label>
+            <input id="qs-whatsapp" name="ownerWhatsApp" required placeholder="+91…" />
+            <div class="hint">Where clients and booking alerts reach you.</div>
+          </div>
+          <div class="wizard-field">
+            <label for="qs-city">Your city</label>
+            <input id="qs-city" name="city" required placeholder="e.g. Mumbai" />
+          </div>
+          <div class="wizard-field">
+            <label for="qs-price">Your main service price (₹)</label>
+            <input id="qs-price" name="basePriceBridal" type="number" min="0" placeholder="e.g. 25000" />
+            <div class="hint">Your starting bridal price — used to suggest quotes. Fine-tune per occasion later.</div>
+          </div>
+          <div class="wizard-field">
+            <label for="qs-upi">Your UPI ID (for advances)</label>
+            <input id="qs-upi" name="upiId" placeholder="e.g. aisha@okhdfcbank" />
+            <div class="hint">Lets clients pay the advance to lock their date. You can add this later.</div>
+          </div>
+          <button class="button" type="submit" id="qs-submit" style="width:100%;">Save & finish</button>
+          <div class="status" id="qs-status"></div>
+        </form>
+      </div>
+    </div>
+
     <!-- Notify-team modal: one-tap WhatsApp briefs to freelance specialists -->
     <div class="modal-overlay" id="notify-team-modal">
       <div class="modal">
@@ -1819,6 +1959,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         tabMoreMenu.classList.remove("open");
         document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.getAttribute("data-panel") === name));
         if (name === "documents") loadDocuments();
+        if (name === "clients") renderClients();
         if (name === "calendar") renderCalendar();
         if (name === "conversations") loadConversations();
         if (name === "team") loadTeam();
@@ -2541,6 +2682,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         renderSnapshot(leads, bookings);
         renderLeads();
         renderBookings();
+        renderClients();
         renderSetupChecklist();
       }
 
@@ -2598,9 +2740,9 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         if (!cfg) { box.style.display = "none"; return; }
         const portfolioCount = String(cfg.portfolioImages || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length;
         const steps = [
-          { done: !!(cfg.businessName && cfg.businessName.trim()), title: "Add your business name", desc: "Shown at the top of your booking page.", tab: "setup" },
-          { done: !!(cfg.ownerWhatsApp && cfg.ownerWhatsApp.replace(/\D/g, "").length >= 8), title: "Add your WhatsApp number", desc: "So clients can reach you and get confirmations.", tab: "setup" },
-          { done: !!(cfg.upiId && cfg.upiId.trim()), title: "Set up payments (UPI ID)", desc: "Lets clients pay the advance to lock their date.", tab: "setup" },
+          { done: !!(cfg.businessName && cfg.businessName.trim()), title: "Add your business name", desc: "Shown at the top of your booking page.", wizard: true },
+          { done: !!(cfg.ownerWhatsApp && cfg.ownerWhatsApp.replace(/\D/g, "").length >= 8), title: "Add your WhatsApp number", desc: "So clients can reach you and get confirmations.", wizard: true },
+          { done: !!(cfg.upiId && cfg.upiId.trim()), title: "Set up payments (UPI ID)", desc: "Lets clients pay the advance to lock their date.", wizard: true },
           { done: portfolioCount >= 1, title: "Upload portfolio photos", desc: "Show your work — pages with photos book far more.", tab: "mypage" },
           { done: !!(cfg.aboutText && cfg.aboutText.trim()), title: "Write a short intro", desc: "A warm line about your style and experience.", tab: "mypage" },
         ];
@@ -2612,13 +2754,15 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         document.getElementById("setup-steps").innerHTML =
           `<div class="setup-progress">${doneCount} of ${steps.length} done</div>` +
           steps.map((s) => `
-            <button type="button" class="setup-step ${s.done ? "done" : ""}" ${s.done ? "" : `data-setup-go="${s.tab}"`}>
+            <button type="button" class="setup-step ${s.done ? "done" : ""}" ${s.done ? "" : s.wizard ? 'data-setup-wizard="1"' : `data-setup-go="${s.tab}"`}>
               <span class="check">${s.done ? "✓" : ""}</span>
               <span class="step-text"><strong>${escapeHtml(s.title)}</strong><span>${escapeHtml(s.desc)}</span></span>
               ${s.done ? "" : '<span class="step-go">Set up →</span>'}
             </button>`).join("");
       }
       document.getElementById("setup-steps").addEventListener("click", (e) => {
+        const wiz = e.target.closest("[data-setup-wizard]");
+        if (wiz) { openQuickSetup(); return; }
         const btn = e.target.closest("[data-setup-go]");
         if (btn) activateTab(btn.getAttribute("data-setup-go"));
       });
@@ -3442,6 +3586,8 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         if (shareLinkBtn) shareLinkBtn.style.display = "inline-flex";
         const globalSearchBtn = document.getElementById("global-search-btn");
         if (globalSearchBtn) globalSearchBtn.style.display = "inline-flex";
+        const quickBookingBtn = document.getElementById("quick-booking-btn");
+        if (quickBookingBtn) quickBookingBtn.style.display = "inline-flex";
         const _initial = (payload.profile.name || "?")[0].toUpperCase();
         loginState.innerHTML = `
           <div style="display:flex;align-items:center;gap:10px;">
@@ -4065,6 +4211,189 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       document.getElementById("attention-items")?.addEventListener("click", (e) => {
         const item = e.target.closest("[data-attention-tab]");
         if (item) activateTab(item.getAttribute("data-attention-tab"));
+      });
+
+      // ─── Clients directory: one row per person across requests + bookings ───
+      function clientKeyOf(phone, name) {
+        const digits = String(phone || "").replace(/\D/g, "");
+        if (digits.length >= 8) return digits.slice(-10);
+        return String(name || "").trim().toLowerCase();
+      }
+
+      function buildClientDirectory() {
+        const leads = sessionState?.dashboard?.leads || [];
+        const bookings = sessionState?.dashboard?.bookings || [];
+        const map = new Map();
+        const touch = (key, name, phone) => {
+          if (!key) return null;
+          if (!map.has(key)) map.set(key, { name, phone, requests: 0, bookings: 0, totalBooked: 0, lastEventDate: "", lastEventType: "", latestLead: null });
+          const c = map.get(key);
+          if (name && (!c.name || name.length > c.name.length)) c.name = name;
+          if (phone && !c.phone) c.phone = phone;
+          return c;
+        };
+        for (const l of leads) {
+          const c = touch(clientKeyOf(l.clientWhatsApp, l.clientName), l.clientName, l.clientWhatsApp);
+          if (!c) continue;
+          c.requests += 1;
+          if (!c.latestLead || (l.createdAt || "") > (c.latestLead.createdAt || "")) c.latestLead = l;
+          if ((l.eventDate || "") > c.lastEventDate) { c.lastEventDate = l.eventDate; c.lastEventType = l.eventType; }
+        }
+        for (const b of bookings) {
+          const c = touch(clientKeyOf(b.clientWhatsApp, b.clientName), b.clientName, b.clientWhatsApp);
+          if (!c) continue;
+          c.bookings += 1;
+          c.totalBooked += Number(b.finalPrice) || 0;
+          if ((b.eventDate || "") > c.lastEventDate) { c.lastEventDate = b.eventDate; c.lastEventType = b.eventType; }
+        }
+        return [...map.values()].sort((a, b) => (b.lastEventDate || "").localeCompare(a.lastEventDate || ""));
+      }
+
+      function renderClients() {
+        const list = document.getElementById("clients-list");
+        const q = (document.getElementById("client-search")?.value || "").toLowerCase();
+        let clients = buildClientDirectory();
+        if (q) clients = clients.filter((c) => `${c.name} ${c.phone}`.toLowerCase().includes(q));
+        document.getElementById("client-count").textContent = `${clients.length} ${clients.length === 1 ? "client" : "clients"}`;
+        if (!clients.length) {
+          list.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>No clients yet</h3><p>Everyone who requests a date or books with you appears here automatically.</p></div>`;
+          return;
+        }
+        list.innerHTML = clients.map((c, i) => {
+          const initial = (c.name || "?")[0].toUpperCase();
+          return `
+            <div class="client-row" data-client-index="${i}">
+              <div class="lead-avatar" style="width:38px;height:38px;font-size:15px;flex-shrink:0;">${escapeHtml(initial)}</div>
+              <div class="client-row-main">
+                <div class="client-row-name">${escapeHtml(c.name || "Unknown")}</div>
+                <div class="client-row-sub">${c.phone ? escapeHtml(c.phone) + " · " : ""}${c.lastEventDate ? escapeHtml(c.lastEventType) + " · " + escapeHtml(formatDay(c.lastEventDate)) : "No event yet"}</div>
+              </div>
+              <div class="client-row-stats">
+                ${c.totalBooked > 0 ? `<span class="client-row-spend">${formatMoney(c.totalBooked)}</span>` : `<span class="client-row-spend muted" style="font-weight:500;font-size:12.5px;">Nothing booked yet</span>`}
+                <span class="client-row-visits">${c.bookings} ${c.bookings === 1 ? "booking" : "bookings"} · ${c.requests} ${c.requests === 1 ? "request" : "requests"}</span>
+              </div>
+            </div>`;
+        }).join("");
+        list._clients = clients;
+      }
+      document.getElementById("client-search")?.addEventListener("input", renderClients);
+      document.getElementById("clients-list")?.addEventListener("click", (e) => {
+        const row = e.target.closest("[data-client-index]");
+        if (!row) return;
+        const clients = document.getElementById("clients-list")._clients || [];
+        const c = clients[Number(row.getAttribute("data-client-index"))];
+        if (c?.latestLead) { openLeadDrawer(c.latestLead); }
+        else toast("No request history for this client yet.", "error");
+      });
+
+      // ─── Quick booking: walk-in/phone booking in one step ───
+      const quickBookingModal = document.getElementById("quick-booking-modal");
+      const quickBookingForm = document.getElementById("quick-booking-form");
+      function openQuickBooking() {
+        quickBookingForm.reset();
+        document.getElementById("qb-status").textContent = "";
+        const dateInput = document.getElementById("qb-date");
+        dateInput.min = new Date().toISOString().slice(0, 10);
+        quickBookingModal.classList.add("open");
+        setTimeout(() => document.getElementById("qb-name").focus(), 50);
+      }
+      function closeQuickBooking() { quickBookingModal.classList.remove("open"); }
+      document.getElementById("quick-booking-btn")?.addEventListener("click", openQuickBooking);
+      document.getElementById("quick-booking-close")?.addEventListener("click", closeQuickBooking);
+      quickBookingModal?.addEventListener("click", (e) => { if (e.target === quickBookingModal) closeQuickBooking(); });
+      document.body.addEventListener("click", (e) => {
+        if (e.target.closest("[data-open-quick-booking]")) openQuickBooking();
+      });
+      quickBookingForm?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById("qb-submit");
+        const status = document.getElementById("qb-status");
+        setLoading(btn, "Confirming…");
+        status.textContent = "";
+        try {
+          const data = Object.fromEntries(new FormData(quickBookingForm).entries());
+          data.advancePaid = document.getElementById("qb-advance-paid").checked;
+          const r = await postJson("/api/bookings/quick", data);
+          closeQuickBooking();
+          toast(`${r.booking?.clientName || "Booking"} confirmed and added to your calendar.`, "success");
+          await refreshSession();
+          activateTab("bookings");
+        } catch (error) {
+          status.textContent = error.message;
+          toast(error.message, "error");
+        } finally {
+          clearLoading(btn);
+        }
+      });
+
+      // ─── Ask BusyDays (AI over her own data) ───
+      const askForm = document.getElementById("ask-form");
+      const askInput = document.getElementById("ask-input");
+      const askAnswer = document.getElementById("ask-answer");
+      async function submitAsk(question) {
+        const btn = document.getElementById("ask-btn");
+        setLoading(btn, "Thinking…");
+        askAnswer.classList.add("show");
+        askAnswer.textContent = "Looking at your bookings…";
+        try {
+          const r = await postJson("/api/assistant/ask", { question });
+          askAnswer.textContent = r.answer;
+          if (r.balanceCredits !== null && r.balanceCredits !== undefined) updateCreditsPill(r.balanceCredits);
+        } catch (error) {
+          askAnswer.textContent = error.message;
+        } finally {
+          clearLoading(btn);
+        }
+      }
+      askForm?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const q = askInput.value.trim();
+        if (q.length >= 3) submitAsk(q);
+      });
+      document.querySelectorAll(".ask-chip").forEach((chip) =>
+        chip.addEventListener("click", () => {
+          askInput.value = chip.getAttribute("data-ask");
+          submitAsk(askInput.value);
+        }));
+
+      // ─── Quick setup wizard: the essentials without opening full Settings ───
+      const quickSetupModal = document.getElementById("quick-setup-modal");
+      const quickSetupForm = document.getElementById("quick-setup-form");
+      function openQuickSetup() {
+        const cfg = sessionState?.workspace?.config || {};
+        document.getElementById("qs-business").value = cfg.businessName || "";
+        document.getElementById("qs-whatsapp").value = cfg.ownerWhatsApp || "";
+        document.getElementById("qs-city").value = cfg.city || "";
+        document.getElementById("qs-price").value = cfg.basePriceBridal || "";
+        document.getElementById("qs-upi").value = cfg.upiId || "";
+        document.getElementById("qs-status").textContent = "";
+        quickSetupModal.classList.add("open");
+      }
+      function closeQuickSetup() { quickSetupModal.classList.remove("open"); }
+      document.getElementById("quick-setup-close")?.addEventListener("click", closeQuickSetup);
+      quickSetupModal?.addEventListener("click", (e) => { if (e.target === quickSetupModal) closeQuickSetup(); });
+      quickSetupForm?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById("qs-submit");
+        const status = document.getElementById("qs-status");
+        setLoading(btn, "Saving…");
+        status.textContent = "";
+        try {
+          const cfg = { ...(sessionState?.workspace?.config || {}) };
+          const updates = Object.fromEntries(new FormData(quickSetupForm).entries());
+          for (const [k, v] of Object.entries(updates)) {
+            if (String(v).trim() !== "") cfg[k] = v;
+          }
+          await postJson("/api/workspace/config", cfg);
+          closeQuickSetup();
+          toast("You're set up! Clients can now book and pay you.", "success");
+          await refreshSession();
+        } catch (error) {
+          status.textContent = error.message;
+          toast(error.message, "error");
+        } finally {
+          clearLoading(btn);
+        }
       });
 
       // ─── Booking-link share button in topbar ───

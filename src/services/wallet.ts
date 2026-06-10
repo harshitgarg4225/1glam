@@ -32,6 +32,7 @@ export const USAGE_COSTS = {
   aiReply: 2,
   aiLeadEnrichment: 2,
   aiReviewReply: 1,
+  aiAssistant: 2,
   documentGeneration: 1,
 } as const;
 
@@ -131,6 +132,7 @@ export const USAGE_LABELS: Record<UsageKind, string> = {
   aiReply: "AI conversation reply",
   aiLeadEnrichment: "AI lead intelligence",
   aiReviewReply: "AI review reply",
+  aiAssistant: "AI assistant answer",
   documentGeneration: "Document generated",
 };
 
