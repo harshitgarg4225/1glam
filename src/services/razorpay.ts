@@ -97,6 +97,65 @@ export async function fetchRazorpayOrder(orderId: string): Promise<{
   };
 }
 
+// ─── Per-workspace variants ───
+// Client advances are collected into the OWNER's Razorpay account, not the
+// platform's, so these take her keys (stored encrypted in workspace config).
+
+export async function createOrderWithKeys(
+  keys: { keyId: string; keySecret: string },
+  input: { amountInr: number; receipt: string; notes: Record<string, string> },
+): Promise<RazorpayOrder> {
+  if (!keys.keyId || !keys.keySecret) {
+    throw new Error("Online payments aren't set up. Add Razorpay keys in Settings.");
+  }
+  const auth = Buffer.from(`${keys.keyId}:${keys.keySecret}`).toString("base64");
+  const response = await fetchWithTimeout("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      amount: Math.round(input.amountInr * 100),
+      currency: "INR",
+      receipt: input.receipt,
+      notes: input.notes,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Couldn't start the payment (Razorpay ${response.status}). ${detail.slice(0, 120)}`);
+  }
+  return (await response.json()) as RazorpayOrder;
+}
+
+export async function fetchOrderWithKeys(
+  keys: { keyId: string; keySecret: string },
+  orderId: string,
+): Promise<{ id: string; amount: number; currency: string; status: string; notes: Record<string, string> }> {
+  const auth = Buffer.from(`${keys.keyId}:${keys.keySecret}`).toString("base64");
+  const response = await fetchWithTimeout(
+    `https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}`,
+    { headers: { Authorization: `Basic ${auth}` } },
+  );
+  if (!response.ok) {
+    throw new Error(`Couldn't confirm the payment (Razorpay ${response.status}).`);
+  }
+  const order = (await response.json()) as {
+    id: string; amount: number; currency: string; status: string; notes?: Record<string, string>;
+  };
+  return { id: order.id, amount: order.amount, currency: order.currency, status: order.status, notes: order.notes ?? {} };
+}
+
+export function verifyCheckoutSignatureWithSecret(
+  keySecret: string,
+  input: { orderId: string; paymentId: string; signature: string },
+): boolean {
+  if (!keySecret) return false;
+  const expected = crypto
+    .createHmac("sha256", keySecret)
+    .update(`${input.orderId}|${input.paymentId}`)
+    .digest("hex");
+  return timingSafeEqualHex(expected, input.signature);
+}
+
 // Verifies the signature returned by Razorpay Checkout after a successful
 // payment: HMAC-SHA256(order_id|payment_id, key_secret).
 export function verifyCheckoutSignature(input: {

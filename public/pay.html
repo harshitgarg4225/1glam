@@ -92,6 +92,11 @@
 
       <p class="terms" id="payment-terms"></p>
 
+      <div class="done-banner" id="already-paid-banner" style="margin:0 0 16px;">✓ Advance received — your date is locked!</div>
+
+      <button id="online-pay-btn" class="pay-btn hidden" type="button">Pay ₹<span id="online-amount"></span> online (UPI / card) →</button>
+      <p class="note hidden" id="online-note" style="margin-bottom:14px;">Instant confirmation — your slot locks the moment payment succeeds.</p>
+
       <a id="upi-btn" class="pay-btn hidden" href="#">Pay ₹<span id="upi-amount"></span> via UPI →</a>
       <p class="upi-id hidden" id="upi-id-row">UPI ID: <strong id="upi-id-text"></strong></p>
       <p class="note hidden" id="no-upi-note" style="background:#FEF3C7;border:1px solid #FDE68A;color:#92400E;padding:12px 14px;border-radius:8px;">Please contact the artist directly to arrange your advance payment, then upload your payment screenshot below to confirm.</p>
@@ -148,6 +153,22 @@
       document.getElementById("balance-due").textContent = inr(d.balanceDue);
       document.getElementById("payment-terms").textContent = d.paymentTerms || "";
 
+      const alreadyPaid = ["Advance Paid", "Paid in Full"].includes(d.paymentStatus || "");
+      if (alreadyPaid) {
+        document.getElementById("already-paid-banner").style.display = "block";
+        document.getElementById("payment-card").classList.remove("hidden");
+        document.querySelector(".upload-section").style.display = "none";
+        return;
+      }
+
+      // Best path: pay online via the artist's Razorpay — instant, auto-confirmed.
+      if (d.onlinePayAvailable && d.razorpayKeyId && d.advanceAmount > 0) {
+        document.getElementById("online-amount").textContent = Math.round(d.advanceAmount).toLocaleString("en-IN");
+        document.getElementById("online-pay-btn").classList.remove("hidden");
+        document.getElementById("online-note").classList.remove("hidden");
+        loadRazorpayScript();
+      }
+
       if (d.upiDeepLink && d.upiId) {
         const btn = document.getElementById("upi-btn");
         btn.href = d.upiDeepLink;
@@ -156,12 +177,75 @@
         const idRow = document.getElementById("upi-id-row");
         document.getElementById("upi-id-text").textContent = d.upiId;
         idRow.classList.remove("hidden");
-      } else {
+      } else if (!d.onlinePayAvailable) {
         document.getElementById("no-upi-note").classList.remove("hidden");
       }
 
       document.getElementById("payment-card").classList.remove("hidden");
     }
+
+    // ─── Online payment (Razorpay Checkout, auto-confirmed) ───
+    let razorpayReady = false;
+    function loadRazorpayScript() {
+      if (razorpayReady || document.getElementById("rzp-script")) return;
+      const s = document.createElement("script");
+      s.id = "rzp-script";
+      s.src = "https://checkout.razorpay.com/v1/checkout.js";
+      s.onload = () => { razorpayReady = true; };
+      document.head.appendChild(s);
+    }
+
+    document.getElementById("online-pay-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("online-pay-btn");
+      btn.disabled = true;
+      const original = btn.innerHTML;
+      btn.textContent = "Starting secure payment…";
+      try {
+        const res = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(leadId)}/order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Couldn't start the payment.");
+        if (typeof Razorpay === "undefined") throw new Error("Payment window couldn't load. Check your connection and try again.");
+        const rzp = new Razorpay({
+          key: data.keyId,
+          order_id: data.orderId,
+          amount: data.amount,
+          currency: data.currency,
+          name: data.businessName,
+          description: "Advance to lock your date",
+          prefill: { name: data.clientName },
+          theme: { color: "#C26B45" },
+          handler: async (response) => {
+            try {
+              const vres = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(leadId)}/verify`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  orderId: response.razorpay_order_id,
+                  paymentId: response.razorpay_payment_id,
+                  signature: response.razorpay_signature,
+                }),
+              });
+              const vdata = await vres.json();
+              if (!vres.ok || !vdata.ok) throw new Error(vdata.error || "Couldn't confirm the payment.");
+              document.getElementById("already-paid-banner").style.display = "block";
+              document.getElementById("online-pay-btn").classList.add("hidden");
+              document.getElementById("online-note").classList.add("hidden");
+              document.getElementById("upi-btn").classList.add("hidden");
+              document.getElementById("upi-id-row").classList.add("hidden");
+              document.querySelector(".upload-section").style.display = "none";
+            } catch (err) {
+              alert(err.message || "Payment made but confirmation failed — don't worry, the artist will confirm it manually.");
+            }
+          },
+        });
+        rzp.open();
+      } catch (err) {
+        alert(err.message || "Couldn't start the payment. Please try again.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    });
 
     function showError(msg) {
       document.getElementById("loading").classList.add("hidden");

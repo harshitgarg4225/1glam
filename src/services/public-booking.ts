@@ -61,6 +61,12 @@ export type PublicPaymentDetails = {
   upiDeepLink: string;
   paymentTerms: string;
   leadStatus: string;
+  paymentStatus: string;
+  // True when the owner has her own Razorpay keys configured, enabling
+  // pay-online with automatic confirmation. keyId is public by design
+  // (Razorpay Checkout needs it client-side); the secret never leaves the server.
+  onlinePayAvailable: boolean;
+  razorpayKeyId: string;
 };
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -404,6 +410,9 @@ export async function getPublicPaymentDetails(
     upiDeepLink,
     paymentTerms: config.paymentTerms || "",
     leadStatus: lead.status,
+    paymentStatus: lead.paymentStatus || "",
+    onlinePayAvailable: Boolean(config.razorpayKeyId && config.razorpayKeySecret),
+    razorpayKeyId: config.razorpayKeyId || "",
   };
 }
 

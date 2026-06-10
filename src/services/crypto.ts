@@ -95,6 +95,12 @@ function transformWorkspaceSecrets(
     if (connection.pageAccessToken) connection.pageAccessToken = fn(connection.pageAccessToken);
   }
 
+  // The owner's Razorpay key secret (used to collect client advances into HER
+  // account) is the one config field that's a real credential.
+  if (next.config?.razorpayKeySecret) {
+    next.config.razorpayKeySecret = fn(next.config.razorpayKeySecret);
+  }
+
   return next;
 }
 
