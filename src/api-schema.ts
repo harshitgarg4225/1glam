@@ -64,3 +64,11 @@ export const ownerDecisionSchema = z.object({
 export const paymentStatusSchema = z.object({
   paymentStatus: z.enum(["Advance Paid", "Paid in Full"]),
 });
+
+// A recorded payment instalment. Indian clients usually pay in parts (advance,
+// mid, balance), so the ledger accepts any positive amount with how it arrived.
+export const recordPaymentSchema = z.object({
+  amount: z.coerce.number().positive().max(100000000),
+  method: z.enum(["UPI", "Cash", "Bank Transfer", "Card", "Razorpay", "Other"]).optional().default("UPI"),
+  note: z.string().max(120).optional().default(""),
+});

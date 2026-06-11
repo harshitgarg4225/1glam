@@ -60,6 +60,13 @@ export type LeadRecord = {
   quoteVoidedAt: string;
   quoteAdjustments: string;
   orderItems: string;
+  // Sequential, human-friendly document number (e.g. Q-2026-0007), assigned
+  // the first time a quote is generated and stable thereafter.
+  quoteNumber: string;
+  // First time the client opened the public quote link.
+  quoteViewedAt: string;
+  // Set when the client taps "Accept" on the public quote page.
+  quoteAcceptedAt: string;
 };
 
 export type BookingRecord = {
@@ -94,6 +101,13 @@ export type BookingRecord = {
   contractSignedAt: string;
   contractSignerName: string;
   expenses: string;
+  // Sequential invoice number (e.g. INV-2026-0012), assigned at first invoice.
+  invoiceNumber: string;
+  // JSON array of recorded payments: [{amount, method, note, at}]. The source
+  // of truth for how much has actually been received against this booking.
+  paymentsLog: string;
+  invoiceViewedAt: string;
+  contractViewedAt: string;
 };
 
 export type DashboardData = {
@@ -201,6 +215,9 @@ export async function createLeadForWorkspace(
     quoteVoidedAt: "",
     quoteAdjustments: "",
     orderItems: "",
+    quoteNumber: "",
+    quoteViewedAt: "",
+    quoteAcceptedAt: "",
   };
 
   await sheets.spreadsheets.values.append({
@@ -404,6 +421,10 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     contractSignedAt: "",
     contractSignerName: "",
     expenses: "",
+    invoiceNumber: "",
+    paymentsLog: "",
+    invoiceViewedAt: "",
+    contractViewedAt: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -633,6 +654,7 @@ function leadFromBooking(booking: BookingRecord): LeadRecord {
     lastContactedAt: "", tentativeCalendarEventId: "", confirmedCalendarEventId: "",
     bookingId: booking.bookingId, paymentStatus: booking.paymentStatus, quoteUrl: "",
     quoteGeneratedAt: "", quoteVoidedAt: "", quoteAdjustments: "", orderItems: booking.orderItems,
+    quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "",
   };
 }
 
@@ -658,6 +680,91 @@ export async function updatePaymentStatus(
   await updateLeadRow(workspace, tokens, lead.rowNumber, nextLead);
   await updateBookingPaymentStatus(workspace, tokens, lead.record.bookingId, paymentStatus);
   return { lead: nextLead };
+}
+
+// ---- Partial payment ledger ----
+// Indian clients commonly pay in 2-3 instalments (advance, mid, balance). The
+// ledger records each payment with amount/method/date so the artist always
+// knows exactly how much has landed, and the status is derived from the math
+// instead of being a binary toggle.
+
+export type PaymentEntry = { amount: number; method: string; note: string; at: string };
+
+// Tolerant parser: bad/empty JSON yields an empty ledger rather than throwing.
+export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry) => {
+        const e = (entry ?? {}) as Partial<PaymentEntry>;
+        return {
+          amount: Number(e.amount) || 0,
+          method: String(e.method ?? "").slice(0, 30),
+          note: String(e.note ?? "").slice(0, 120),
+          at: String(e.at ?? ""),
+        };
+      })
+      .filter((entry) => entry.amount > 0);
+  } catch {
+    return [];
+  }
+}
+
+export function paymentsTotal(log: PaymentEntry[]): number {
+  return log.reduce((sum, entry) => sum + entry.amount, 0);
+}
+
+// Payment status derived from how much has actually been received.
+export function derivePaymentStatus(
+  finalPrice: number,
+  advanceAmount: number,
+  paidTotal: number,
+): "Advance Due" | "Advance Paid" | "Paid in Full" {
+  if (paidTotal <= 0) return "Advance Due";
+  if (finalPrice > 0 && paidTotal >= finalPrice) return "Paid in Full";
+  if (advanceAmount > 0 && paidTotal >= advanceAmount) return "Advance Paid";
+  return "Advance Due";
+}
+
+// Records a payment against a booking, recomputes the derived status and the
+// true balance still owed, and keeps the linked lead's pipeline state in sync.
+export async function recordBookingPayment(
+  email: string,
+  tokens: Credentials,
+  bookingId: string,
+  input: { amount: number; method?: string; note?: string },
+) {
+  let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
+  const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
+    const log = parsePaymentsLog(current.paymentsLog);
+    log.push({
+      amount: Math.round(input.amount),
+      method: String(input.method ?? "UPI").slice(0, 30),
+      note: String(input.note ?? "").slice(0, 120),
+      at: new Date().toISOString(),
+    });
+    const paidTotal = paymentsTotal(log);
+    derived = derivePaymentStatus(current.finalPrice, current.advanceAmount, paidTotal);
+    return {
+      ...current,
+      paymentsLog: JSON.stringify(log),
+      paymentStatus: derived,
+      balanceDue: Math.max(0, current.finalPrice - paidTotal),
+    };
+  });
+
+  if (booking.leadId) {
+    await updateLeadRecord(email, tokens, booking.leadId, (lead) => ({
+      ...lead,
+      paymentStatus: derived,
+      status: derived === "Paid in Full" ? "Payment Received" : lead.status,
+      lastContactedAt: new Date().toISOString(),
+    })).catch(() => undefined);
+  }
+
+  return booking;
 }
 
 export async function countActiveLeadsForDate(
@@ -1229,6 +1336,9 @@ function leadToRow(lead: LeadRecord) {
     lead.quoteVoidedAt,
     lead.quoteAdjustments,
     lead.orderItems,
+    lead.quoteNumber,
+    lead.quoteViewedAt,
+    lead.quoteAcceptedAt,
   ];
 }
 
@@ -1272,6 +1382,9 @@ function rowToLead(row: string[]): LeadRecord {
     quoteVoidedAt: row[35] ?? "",
     quoteAdjustments: row[36] ?? "",
     orderItems: row[37] ?? "",
+    quoteNumber: row[38] ?? "",
+    quoteViewedAt: row[39] ?? "",
+    quoteAcceptedAt: row[40] ?? "",
   };
 }
 
@@ -1308,6 +1421,10 @@ function bookingToRow(booking: BookingRecord) {
     booking.contractSignedAt,
     booking.contractSignerName,
     booking.expenses,
+    booking.invoiceNumber,
+    booking.paymentsLog,
+    booking.invoiceViewedAt,
+    booking.contractViewedAt,
   ];
 }
 
@@ -1344,6 +1461,10 @@ function rowToBooking(row: string[]): BookingRecord {
     contractSignedAt: row[28] ?? "",
     contractSignerName: row[29] ?? "",
     expenses: row[30] ?? "",
+    invoiceNumber: row[31] ?? "",
+    paymentsLog: row[32] ?? "",
+    invoiceViewedAt: row[33] ?? "",
+    contractViewedAt: row[34] ?? "",
   };
 }
 

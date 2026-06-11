@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
 import { appConfig, assertDeploymentConfig } from "./config.js";
-import { createLeadSchema, editLeadDetailsSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema, quickBookingSchema } from "./api-schema.js";
+import { createLeadSchema, editLeadDetailsSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema, quickBookingSchema, recordPaymentSchema } from "./api-schema.js";
 import { askBusinessAssistant, buildAssistantSnapshot } from "./services/assistant.js";
 import { workspaceConfigSchema } from "./schema.js";
 import {
@@ -25,6 +25,7 @@ import {
   getBookingRecord,
   getLeadRecord,
   getDashboardData,
+  recordBookingPayment,
   rescheduleBooking,
   updateBookingRecord,
   type BookingRecord,
@@ -79,7 +80,7 @@ import {
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
 import { generateConversationReply, deriveToneProfile } from "./services/grok.js";
-import { sendChannelMessage, sendBusinessMessage } from "./services/messaging.js";
+import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
 import { encryptionEnabled } from "./services/crypto.js";
@@ -89,6 +90,7 @@ import {
   buildInvoicePdfBytes,
   buildQuotePdfBytes,
   generateContractPdfBytes,
+  nextDocumentNumber,
   parseDocumentAdjustments,
 } from "./services/documents.js";
 import { buildPublicDocumentUrl, isDocumentType, signDocumentToken, verifyDocumentToken } from "./services/document-links.js";
@@ -1800,6 +1802,50 @@ app.post("/api/bookings/:bookingId/payment", async (req, res, next) => {
   }
 });
 
+// Records a payment instalment against a booking (advance, partial, balance —
+// however the client actually pays). Status and balance are derived from the
+// ledger so they always reflect the real money received.
+app.post("/api/bookings/:bookingId/payments", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const parsed = recordPaymentSchema.parse(req.body);
+    const booking = await recordBookingPayment(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      parsed,
+    );
+    res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Assigns the next sequential quote number (Q-2026-0007) the first time a
+// quote is generated for a lead; the number is stable for the lead's lifetime.
+async function ensureQuoteNumber(email: string, tokens: Credentials, lead: LeadRecord): Promise<LeadRecord> {
+  if (lead.quoteNumber) return lead;
+  const data = await getDashboardData(email, tokens);
+  const number = nextDocumentNumber("Q", data.leads.map((l) => l.quoteNumber));
+  return updateLeadRecord(email, tokens, lead.leadId, (current) => ({
+    ...current,
+    quoteNumber: current.quoteNumber || number,
+  }));
+}
+
+// Same for invoices: INV-2026-0012, assigned at first invoice generation.
+async function ensureInvoiceNumber(email: string, tokens: Credentials, booking: BookingRecord): Promise<BookingRecord> {
+  if (booking.invoiceNumber) return booking;
+  const data = await getDashboardData(email, tokens);
+  const number = nextDocumentNumber("INV", data.bookings.map((b) => b.invoiceNumber));
+  return updateBookingRecord(email, tokens, booking.bookingId, (current) => ({
+    ...current,
+    invoiceNumber: current.invoiceNumber || number,
+  }));
+}
+
 app.post("/api/leads/:leadId/quote", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
@@ -1807,7 +1853,7 @@ app.post("/api/leads/:leadId/quote", async (req, res, next) => {
     }
 
     const workspace = await getWorkspaceByEmail(req.session.profile.email);
-    const lead = await getLeadRecord(
+    let lead = await getLeadRecord(
       req.session.profile.email,
       req.session.googleTokens,
       req.params.leadId,
@@ -1816,6 +1862,7 @@ app.post("/api/leads/:leadId/quote", async (req, res, next) => {
       return res.status(404).json({ error: "Lead not found" });
     }
 
+    lead = await ensureQuoteNumber(req.session.profile.email, req.session.googleTokens, lead);
     const quote = await generateQuoteDocument(workspace, req.session.googleTokens, lead);
     const updatedLead = await updateLeadRecord(
       req.session.profile.email,
@@ -1866,6 +1913,7 @@ app.post("/api/leads/:leadId/send-quote", async (req, res, next) => {
 
     let currentLead = lead;
     if (!currentLead.quoteUrl) {
+      currentLead = await ensureQuoteNumber(req.session.profile.email, req.session.googleTokens, currentLead);
       const quote = await generateQuoteDocument(workspace, req.session.googleTokens, currentLead);
       currentLead = await updateLeadRecord(
         req.session.profile.email,
@@ -1936,7 +1984,7 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
     }
 
     const workspace = await getWorkspaceByEmail(req.session.profile.email);
-    const booking = await getBookingRecord(
+    let booking = await getBookingRecord(
       req.session.profile.email,
       req.session.googleTokens,
       req.params.bookingId,
@@ -1945,6 +1993,7 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
+    booking = await ensureInvoiceNumber(req.session.profile.email, req.session.googleTokens, booking);
     const invoice = await generateInvoiceDocument(workspace, req.session.googleTokens, booking);
     const updatedBooking = await updateBookingRecord(
       req.session.profile.email,
@@ -1999,6 +2048,7 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
 
     let currentBooking = booking;
     if (!currentBooking.invoiceUrl) {
+      currentBooking = await ensureInvoiceNumber(req.session.profile.email, req.session.googleTokens, currentBooking);
       const invoice = await generateInvoiceDocument(workspace, req.session.googleTokens, currentBooking);
       currentBooking = await updateBookingRecord(
         req.session.profile.email,
@@ -2361,6 +2411,8 @@ app.get("/api/documents", async (req, res, next) => {
       url: string;
       edited: boolean;
       payable: boolean;
+      viewedAt: string;
+      acceptedAt: string;
     };
     const docs: DocRow[] = [];
 
@@ -2372,16 +2424,18 @@ app.get("/api/documents", async (req, res, next) => {
         kind: "quote",
         recordId: lead.leadId,
         leadId: lead.leadId,
-        number: `Q-${lead.leadId}`,
+        number: lead.quoteNumber || `Q-${lead.leadId}`,
         client: lead.clientName,
         eventType: lead.eventType,
         eventDate: lead.eventDate,
         amount: lead.finalApprovedPrice || lead.initialAiPrice,
-        status: voided ? "Voided" : sent ? "Sent" : "Draft",
+        status: voided ? "Voided" : lead.quoteAcceptedAt ? "Accepted" : sent ? "Sent" : "Draft",
         generatedAt: lead.quoteGeneratedAt,
         url: lead.quoteUrl,
         edited: Boolean(lead.quoteAdjustments),
         payable: false,
+        viewedAt: lead.quoteViewedAt,
+        acceptedAt: lead.quoteAcceptedAt,
       });
     }
 
@@ -2393,7 +2447,7 @@ app.get("/api/documents", async (req, res, next) => {
           kind: "invoice",
           recordId: booking.bookingId,
           leadId: booking.leadId,
-          number: `INV-${booking.bookingId}`,
+          number: booking.invoiceNumber || `INV-${booking.bookingId}`,
           client: booking.clientName,
           eventType: booking.eventType,
           eventDate: booking.eventDate,
@@ -2403,6 +2457,8 @@ app.get("/api/documents", async (req, res, next) => {
           url: booking.invoiceUrl,
           edited: Boolean(booking.invoiceAdjustments),
           payable: !voided && !paid,
+          viewedAt: booking.invoiceViewedAt,
+          acceptedAt: "",
         });
       }
       if (booking.contractUrl || booking.contractSentAt) {
@@ -2421,6 +2477,8 @@ app.get("/api/documents", async (req, res, next) => {
           url: booking.contractUrl,
           edited: Boolean(booking.contractAdjustments),
           payable: false,
+          viewedAt: booking.contractViewedAt,
+          acceptedAt: booking.contractSignedAt,
         });
       }
     }
@@ -2452,11 +2510,22 @@ app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
       return res.status(404).send("Document not found.");
     }
 
+    // First-view tracking: record when the client first opens the document so
+    // the artist can see "sent → viewed" instead of following up blind. The
+    // owner's own session is excluded, and failures never block the document.
+    const isOwnerViewing = req.session?.profile?.email === workspace.email;
+
     if (type === "quote") {
       const lead = await getLeadRecord(workspace.email, workspace.googleTokens, recordId);
       if (!lead) return res.status(404).send("Document not found.");
       // A deleted document has its URL field cleared — revoke the public link.
       if (!lead.quoteUrl) return res.status(410).send("This document is no longer available.");
+      if (!isOwnerViewing && !lead.quoteViewedAt) {
+        updateLeadRecord(workspace.email, workspace.googleTokens, recordId, (current) => ({
+          ...current,
+          quoteViewedAt: current.quoteViewedAt || new Date().toISOString(),
+        })).catch(() => undefined);
+      }
       const bytes = await buildQuotePdfBytes(workspace, lead, {
         adjustments: parseDocumentAdjustments(lead.quoteAdjustments),
         voided: Boolean(lead.quoteVoidedAt),
@@ -2469,6 +2538,12 @@ app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
 
     if (type === "invoice") {
       if (!booking.invoiceUrl) return res.status(410).send("This document is no longer available.");
+      if (!isOwnerViewing && !booking.invoiceViewedAt) {
+        updateBookingRecord(workspace.email, workspace.googleTokens, recordId, (current) => ({
+          ...current,
+          invoiceViewedAt: current.invoiceViewedAt || new Date().toISOString(),
+        })).catch(() => undefined);
+      }
       const bytes = await buildInvoicePdfBytes(workspace, booking, {
         adjustments: parseDocumentAdjustments(booking.invoiceAdjustments),
         voided: Boolean(booking.invoiceVoidedAt),
@@ -2480,6 +2555,12 @@ app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
     const lead = await getLeadRecord(workspace.email, workspace.googleTokens, booking.leadId);
     if (!lead) return res.status(404).send("Document not found.");
     if (!booking.contractUrl) return res.status(410).send("This document is no longer available.");
+    if (!isOwnerViewing && !booking.contractViewedAt) {
+      updateBookingRecord(workspace.email, workspace.googleTokens, recordId, (current) => ({
+        ...current,
+        contractViewedAt: current.contractViewedAt || new Date().toISOString(),
+      })).catch(() => undefined);
+    }
     const bytes = await generateContractPdfBytes(workspace, lead, booking, {
       adjustments: parseDocumentAdjustments(booking.contractAdjustments),
       voided: Boolean(booking.contractVoidedAt),
@@ -2491,6 +2572,211 @@ app.get("/d/:type/:workspaceId/:recordId", async (req, res, next) => {
     next(error);
   }
 });
+
+// ---- Branded public quote page ----
+// The link the client receives. Shows the artist's brand, the embedded quote
+// PDF, and a one-tap "Accept" button — and gives WhatsApp a rich link preview
+// (og: tags) so the message looks trustworthy instead of a bare PDF URL.
+app.get("/q/:workspaceId/:leadId", async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const leadId = String(req.params.leadId ?? "");
+    const sig = typeof req.query.sig === "string" ? req.query.sig : "";
+    if (!verifyDocumentToken("quote", workspaceId, leadId, sig)) {
+      return res.status(404).send("Quote not found.");
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace || !workspace.googleTokens) return res.status(404).send("Quote not found.");
+    const lead = await getLeadRecord(workspace.email, workspace.googleTokens, leadId);
+    if (!lead || !lead.quoteUrl) return res.status(410).send("This quote is no longer available.");
+
+    if (req.session?.profile?.email !== workspace.email && !lead.quoteViewedAt) {
+      updateLeadRecord(workspace.email, workspace.googleTokens, leadId, (current) => ({
+        ...current,
+        quoteViewedAt: current.quoteViewedAt || new Date().toISOString(),
+      })).catch(() => undefined);
+    }
+
+    const brand = workspace.config.businessName || workspace.config.ownerName || "Your artist";
+    const brandColor = /^#[0-9a-fA-F]{3,6}$/.test(workspace.config.brandColor) ? workspace.config.brandColor : "#C26B45";
+    const pdfUrl = `/d/quote/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}?sig=${encodeURIComponent(sig)}`;
+    const accepted = Boolean(lead.quoteAcceptedAt);
+    const voided = Boolean(lead.quoteVoidedAt);
+    const amount = lead.finalApprovedPrice || lead.initialAiPrice;
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(renderQuotePage({
+      brand,
+      brandColor,
+      clientName: lead.clientName,
+      eventType: lead.eventType,
+      eventDate: lead.eventDate,
+      amount,
+      pdfUrl,
+      accepted,
+      voided,
+      acceptUrl: `/api/public/quote/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}/accept?sig=${encodeURIComponent(sig)}`,
+      ownerWhatsApp: String(workspace.config.ownerWhatsApp || "").replace(/[^\d]/g, ""),
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Client taps "Accept" on the quote page: records the acceptance, tells the
+// owner on WhatsApp, and logs it on the lead's timeline. The owner still
+// confirms the booking herself — accepting never moves money or the calendar.
+app.post("/api/public/quote/:workspaceId/:leadId/accept", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const leadId = String(req.params.leadId ?? "");
+    const sig = typeof req.query.sig === "string" ? req.query.sig : "";
+    if (!verifyDocumentToken("quote", workspaceId, leadId, sig)) {
+      return res.status(404).json({ error: "Quote not found" });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace || !workspace.googleTokens) return res.status(404).json({ error: "Quote not found" });
+    const lead = await getLeadRecord(workspace.email, workspace.googleTokens, leadId);
+    if (!lead || !lead.quoteUrl) return res.status(410).json({ error: "This quote is no longer available" });
+    if (lead.quoteVoidedAt) return res.status(410).json({ error: "This quote has been withdrawn" });
+
+    if (!lead.quoteAcceptedAt) {
+      await updateLeadRecord(workspace.email, workspace.googleTokens, leadId, (current) => ({
+        ...current,
+        quoteAcceptedAt: current.quoteAcceptedAt || new Date().toISOString(),
+      }));
+      await logInteractionForWorkspace(workspace.email, workspace.googleTokens, {
+        leadId,
+        direction: "Inbound",
+        channel: "WhatsApp",
+        actor: lead.clientWhatsApp || lead.clientName || "client",
+        message: `${lead.clientName || "Client"} accepted the quote for ${lead.eventType} on ${lead.eventDate}.`,
+        aiSummary: "Quote accepted via public quote page",
+      }).catch(() => undefined);
+      notifyOwnerQuoteAccepted(workspace, lead).catch(() => undefined);
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Fire-and-forget WhatsApp ping to the owner when a client accepts a quote.
+async function notifyOwnerQuoteAccepted(workspace: Awaited<ReturnType<typeof findWorkspaceByWorkspaceId>>, lead: LeadRecord) {
+  if (!workspace) return;
+  const templateName = String(workspace.config.ownerAlertTemplate || "").trim();
+  if (!templateName) return;
+  const ownerPhone = String(workspace.config.ownerWhatsApp || "").replace(/[^\d]/g, "");
+  if (!ownerPhone) return;
+  const whatsapp = workspace.metaConnections?.whatsapp;
+  try {
+    await sendWhatsAppTemplate(
+      { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+      ownerPhone,
+      templateName,
+      String(workspace.config.ownerAlertTemplateLang || "en"),
+      [`${lead.clientName} ACCEPTED your quote`, lead.eventType, lead.eventDate],
+    );
+  } catch (error) {
+    logger.warn("Owner quote-accept alert failed", { err: String(error), leadId: lead.leadId });
+  }
+}
+
+// Minimal, branded, mobile-first HTML for the public quote page.
+function renderQuotePage(input: {
+  brand: string;
+  brandColor: string;
+  clientName: string;
+  eventType: string;
+  eventDate: string;
+  amount: number;
+  pdfUrl: string;
+  accepted: boolean;
+  voided: boolean;
+  acceptUrl: string;
+  ownerWhatsApp: string;
+}): string {
+  const esc = (v: string) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+  const title = `Quote from ${esc(input.brand)}`;
+  const desc = `${esc(input.eventType)} on ${esc(input.eventDate)} — ₹${Math.round(input.amount).toLocaleString("en-IN")}`;
+  const acceptedBlock = `<div class="accepted">💚 You've accepted this quote. ${esc(input.brand)} will be in touch to confirm your booking!</div>`;
+  const voidedBlock = `<div class="voided">This quote has been updated — please ask ${esc(input.brand)} for the latest version.</div>`;
+  const actionBlock = input.voided
+    ? voidedBlock
+    : input.accepted
+      ? acceptedBlock
+      : `<button id="accept-btn" type="button">💖 Looks perfect — I accept</button>
+         <p class="hint">Accepting lets ${esc(input.brand)} know you're ready. She'll confirm your date right after.</p>`;
+  const waLink = input.ownerWhatsApp
+    ? `<a class="wa" href="https://wa.me/${esc(input.ownerWhatsApp)}" target="_blank" rel="noreferrer">💬 Questions? WhatsApp ${esc(input.brand)}</a>`
+    : "";
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${title}</title>
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${desc}" />
+<meta property="og:type" content="website" />
+<meta name="robots" content="noindex" />
+<style>
+  :root { --brand: ${input.brandColor}; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #faf7f4; color: #2a2421; }
+  header { background: var(--brand); color: #fff; padding: 22px 18px; text-align: center; }
+  header h1 { font-size: 19px; font-weight: 600; }
+  header p { font-size: 13.5px; opacity: .92; margin-top: 4px; }
+  main { max-width: 680px; margin: 0 auto; padding: 18px; }
+  .summary { background: #fff; border: 1px solid #eee3da; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  .summary .row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14.5px; }
+  .summary .row b { font-weight: 600; }
+  .amount { font-size: 18px; color: var(--brand); font-weight: 700; }
+  iframe { width: 100%; height: 70vh; border: 1px solid #eee3da; border-radius: 12px; background: #fff; }
+  #accept-btn { display: block; width: 100%; margin-top: 16px; padding: 15px; font-size: 16.5px; font-weight: 600; color: #fff; background: var(--brand); border: 0; border-radius: 12px; cursor: pointer; }
+  #accept-btn:disabled { opacity: .6; }
+  .hint { text-align: center; font-size: 12.5px; color: #8a7f78; margin-top: 8px; }
+  .accepted, .voided { margin-top: 16px; padding: 15px; border-radius: 12px; text-align: center; font-size: 15px; }
+  .accepted { background: #e8f7ee; color: #1e6b3a; border: 1px solid #bfe6cd; }
+  .voided { background: #fdf1ef; color: #9a3c2e; border: 1px solid #f3cdc5; }
+  .wa { display: block; text-align: center; margin: 18px 0 8px; color: var(--brand); font-size: 14px; text-decoration: none; font-weight: 600; }
+  footer { text-align: center; font-size: 12px; color: #a79c94; padding: 18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>${title}</h1>
+  <p>Hi ${esc(input.clientName || "there")} — here's your personalised quote ✨</p>
+</header>
+<main>
+  <div class="summary">
+    <div class="row"><span>Occasion</span><b>${esc(input.eventType)}</b></div>
+    <div class="row"><span>Date</span><b>${esc(input.eventDate)}</b></div>
+    <div class="row"><span>Quoted amount</span><b class="amount">₹${Math.round(input.amount).toLocaleString("en-IN")}</b></div>
+  </div>
+  <iframe src="${esc(input.pdfUrl)}" title="Quote PDF"></iframe>
+  <div id="action-area">${actionBlock}</div>
+  ${waLink}
+</main>
+<footer>Powered by BusyDays</footer>
+<script>
+  const btn = document.getElementById("accept-btn");
+  if (btn) btn.addEventListener("click", async () => {
+    btn.disabled = true; btn.textContent = "Sending…";
+    try {
+      const res = await fetch(${JSON.stringify(input.acceptUrl)}, { method: "POST" });
+      if (!res.ok) throw new Error();
+      document.getElementById("action-area").innerHTML = '<div class="accepted">💚 Accepted! ${esc(input.brand)} has been notified and will confirm your booking shortly.</div>';
+    } catch {
+      btn.disabled = false; btn.textContent = "💖 Looks perfect — I accept";
+      alert("Couldn't send just now — please try again in a moment.");
+    }
+  });
+</script>
+</body>
+</html>`;
+}
 
 app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
   try {

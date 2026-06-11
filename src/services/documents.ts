@@ -2,10 +2,24 @@ import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont, type PDFPage } 
 import { fetchWithTimeout, isPublicHttpUrl } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
-import { buildPublicDocumentUrl } from "./document-links.js";
+import { buildPublicDocumentUrl, buildQuoteViewUrl } from "./document-links.js";
 import { getDocumentTheme, type DocumentTheme } from "./document-themes.js";
 import type { WorkspaceRecord } from "../types.js";
-import type { BookingRecord, LeadRecord } from "./booking.js";
+import { parsePaymentsLog, paymentsTotal, type BookingRecord, type LeadRecord } from "./booking.js";
+
+// Sequential, human-friendly document numbers (Q-2026-0007, INV-2026-0012).
+// Scans the numbers already issued this year and returns the next in sequence —
+// what an accountant or GST audit expects, instead of random record ids.
+export function nextDocumentNumber(prefix: string, existing: (string | undefined | null)[], now = new Date()): string {
+  const year = now.getFullYear();
+  const pattern = new RegExp(`^${prefix}-${year}-(\\d{1,6})$`);
+  let max = 0;
+  for (const value of existing) {
+    const match = pattern.exec(String(value || "").trim());
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return `${prefix}-${year}-${String(max + 1).padStart(4, "0")}`;
+}
 
 type UploadedDriveFile = {
   fileId: string;
@@ -124,7 +138,7 @@ export async function buildQuotePdfBytes(
   lead: LeadRecord,
   options: DocumentRenderOptions = {},
 ): Promise<Uint8Array> {
-  const quoteNumber = `Q-${lead.leadId}`;
+  const quoteNumber = lead.quoteNumber || `Q-${lead.leadId}`;
   const order = parseOrderItems(lead.orderItems);
   const autoQuoted = order.total > 0 ? order.total : lead.finalApprovedPrice || lead.initialAiPrice;
   const { total: quotedAmount, extraLines, note } = applyAdjustments(autoQuoted, options.adjustments);
@@ -132,7 +146,7 @@ export async function buildQuotePdfBytes(
     (quotedAmount * workspace.config.advancePercentage) / 100,
   );
 
-  const theme = getDocumentTheme(workspace.config.documentTemplate);
+  const theme = getDocumentTheme(workspace.config.documentTemplate, workspace.config.brandColor);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
@@ -169,7 +183,7 @@ export async function buildQuotePdfBytes(
       ...gstLines(quotedAmount, workspace.config.gstPercentage),
       ...extraLines,
       ["Quoted Amount", inr(quotedAmount)],
-      ["Advance To Confirm", inr(advanceAmount)],
+      [`Advance To Confirm (${workspace.config.advancePercentage || 0}%)`, inr(advanceAmount)],
       ["Hold Expires", lead.holdExpiresAt ? formatDateTime(lead.holdExpiresAt) : "On request"],
     ],
     y: y - 16,
@@ -201,11 +215,13 @@ export async function generateQuoteDocument(
   _tokens: Credentials,
   lead: LeadRecord,
 ): Promise<UploadedDriveFile> {
-  const quoteNumber = `Q-${lead.leadId}`;
+  const quoteNumber = lead.quoteNumber || `Q-${lead.leadId}`;
   return {
     fileId: "",
     fileName: `${safeName(workspace.config.businessName || workspace.name)}-${quoteNumber}.pdf`,
-    fileUrl: buildPublicDocumentUrl("quote", workspace.workspaceId, lead.leadId),
+    // Clients land on the branded quote page (PDF embedded + Accept button),
+    // which gives WhatsApp a rich link preview instead of a bare PDF URL.
+    fileUrl: buildQuoteViewUrl(workspace.workspaceId, lead.leadId),
   };
 }
 
@@ -216,13 +232,13 @@ export async function buildInvoicePdfBytes(
   booking: BookingRecord,
   options: DocumentRenderOptions = {},
 ): Promise<Uint8Array> {
-  const invoiceNumber = `INV-${booking.bookingId}`;
+  const invoiceNumber = booking.invoiceNumber || `INV-${booking.bookingId}`;
   const order = parseOrderItems(booking.orderItems);
   const baseStage = resolveInvoiceStage(booking);
   const adjusted = applyAdjustments(baseStage.amount, options.adjustments);
   const stage: InvoiceStage = { label: baseStage.label, amount: adjusted.total };
   const { extraLines, note } = adjusted;
-  const theme = getDocumentTheme(workspace.config.documentTemplate);
+  const theme = getDocumentTheme(workspace.config.documentTemplate, workspace.config.brandColor);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
@@ -252,6 +268,19 @@ export async function buildInvoicePdfBytes(
     `Assigned Artist: ${booking.assignedArtist || "To be assigned"}`,
   ], y - 12, bold, regular, theme);
 
+  // Payment history: each recorded instalment appears on the invoice so the
+  // client sees exactly what's been received and what remains — no confusion
+  // about whether the advance was counted.
+  const payments = parsePaymentsLog(booking.paymentsLog);
+  const received = paymentsTotal(payments);
+  const paymentLines: [string, string][] = payments.map((p) => [
+    `Received${p.method ? ` via ${p.method}` : ""} on ${formatDateOnly(p.at)}`,
+    inr(p.amount),
+  ]);
+  if (received > 0) {
+    paymentLines.push(["Total Received", inr(received)]);
+  }
+
   y = drawPricingBlock(page, {
     heading: `${stage.label} Invoice`,
     lines: [
@@ -260,8 +289,8 @@ export async function buildInvoicePdfBytes(
       ...extraLines,
       ["Invoice Amount", inr(stage.amount)],
       ["Total Booking Value", inr(booking.finalPrice)],
-      ["Advance", inr(booking.advanceAmount)],
-      ["Balance", inr(booking.balanceDue)],
+      ...paymentLines,
+      ["Balance Due", inr(booking.balanceDue)],
     ],
     y: y - 16,
   }, bold, regular, theme);
@@ -311,7 +340,7 @@ export async function generateInvoiceDocument(
   _tokens: Credentials,
   booking: BookingRecord,
 ): Promise<UploadedDriveFile> {
-  const invoiceNumber = `INV-${booking.bookingId}`;
+  const invoiceNumber = booking.invoiceNumber || `INV-${booking.bookingId}`;
   return {
     fileId: "",
     fileName: `${safeName(workspace.config.businessName || workspace.name)}-${invoiceNumber}.pdf`,
@@ -328,7 +357,7 @@ export async function generateContractPdfBytes(
   const contractNumber = `CTR-${booking.bookingId}`;
   const order = parseOrderItems(booking.orderItems);
   const adjusted = applyAdjustments(order.total > 0 ? order.total : booking.finalPrice, options.adjustments);
-  const theme = getDocumentTheme(workspace.config.documentTemplate);
+  const theme = getDocumentTheme(workspace.config.documentTemplate, workspace.config.brandColor);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
@@ -713,8 +742,20 @@ async function buildUpiQrPng(
   return Uint8Array.from(Buffer.from(dataUrl.split(",")[1], "base64"));
 }
 
+// Note: pdf-lib's standard Helvetica is WinAnsi-encoded and can't render the
+// rupee sign (U+20B9), so documents use "Rs." — the conventional ASCII form.
 function inr(amount: number) {
-  return `INR ${Math.round(amount).toLocaleString("en-IN")}`;
+  return `Rs. ${Math.round(amount).toLocaleString("en-IN")}`;
+}
+
+function formatDateOnly(value: string) {
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  } catch {
+    return value;
+  }
 }
 
 function safeName(value: string) {
