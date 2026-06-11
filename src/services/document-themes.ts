@@ -118,6 +118,49 @@ export const DOCUMENT_THEME_LIST = Object.values(THEMES).map((theme) => ({
   description: theme.description,
 }));
 
-export function getDocumentTheme(key: string | undefined): DocumentTheme {
-  return THEMES[String(key || "").trim()] ?? THEMES.classic;
+export function getDocumentTheme(key: string | undefined, brandColor?: string): DocumentTheme {
+  const base = THEMES[String(key || "").trim()] ?? THEMES.classic;
+  const brand = parseHexColor(brandColor);
+  if (!brand) return base;
+  // Tint the theme with the artist's brand colour so her documents match her
+  // booking page — headings and accents take the brand hue, body text stays
+  // readable, and the header band gets a soft wash of the same colour.
+  return {
+    ...base,
+    title: brand,
+    sectionHeading: brand,
+    blockHeading: brand,
+    blockValue: darken(brand, 0.15),
+    frameBorder: lighten(brand, 0.45),
+    bandBg: lighten(brand, 0.88),
+    bandText: darken(brand, 0.2),
+    blockBorder: lighten(brand, 0.6),
+    blockBg: lighten(brand, 0.93),
+  };
+}
+
+// Parses #RGB or #RRGGBB into a pdf-lib colour; anything else returns null so a
+// bad value silently falls back to the stock theme.
+export function parseHexColor(value: string | undefined): Rgb | null {
+  const hex = String(value || "").trim().replace(/^#/, "");
+  if (!/^([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) return null;
+  const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+  const r = parseInt(full.slice(0, 2), 16) / 255;
+  const g = parseInt(full.slice(2, 4), 16) / 255;
+  const b = parseInt(full.slice(4, 6), 16) / 255;
+  // Near-white brand colours would make headings invisible on paper.
+  if (r > 0.9 && g > 0.9 && b > 0.9) return null;
+  return rgb(r, g, b);
+}
+
+function lighten(color: Rgb, amount: number): Rgb {
+  return rgb(
+    color.red + (1 - color.red) * amount,
+    color.green + (1 - color.green) * amount,
+    color.blue + (1 - color.blue) * amount,
+  );
+}
+
+function darken(color: Rgb, amount: number): Rgb {
+  return rgb(color.red * (1 - amount), color.green * (1 - amount), color.blue * (1 - amount));
 }

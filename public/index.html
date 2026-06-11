@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BusyDays — Software for appointment-based professionals</title>
+    <title>BusyDays — Booking software for makeup artists</title>
     <meta name="application-name" content="BusyDays" />
     <meta property="og:site_name" content="BusyDays" />
     <meta name="description" content="BusyDays is booking software for appointment-based professionals. Zero stress managing your calendar, zero missed DMs, zero missed bookings." />
@@ -280,6 +280,53 @@
 
       .cal-toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
       .cal-frame { width: 100%; height: 680px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+
+      /* ─── Native month calendar ─── */
+      .mcal-toolbar { display: flex; align-items: center; gap: 8px; margin: 14px 0 10px; flex-wrap: wrap; }
+      .mcal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+      .mcal-head { text-align: center; font-size: 11px; color: var(--muted); padding: 4px 0; text-transform: uppercase; letter-spacing: .04em; }
+      .mcal-cell { position: relative; min-height: 52px; border: 1px solid var(--line); border-radius: 8px; background: var(--card, #fff); padding: 5px 4px 3px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; font: inherit; }
+      .mcal-cell.empty { border: none; background: transparent; cursor: default; }
+      .mcal-cell.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+      .mcal-cell.selected { background: var(--accent-soft, #f7ece5); border-color: var(--accent); }
+      .mcal-cell.blocked { background: #f6f4f2; opacity: .75; }
+      .mcal-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .mcal-num { font-size: 13px; font-weight: 600; }
+      .mcal-dots { display: flex; gap: 3px; align-items: center; min-height: 8px; }
+      .mcal-more { font-size: 9.5px; color: var(--muted); }
+      .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+      .dot-confirmed { background: #2e7d4f; }
+      .dot-hold { background: #d99a3d; }
+      .dot-off { background: #b3aaa2; }
+      .mcal-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 12px; color: var(--muted); align-items: center; }
+      .mcal-legend span { display: inline-flex; align-items: center; gap: 5px; }
+      @media (max-width: 640px) { .mcal-cell { min-height: 44px; } }
+
+      /* ─── Personal greeting & avatar ─── */
+      .daily-greeting { margin: 4px 2px 18px; }
+      .daily-greeting h1 { font-size: 26px; margin: 0 0 4px; }
+      .daily-greeting p { margin: 0; font-size: 14.5px; }
+      .avatar-chip { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 700; margin-right: 7px; vertical-align: middle; }
+      .avatar-name { font-weight: 600; }
+
+      /* ─── Payment status pills (scannable at a glance) ─── */
+      .pay-pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+      .pay-pill.due { background: #fdecea; color: #b3422f; border: 1px solid #f3c4bc; }
+      .pay-pill.partial { background: #fdf4e3; color: #9a6b1f; border: 1px solid #efd9ae; }
+      .pay-pill.paid { background: #e8f7ee; color: #1e7a3f; border: 1px solid #bfe6cd; }
+
+      /* ─── Loading skeletons ─── */
+      .skeleton { border-radius: 8px; background: linear-gradient(90deg, #efe9e4 25%, #f7f3ef 50%, #efe9e4 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; min-height: 16px; }
+      @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+      .skeleton-row { display: flex; flex-direction: column; gap: 10px; padding: 8px 0; }
+
+      /* ─── Styled confirm dialog (replaces window.confirm) ─── */
+      .confirm-overlay { position: fixed; inset: 0; background: rgba(30,24,20,.45); display: none; align-items: center; justify-content: center; z-index: 1200; padding: 18px; }
+      .confirm-overlay.open { display: flex; }
+      .confirm-card { background: #fff; border-radius: 14px; max-width: 400px; width: 100%; padding: 22px; box-shadow: 0 18px 50px rgba(0,0,0,.22); }
+      .confirm-card h3 { margin: 0 0 8px; font-size: 17px; }
+      .confirm-card p { margin: 0 0 18px; font-size: 14px; color: var(--muted); line-height: 1.55; }
+      .confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
       .thread { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); margin-bottom: 10px; }
       .thread > summary { cursor: pointer; padding: 14px 20px; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; }
@@ -805,7 +852,7 @@
       <section id="landing" class="landing-hero">
         <div class="hero-inner">
           <div class="hero-wordmark">BusyDays</div>
-          <div class="hero-eyebrow">Software for appointment-based professionals</div>
+          <div class="hero-eyebrow">Made for makeup artists &amp; beauty professionals</div>
 
           <h1 class="hero-headline">
             Your calendar, your DMs, your bookings —<br class="hero-br" />
@@ -898,6 +945,10 @@
 
       <!-- Dashboard -->
       <section class="tab-panel active" data-panel="dashboard">
+        <div class="daily-greeting" id="daily-greeting" style="display:none;">
+          <h1 id="greeting-line">Good morning ✨</h1>
+          <p class="muted" id="greeting-sub"></p>
+        </div>
         <div class="panel section setup-checklist" id="setup-checklist" style="display:none;margin-bottom:20px;">
           <div class="kicker">Get set up</div>
           <h2 id="setup-checklist-title">Finish setting up your booking page</h2>
@@ -907,6 +958,11 @@
         <div class="panel section" id="attention-section" style="display:none;margin-bottom:20px;border-left:3px solid var(--accent);">
           <div class="kicker" style="color:var(--accent);">Needs your attention</div>
           <div id="attention-items"></div>
+        </div>
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">What’s next</div>
+          <h2 id="upcoming-title">Your upcoming jobs</h2>
+          <div id="upcoming-jobs"></div>
         </div>
         <div class="panel section" style="margin-bottom:20px;">
           <div class="kicker">✨ Ask BusyDays</div>
@@ -924,11 +980,6 @@
           </div>
           <div class="ask-answer" id="ask-answer"></div>
         </div>
-        <div class="panel section" style="margin-bottom:20px;">
-          <div class="kicker">What’s next</div>
-          <h2 id="upcoming-title">Your upcoming jobs</h2>
-          <div id="upcoming-jobs"></div>
-        </div>
         <div class="panel section" id="automation-panel" style="margin-bottom:20px;display:none;">
           <details id="automation-details">
             <summary class="more-summary" style="font-size:15px;font-weight:600;color:var(--text);" id="automation-summary">What’s running automatically</summary>
@@ -942,8 +993,10 @@
           <div class="stat-grid" style="grid-template-columns:repeat(2,1fr);gap:10px;" id="stats-grid">
             <div class="stat"><strong id="stat-leads">0</strong><span>Open requests</span></div>
             <div class="stat"><strong id="stat-bookings">0</strong><span>Confirmed bookings</span></div>
-            <div class="stat"><strong id="stat-awaiting">0</strong><span>Awaiting client</span></div>
-            <div class="stat"><strong id="stat-revenue">₹0</strong><span>Confirmed upcoming revenue</span></div>
+            <div class="stat"><strong id="stat-awaiting">0</strong><span>Waiting on client</span></div>
+            <div class="stat"><strong id="stat-revenue">₹0</strong><span>Booked revenue</span></div>
+            <div class="stat"><strong id="stat-collected" style="color:#1e7a3f;">₹0</strong><span>Collected so far</span></div>
+            <div class="stat"><strong id="stat-outstanding" style="color:#b3422f;">₹0</strong><span>Still to collect</span></div>
           </div>
           <div id="snapshot-content" class="lead stack" style="font-size:16px;margin-top:14px;">
             Sign in to see your live requests, approvals, and confirmed bookings.
@@ -1101,20 +1154,37 @@
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
             <div>
               <div class="kicker">Schedule</div>
-              <h2>Calendar</h2>
+              <h2>Your month at a glance</h2>
             </div>
             <button class="button" type="button" data-open-quick-booking>➕ New booking</button>
           </div>
-          <div class="cal-toolbar">
-            <button class="button small secondary" type="button" data-cal-mode="MONTH">Month</button>
-            <button class="button small secondary" type="button" data-cal-mode="WEEK">Week</button>
-            <button class="button small secondary" type="button" data-cal-mode="AGENDA">Agenda</button>
+          <div class="mcal-toolbar">
+            <button class="button small secondary" type="button" id="mcal-prev">‹</button>
+            <strong id="mcal-title" style="min-width:150px;text-align:center;"></strong>
+            <button class="button small secondary" type="button" id="mcal-next">›</button>
+            <button class="button small secondary" type="button" id="mcal-today">Today</button>
           </div>
-          <iframe id="cal-frame" class="cal-frame" frameborder="0" scrolling="no"></iframe>
-          <p class="muted" style="margin-top:12px;font-size:13px;">
-            Confirmed bookings and tentative holds appear here from your Google Calendars. If the calendar looks empty,
-            make sure you are signed into this Google account in your browser.
-          </p>
+          <div class="mcal-grid" id="mcal-grid"></div>
+          <div class="mcal-legend">
+            <span><i class="dot dot-confirmed"></i> Booking</span>
+            <span><i class="dot dot-hold"></i> Tentative hold</span>
+            <span><i class="dot dot-off"></i> Day off</span>
+          </div>
+          <div id="mcal-day-panel" style="display:none;margin-top:14px;"></div>
+        </div>
+        <div class="panel section" style="margin-top:20px;">
+          <details>
+            <summary class="more-summary" style="font-size:15px;font-weight:600;color:var(--text);">Open your Google Calendar view</summary>
+            <div class="cal-toolbar" style="margin-top:12px;">
+              <button class="button small secondary" type="button" data-cal-mode="MONTH">Month</button>
+              <button class="button small secondary" type="button" data-cal-mode="WEEK">Week</button>
+              <button class="button small secondary" type="button" data-cal-mode="AGENDA">Agenda</button>
+            </div>
+            <iframe id="cal-frame" class="cal-frame" frameborder="0" scrolling="no"></iframe>
+            <p class="muted" style="margin-top:12px;font-size:13px;">
+              This is your synced Google Calendar. If it looks empty, make sure you're signed into this Google account in your browser.
+            </p>
+          </details>
         </div>
         <div class="panel section" style="margin-top:20px;">
           <div class="kicker">Time off</div>
@@ -1865,6 +1935,44 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       </div>
     </div>
 
+    <!-- Styled confirmation dialog (replaces window.confirm) -->
+    <div class="confirm-overlay" id="confirm-overlay" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="confirm-card">
+        <h3 id="confirm-title">Are you sure?</h3>
+        <p id="confirm-message"></p>
+        <div class="confirm-actions">
+          <button class="button secondary" type="button" id="confirm-cancel">Keep it</button>
+          <button class="button danger" type="button" id="confirm-ok">Yes, do it</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Record payment: any instalment, any method -->
+    <div class="modal-overlay" id="payment-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 style="margin:0;">💰 Record a payment</h3>
+          <button class="modal-close" type="button" id="payment-modal-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 6px;" id="payment-modal-context"></p>
+        <div id="payment-modal-ledger" style="margin:0 0 12px;"></div>
+        <form id="payment-form">
+          <div class="wizard-field"><label for="pay-amount">Amount received (₹)</label><input id="pay-amount" name="amount" type="number" min="1" required placeholder="e.g. 5000" /></div>
+          <div class="wizard-field">
+            <label for="pay-method">How did it arrive?</label>
+            <select id="pay-method" name="method">
+              <option>UPI</option><option>Cash</option><option>Bank Transfer</option><option>Card</option><option>Razorpay</option><option>Other</option>
+            </select>
+          </div>
+          <div class="wizard-field"><label for="pay-note">Note (optional)</label><input id="pay-note" name="note" maxlength="120" placeholder="e.g. advance for wedding" /></div>
+          <div class="action-row" style="margin-top:14px;">
+            <button class="button" type="submit" id="payment-form-submit">Save payment</button>
+          </div>
+          <div class="status" id="payment-form-status"></div>
+        </form>
+      </div>
+    </div>
+
     <!-- Quick booking: walk-in / phone booking in one step, no pipeline -->
     <div class="modal-overlay" id="quick-booking-modal">
       <div class="modal">
@@ -2110,6 +2218,38 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         }, type === "error" ? 5000 : 3200);
       }
 
+      // Her first booking is a milestone, not a row in a table. One-time
+      // full-screen celebration with a gentle confetti burst.
+      function celebrateFirstBooking() {
+        const overlay = document.createElement("div");
+        overlay.style.cssText = "position:fixed;inset:0;background:rgba(30,24,20,.55);display:flex;align-items:center;justify-content:center;z-index:1300;padding:18px;";
+        overlay.innerHTML = `
+          <div style="background:#fff;border-radius:18px;max-width:420px;width:100%;padding:34px 28px;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.3);position:relative;overflow:hidden;">
+            <div style="font-size:52px;line-height:1;">🎉</div>
+            <h2 style="margin:14px 0 8px;font-size:22px;">Your first booking!</h2>
+            <p style="margin:0 0 20px;color:#7a6f68;font-size:14.5px;line-height:1.6;">It's official — you're taking bookings. The date is on your calendar, and you can send the invoice and contract in one tap from the Bookings tab.</p>
+            <button class="button" type="button" style="width:100%;">Let's go 💄</button>
+          </div>`;
+        const burst = () => {
+          for (let i = 0; i < 24; i++) {
+            const c = document.createElement("span");
+            const emoji = ["✨", "💖", "🎊", "💄", "🌟"][i % 5];
+            c.textContent = emoji;
+            c.style.cssText = `position:fixed;left:${10 + Math.random() * 80}%;top:-30px;font-size:${14 + Math.random() * 14}px;z-index:1301;pointer-events:none;transition:transform 2.4s ease-in, opacity 2.4s;`;
+            document.body.appendChild(c);
+            requestAnimationFrame(() => {
+              c.style.transform = `translateY(${window.innerHeight + 60}px) rotate(${(Math.random() - 0.5) * 360}deg)`;
+              c.style.opacity = "0";
+            });
+            setTimeout(() => c.remove(), 2600);
+          }
+        };
+        overlay.querySelector("button").addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+        document.body.appendChild(overlay);
+        burst();
+      }
+
       // ─── Button loading state ───
       function setLoading(btn, label = "Saving…") {
         if (!btn) return;
@@ -2134,11 +2274,11 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
       const LEAD_COLUMNS = [
         { key: "New", label: "New" },
-        { key: "Awaiting Client", label: "Awaiting Client" },
+        { key: "Awaiting Client", label: "Waiting on client" },
         { key: "Confirmed", label: "Confirmed" },
         { key: "Payment Received", label: "Paid" },
         { key: "Completed", label: "Completed" },
-        { key: "Lost", label: "Lost" },
+        { key: "Lost", label: "Didn't book" },
       ];
 
       const tabMoreMenu = document.getElementById("tab-more-menu");
@@ -2248,10 +2388,21 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       }
       function formatMoney(value) { return `₹${Number(value || 0).toLocaleString("en-IN")}`; }
       function pillClass(status) {
-        if (["Confirmed", "Payment Received", "Advance Paid", "Paid in Full", "Paid"].includes(status)) return "pill success";
-        if (["Awaiting Client", "Advance Due", "Payment Pending", "New"].includes(status)) return "pill warning";
-        if (["Lost"].includes(status)) return "pill danger";
+        if (["Confirmed", "Payment Received", "Advance Paid", "Paid in Full", "Paid", "Accepted", "Signed", "Completed"].includes(status)) return "pill success";
+        if (["Awaiting Client", "Advance Due", "Payment Pending", "New", "Sent"].includes(status)) return "pill warning";
+        if (["Lost", "Cancelled"].includes(status)) return "pill danger";
         return "pill";
+      }
+      // User-facing label for pipeline statuses — warmer than the raw keys.
+      function statusLabel(status) {
+        const map = {
+          "Awaiting Client": "Waiting on client",
+          "Payment Pending": "Payment pending",
+          "Payment Received": "Payment received",
+          "New": "New request",
+          "Lost": "Didn't book",
+        };
+        return map[status] || status;
       }
 
       // ─── Documents tab: unified quote / invoice / contract list ───
@@ -2261,7 +2412,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
       async function loadDocuments() {
         const body = document.getElementById("documents-body");
-        body.innerHTML = `<tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">Loading…</td></tr>`;
+        body.innerHTML = `<tr><td colspan="6"><div class="skeleton-row"><div class="skeleton" style="width:70%;"></div><div class="skeleton" style="width:55%;"></div><div class="skeleton" style="width:62%;"></div></div></td></tr>`;
         try {
           const data = await getJson("/api/documents");
           documentsCache = (data && data.documents) || [];
@@ -2300,12 +2451,19 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             actions.push(`<button class="button tiny secondary" data-doc-act="void" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}">⊘ Void</button>`);
           }
           actions.push(`<button class="button tiny secondary" data-doc-act="delete" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}" style="color:var(--danger);">🗑 Delete</button>`);
+          const lifecycle = d.acceptedAt
+            ? `<div class="muted" style="font-size:11px;color:#1e7a3f;">💚 Accepted ${formatDate(d.acceptedAt)}</div>`
+            : d.viewedAt
+              ? `<div class="muted" style="font-size:11px;">👁 Viewed ${formatDate(d.viewedAt)}</div>`
+              : d.status === "Sent"
+                ? `<div class="muted" style="font-size:11px;">Not opened yet</div>`
+                : "";
           return `<tr style="${voided ? "opacity:0.6;" : ""}">
             <td data-label="Document">${nameCell}</td>
             <td data-label="Client">${escapeHtml(d.client || "—")}</td>
             <td data-label="Event"><div>${escapeHtml(d.eventType || "—")}</div><div class="muted" style="font-size:12px;">${escapeHtml(formatDate(d.eventDate) || "")}</div></td>
             <td data-label="Amount">${formatMoney(d.amount)}</td>
-            <td data-label="Status"><span class="${pillClass(d.status)}">${escapeHtml(d.status)}</span></td>
+            <td data-label="Status"><span class="${pillClass(d.status)}">${escapeHtml(d.status)}</span>${lifecycle}</td>
             <td data-label="Actions"><div style="display:flex;gap:6px;flex-wrap:wrap;">${actions.join("")}</div></td>
           </tr>`;
         }).join("");
@@ -2350,13 +2508,13 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           return;
         }
         if (act === "void") {
-          if (!confirm(`Void this ${DOC_LABELS[kind].toLowerCase()}? It stays on record with a VOID stamp but can't be sent.`)) return;
+          if (!(await showConfirm(`Void this ${DOC_LABELS[kind].toLowerCase()}?`, "It stays on record with a VOID stamp but can't be sent.", "Void it"))) return;
           try { await postJson(docActionUrl(kind, id, "void"), {}); toast(`${DOC_LABELS[kind]} voided.`, "success"); await loadDocuments(); }
           catch (err) { toast(err.message || "Couldn't void.", "error"); }
           return;
         }
         if (act === "delete") {
-          if (!confirm(`Delete this ${DOC_LABELS[kind].toLowerCase()}? The shareable link will stop working. This can't be undone.`)) return;
+          if (!(await showConfirm(`Delete this ${DOC_LABELS[kind].toLowerCase()}?`, "The shareable link will stop working. This can't be undone.", "Delete it"))) return;
           try { await postJson(docActionUrl(kind, id, "delete"), {}); toast(`${DOC_LABELS[kind]} deleted.`, "success"); await loadDocuments(); }
           catch (err) { toast(err.message || "Couldn't delete.", "error"); }
           return;
@@ -2428,6 +2586,25 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         return Math.floor((Date.now() - new Date(isoString).getTime()) / 86400000);
       }
 
+      // How much money has actually landed for a booking: the payments ledger
+      // when it exists, otherwise inferred from the coarse payment status.
+      function bookingPaidTotal(b) {
+        try {
+          const log = JSON.parse(b.paymentsLog || "[]");
+          if (Array.isArray(log) && log.length) {
+            return log.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          }
+        } catch {}
+        const status = b.paymentStatus || "";
+        if (status === "Paid in Full") return Number(b.finalPrice || 0);
+        if (status === "Advance Paid") return Number(b.advanceAmount || 0);
+        return 0;
+      }
+
+      function bookingIsActive(b) {
+        return !["Cancelled", "Completed"].includes(b.status || "");
+      }
+
       function updateStats(leads, bookings) {
         const openLeads = leads.filter((l) => !["Lost", "Completed"].includes(l.status));
         document.getElementById("stat-leads").textContent = String(openLeads.length);
@@ -2440,11 +2617,49 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           .reduce((s, b) => s + Number(b.finalPrice || 0), 0);
         document.getElementById("stat-revenue").textContent = formatMoney(upcomingRevenue);
 
+        // Money actually received vs still owed, across active bookings.
+        const active = bookings.filter(bookingIsActive);
+        const collected = active.reduce((s, b) => s + bookingPaidTotal(b), 0);
+        const outstanding = active.reduce((s, b) => s + Math.max(0, Number(b.finalPrice || 0) - bookingPaidTotal(b)), 0);
+        const collectedEl = document.getElementById("stat-collected");
+        const outstandingEl = document.getElementById("stat-outstanding");
+        if (collectedEl) collectedEl.textContent = formatMoney(collected);
+        if (outstandingEl) outstandingEl.textContent = formatMoney(outstanding);
+
         // Notification badges
         const newLeads = openLeads.filter((l) => l.status === "New").length;
         const advanceDue = bookings.filter((b) => (b.paymentStatus || "") === "Advance Due").length;
         setBadge("badge-leads", newLeads);
         setBadge("badge-bookings", advanceDue);
+      }
+
+      // Warm, personal greeting at the top of Today — her name, her day, her
+      // money at a glance. The product should feel like it knows her.
+      function renderGreeting(leads, bookings) {
+        const wrap = document.getElementById("daily-greeting");
+        if (!wrap) return;
+        const cfg = sessionState?.workspace?.config || {};
+        const firstName = String(cfg.ownerName || sessionState?.profile?.name || "").trim().split(/\s+/)[0] || "";
+        const hour = new Date().getHours();
+        const timeOfDay = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+        document.getElementById("greeting-line").textContent = `${timeOfDay}${firstName ? ", " + firstName : ""} ✨`;
+
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayJobs = bookings.filter((b) => bookingIsActive(b) && b.eventDate === todayStr);
+        const newRequests = leads.filter((l) => l.status === "New").length;
+        const month = new Date().getMonth() + 1; // 1-12
+        const peakSeason = month >= 10 || month <= 2;
+        const parts = [];
+        if (todayJobs.length) {
+          const first = todayJobs.slice().sort((a, b) => (a.eventTime || "99:99").localeCompare(b.eventTime || "99:99"))[0];
+          parts.push(`You have ${todayJobs.length === 1 ? "a job" : todayJobs.length + " jobs"} today — ${first.clientName}${first.eventTime ? " at " + first.eventTime : ""}.`);
+        } else {
+          parts.push("No jobs today.");
+        }
+        if (newRequests) parts.push(`${newRequests} new request${newRequests > 1 ? "s" : ""} waiting for you.`);
+        else if (!todayJobs.length && peakSeason) parts.push("It's peak wedding season — a great time to share your booking link. 💪");
+        document.getElementById("greeting-sub").textContent = parts.join(" ");
+        wrap.style.display = "";
       }
 
       function setBadge(id, count) {
@@ -2472,6 +2687,12 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
         const items = [];
         const today = new Date(); today.setHours(0, 0, 0, 0);
+
+        // Clients who tapped Accept on their quote — hot, confirm them now.
+        const acceptedQuotes = leads.filter((l) => l.quoteAcceptedAt && !["Confirmed", "Payment Received", "Completed", "Lost"].includes(l.status));
+        if (acceptedQuotes.length) {
+          items.push({ icon: "💚", title: `${acceptedQuotes.length} client${acceptedQuotes.length > 1 ? "s" : ""} accepted their quote — confirm the booking!`, sub: acceptedQuotes.map((l) => l.clientName).slice(0, 3).join(", ") + (acceptedQuotes.length > 3 ? ` +${acceptedQuotes.length - 3} more` : ""), tab: "leads", danger: false });
+        }
 
         // New unreviewed leads
         const newLeads = leads.filter((l) => l.status === "New");
@@ -2616,7 +2837,11 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           ? `<a href="https://wa.me/${wa}" target="_blank" rel="noreferrer" class="button tiny secondary" style="text-decoration:none;margin-top:6px;width:100%;justify-content:center;">💬 WhatsApp</a>`
           : "";
 
-        const quoteChip = lead.quoteUrl
+        const quoteChip = lead.quoteAcceptedAt
+          ? `<span class="pill success" style="font-size:11px;">💚 Quote accepted!</span>`
+          : lead.quoteUrl && lead.quoteViewedAt
+          ? `<span class="pill success" style="font-size:11px;">Quote viewed 👁</span>`
+          : lead.quoteUrl
           ? `<span class="pill success" style="font-size:11px;">Quote sent</span>`
           : lead.quoteGeneratedAt
           ? `<span class="pill" style="font-size:11px;">Quote ready</span>`
@@ -2853,54 +3078,65 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const bookings = filteredBookings();
         document.getElementById("booking-count").textContent = `${bookings.length} shown`;
 
-        // Payment summary bar
+        // Payment summary bar — includes the number she actually chases:
+        // total balance still to collect across these bookings.
         const summaryEl = document.getElementById("booking-payment-summary");
         if (summaryEl && bookings.length) {
+          const activeShown = bookings.filter(bookingIsActive);
           const totalRevenue = bookings.reduce((s, b) => s + Number(b.finalPrice || 0), 0);
-          const totalAdvanceDue = bookings.filter((b) => (b.paymentStatus || "") === "Advance Due").reduce((s, b) => s + Number(b.advanceAmount || 0), 0);
-          const totalAdvancePaid = bookings.filter((b) => ["Advance Paid", "Paid in Full"].includes(b.paymentStatus || "")).reduce((s, b) => s + Number(b.advanceAmount || 0), 0);
+          const totalCollected = activeShown.reduce((s, b) => s + bookingPaidTotal(b), 0);
+          const totalToCollect = activeShown.reduce((s, b) => s + Math.max(0, Number(b.finalPrice || 0) - bookingPaidTotal(b)), 0);
+          const advanceDueCount = activeShown.filter((b) => (b.paymentStatus || "") === "Advance Due").length;
           summaryEl.style.display = "";
           summaryEl.innerHTML = `
-            <div class="payment-summary-item"><strong>${formatMoney(totalRevenue)}</strong> total confirmed</div>
-            <div class="payment-summary-item" style="color:var(--warning);"><strong>${formatMoney(totalAdvanceDue)}</strong> advances pending</div>
-            <div class="payment-summary-item" style="color:var(--success);"><strong>${formatMoney(totalAdvancePaid)}</strong> advances collected</div>`;
+            <div class="payment-summary-item"><strong>${formatMoney(totalRevenue)}</strong> total booked</div>
+            <div class="payment-summary-item" style="color:var(--success);"><strong>${formatMoney(totalCollected)}</strong> collected</div>
+            <div class="payment-summary-item" style="color:var(--warning);"><strong>${formatMoney(totalToCollect)}</strong> still to collect</div>
+            ${advanceDueCount ? `<div class="payment-summary-item" style="color:var(--danger,#b3422f);"><strong>${advanceDueCount}</strong> advance${advanceDueCount > 1 ? "s" : ""} unpaid</div>` : ""}`;
         } else if (summaryEl) {
           summaryEl.style.display = "none";
         }
 
         if (!bookings.length) {
-          bookingsBody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📅</div><h3>No bookings yet</h3><p>When you confirm a request, it appears here with invoice and contract tools.</p></div></td></tr>`;
+          bookingsBody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📅</div><h3>No bookings here yet</h3><p>When you confirm a request it lands here — with one-tap invoices, contracts and payment tracking. Share your booking link to get the first one in.</p><button class="button" type="button" data-share-booking-link style="margin-top:10px;">🔗 Copy my booking link</button></div></td></tr>`;
           return;
         }
-        bookingsBody.innerHTML = bookings.map((booking) => `
+        bookingsBody.innerHTML = bookings.map((booking) => {
+          const paid = bookingPaidTotal(booking);
+          const owed = Math.max(0, Number(booking.finalPrice || 0) - paid);
+          const payPill = booking.paymentStatus === "Paid in Full"
+            ? `<span class="pay-pill paid">✓ Paid in full</span>`
+            : booking.paymentStatus === "Advance Paid"
+              ? `<span class="pay-pill partial">Advance in · ${formatMoney(owed)} due</span>`
+              : `<span class="pay-pill due">Advance unpaid</span>`;
+          const waNumber = String(booking.clientWhatsApp || "").replace(/\D/g, "");
+          const ledger = parseLedger(booking.paymentsLog);
+          return `
           <tr>
             <td data-label="Client">
               <strong>${escapeHtml(booking.clientName)}</strong><br>
-              <span class="muted">${escapeHtml(booking.clientWhatsApp)}</span><br>
+              ${waNumber ? `<a class="muted" style="text-decoration:none;" href="https://wa.me/${waNumber}" target="_blank" rel="noreferrer">💬 ${escapeHtml(booking.clientWhatsApp)}</a>` : `<span class="muted">${escapeHtml(booking.clientWhatsApp)}</span>`}<br>
               <span class="muted" style="font-size:12px;">💇 ${booking.assignedArtist ? escapeHtml(booking.assignedArtist) : "<em>No specialist assigned</em>"}</span>
             </td>
             <td data-label="Event">${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(formatDay(booking.eventDate))}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span>${travelBadgeHtml(booking)}</td>
             <td data-label="Payment">
               <strong>${formatMoney(booking.finalPrice)}</strong><br>
-              <span class="muted">Advance: ${formatMoney(booking.advanceAmount)}</span><br>
-              <span class="muted">Balance: ${formatMoney(booking.balanceDue)}</span>
+              ${payPill}<br>
+              <span class="muted" style="font-size:12px;">${paid > 0 ? `Received ${formatMoney(paid)}` : `Advance: ${formatMoney(booking.advanceAmount)}`}${ledger.length ? ` · ${ledger.length} payment${ledger.length > 1 ? "s" : ""}` : ""}</span>
             </td>
             <td data-label="Status">
               ${booking.status === "Cancelled" ? `<span class="pill danger">Cancelled</span><br>` : ""}
-              <span class="${pillClass(booking.paymentStatus || booking.status)}">${escapeHtml(booking.paymentStatus || booking.status)}</span>
-              ${booking.contractStatus ? `<br><span class="pill ${booking.contractStatus === "Signed" ? "success" : booking.contractStatus === "Sent" ? "warning" : ""}" style="margin-top:4px;font-size:10px;">${booking.contractStatus === "Signed" ? "✍️ " : ""}${escapeHtml(booking.contractStatus)}</span>` : ""}
+              ${booking.status === "Completed" ? `<span class="pill success">Completed</span><br>` : ""}
+              ${booking.contractStatus ? `<span class="pill ${booking.contractStatus === "Signed" ? "success" : booking.contractStatus === "Sent" ? "warning" : ""}" style="margin-top:4px;font-size:10px;">${booking.contractStatus === "Signed" ? "✍️ " : "📄 "}Contract ${escapeHtml(booking.contractStatus.toLowerCase())}</span>` : ""}
+              ${booking.contractStatus === "Sent" && booking.contractViewedAt ? `<br><span class="muted" style="font-size:11px;">👁 Viewed ${formatDate(booking.contractViewedAt)}</span>` : ""}
               ${booking.contractSignerName ? `<br><span class="muted" style="font-size:11px;">by ${escapeHtml(booking.contractSignerName)}${booking.contractSignedAt ? " · " + formatDate(booking.contractSignedAt) : ""}</span>` : booking.contractSentAt ? `<br><span class="muted" style="font-size:11px;">Sent ${formatDate(booking.contractSentAt)}</span>` : ""}
+              ${booking.invoiceUrl && booking.invoiceViewedAt ? `<br><span class="muted" style="font-size:11px;">🧾 Invoice viewed ${formatDate(booking.invoiceViewedAt)}</span>` : ""}
             </td>
             <td data-label="Actions">
-              ${booking.status === "Cancelled" ? "" : (booking.paymentStatus === "Advance Due")
-                ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
-                    <button class="button small" data-booking-action="advance" data-booking-id="${booking.bookingId}" style="background:var(--sage);">✓ Mark advance paid</button>
-                  </div>`
-                : (booking.paymentStatus === "Advance Paid")
-                ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
-                    <button class="button small" data-booking-action="full" data-booking-id="${booking.bookingId}" style="background:var(--sage);">✓ Mark paid in full</button>
-                  </div>`
-                : ""}
+              ${booking.status === "Cancelled" || booking.paymentStatus === "Paid in Full" ? "" :
+                `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
+                    <button class="button small" data-booking-record-payment="${booking.bookingId}" style="background:var(--sage);">💰 Record payment</button>
+                  </div>`}
               ${!["Cancelled", "Completed"].includes(booking.status) && booking.eventDate && new Date(booking.eventDate) < new Date(new Date().toDateString())
                 ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
                     <button class="button small secondary" data-booking-action="complete" data-booking-id="${booking.bookingId}">🎉 Mark completed</button>
@@ -2935,12 +3171,23 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                 </div>
               </details>
             </td>
-          </tr>`).join("");
+          </tr>`;
+        }).join("");
+      }
+
+      // Tolerant client-side ledger parser (mirrors the server's).
+      function parseLedger(raw) {
+        try {
+          const log = JSON.parse(raw || "[]");
+          return Array.isArray(log) ? log.filter((p) => Number(p.amount) > 0) : [];
+        } catch { return []; }
       }
 
       function renderDashboard(session) {
         const leads = session.dashboard?.leads || [];
         const bookings = session.dashboard?.bookings || [];
+        renderGreeting(leads, bookings);
+        renderTopbarBrand();
         updateStats(leads, bookings);
         renderAttentionItems(leads, bookings);
         renderUpcoming(bookings);
@@ -2948,8 +3195,28 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         renderLeads();
         renderBookings();
         renderClients();
+        renderCalendarGrid();
         renderSetupChecklist();
         renderAutomationPanel();
+      }
+
+      // The app chrome carries HER brand, not ours: business name in the
+      // header plus an initials avatar. Generic "BusyDays" only before login.
+      function renderTopbarBrand() {
+        const cfg = sessionState?.workspace?.config || {};
+        const brandTitle = document.querySelector(".brand-title");
+        const brandKicker = document.querySelector(".brand .kicker");
+        const name = String(cfg.businessName || "").trim();
+        if (brandTitle && name) {
+          brandTitle.textContent = name;
+          if (brandKicker) brandKicker.textContent = "Powered by BusyDays";
+        }
+        const loginEl = document.getElementById("login-state");
+        const person = String(cfg.ownerName || sessionState?.profile?.name || "").trim();
+        if (loginEl && person) {
+          const initials = person.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+          loginEl.innerHTML = `<span class="avatar-chip" title="${escapeHtml(person)}">${escapeHtml(initials)}</span><span class="avatar-name">${escapeHtml(person.split(/\s+/)[0])}</span>`;
+        }
       }
 
       // The home screen answers "what do I have coming up?" — the first thing a
@@ -3059,6 +3326,112 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       }
       document.querySelectorAll("[data-cal-mode]").forEach((b) =>
         b.addEventListener("click", () => { calMode = b.getAttribute("data-cal-mode"); renderCalendar(); }));
+
+      // ─── Native month calendar ───
+      // A makeup artist plans by the month: which dates are taken, which are
+      // free, which are holds. This grid renders straight from her bookings —
+      // no Google login in the browser needed — and tapping a day shows the
+      // jobs on it with a one-tap "add booking" for that date.
+      let mcalCursor = new Date();
+      let mcalSelectedDate = "";
+
+      function mcalEventsByDate() {
+        const map = {};
+        const bookings = sessionState?.dashboard?.bookings || [];
+        const leads = sessionState?.dashboard?.leads || [];
+        for (const b of bookings) {
+          if (!b.eventDate || ["Cancelled"].includes(b.status || "")) continue;
+          (map[b.eventDate] = map[b.eventDate] || []).push({ kind: "booking", rec: b });
+        }
+        for (const l of leads) {
+          if (!l.eventDate || l.bookingId) continue;
+          if (!["Awaiting Client", "New"].includes(l.status)) continue;
+          (map[l.eventDate] = map[l.eventDate] || []).push({ kind: "hold", rec: l });
+        }
+        return map;
+      }
+
+      function renderCalendarGrid() {
+        const grid = document.getElementById("mcal-grid");
+        const titleEl = document.getElementById("mcal-title");
+        if (!grid || !titleEl) return;
+        const year = mcalCursor.getFullYear();
+        const month = mcalCursor.getMonth();
+        titleEl.textContent = mcalCursor.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+
+        const events = mcalEventsByDate();
+        const blocked = new Set(parseBlockedDates());
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const firstDay = new Date(year, month, 1);
+        const startOffset = (firstDay.getDay() + 6) % 7; // Monday-first
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        let html = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => `<div class="mcal-head">${d}</div>`).join("");
+        for (let i = 0; i < startOffset; i++) html += `<div class="mcal-cell empty"></div>`;
+        for (let day = 1; day <= daysInMonth; day++) {
+          const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const dayEvents = events[dateStr] || [];
+          const isToday = dateStr === todayStr;
+          const isBlocked = blocked.has(dateStr);
+          const isSelected = dateStr === mcalSelectedDate;
+          const dots = dayEvents.slice(0, 3).map((e) => `<i class="dot dot-${e.kind === "booking" ? "confirmed" : "hold"}"></i>`).join("");
+          html += `
+            <button type="button" class="mcal-cell${isToday ? " today" : ""}${isBlocked ? " blocked" : ""}${isSelected ? " selected" : ""}${dayEvents.length ? " has-events" : ""}" data-mcal-date="${dateStr}">
+              <span class="mcal-num">${day}</span>
+              <span class="mcal-dots">${isBlocked ? '<i class="dot dot-off"></i>' : dots}${dayEvents.length > 3 ? `<span class="mcal-more">+${dayEvents.length - 3}</span>` : ""}</span>
+            </button>`;
+        }
+        grid.innerHTML = html;
+        renderMcalDayPanel();
+      }
+
+      function renderMcalDayPanel() {
+        const panel = document.getElementById("mcal-day-panel");
+        if (!panel) return;
+        if (!mcalSelectedDate) { panel.style.display = "none"; return; }
+        const events = (mcalEventsByDate()[mcalSelectedDate] || []).slice()
+          .sort((a, b) => (a.rec.eventTime || "99:99").localeCompare(b.rec.eventTime || "99:99"));
+        const blocked = parseBlockedDates().includes(mcalSelectedDate);
+        const dayLabel = formatDay(mcalSelectedDate);
+        const rows = events.map((e) => {
+          const r = e.rec;
+          const isBooking = e.kind === "booking";
+          return `
+            <div class="upcoming-item">
+              <div class="upcoming-body">
+                <div class="upcoming-client">${isBooking ? "💄" : "⏳"} ${escapeHtml(r.clientName)} · <span class="muted">${escapeHtml(r.eventType)}</span>${isBooking ? "" : ' <span class="pill warning" style="font-size:10.5px;">tentative</span>'}</div>
+                <div class="upcoming-meta">${r.eventTime ? "🕒 " + escapeHtml(r.eventTime) + " · " : ""}📍 ${escapeHtml((isBooking ? r.venue : r.locationText) || "Venue TBC")}</div>
+              </div>
+              <div class="upcoming-right">
+                ${r.clientWhatsApp ? `<a class="button tiny secondary" style="text-decoration:none;" href="https://wa.me/${String(r.clientWhatsApp).replace(/\D/g, "")}" target="_blank" rel="noreferrer">💬</a>` : ""}
+              </div>
+            </div>`;
+        }).join("");
+        panel.style.display = "";
+        panel.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+            <strong>${escapeHtml(dayLabel)}</strong>
+            <div class="action-row" style="gap:6px;">
+              <button class="button small" type="button" data-mcal-book="${escapeHtml(mcalSelectedDate)}">➕ Book this day</button>
+            </div>
+          </div>
+          ${blocked ? `<p class="muted" style="margin:10px 0 0;font-size:13px;">🛌 You've blocked this day off — clients can't book it.</p>` : ""}
+          ${rows || (blocked ? "" : `<p class="muted" style="margin:10px 0 0;font-size:13px;">Nothing on this day yet — it's free.</p>`)}`;
+      }
+
+      document.getElementById("mcal-grid")?.addEventListener("click", (e) => {
+        const cell = e.target.closest("[data-mcal-date]");
+        if (!cell) return;
+        mcalSelectedDate = cell.getAttribute("data-mcal-date") === mcalSelectedDate ? "" : cell.getAttribute("data-mcal-date");
+        renderCalendarGrid();
+      });
+      document.getElementById("mcal-day-panel")?.addEventListener("click", (e) => {
+        const bookBtn = e.target.closest("[data-mcal-book]");
+        if (bookBtn) openQuickBooking({ eventDate: bookBtn.getAttribute("data-mcal-book") });
+      });
+      document.getElementById("mcal-prev")?.addEventListener("click", () => { mcalCursor = new Date(mcalCursor.getFullYear(), mcalCursor.getMonth() - 1, 1); renderCalendarGrid(); });
+      document.getElementById("mcal-next")?.addEventListener("click", () => { mcalCursor = new Date(mcalCursor.getFullYear(), mcalCursor.getMonth() + 1, 1); renderCalendarGrid(); });
+      document.getElementById("mcal-today")?.addEventListener("click", () => { mcalCursor = new Date(); mcalSelectedDate = new Date().toISOString().slice(0, 10); renderCalendarGrid(); });
 
       // ─── One-tap day off: writes bookingBlockedDates without opening Settings ───
       function parseBlockedDates() {
@@ -3195,7 +3568,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const deId = e.target.closest("[data-team-deactivate]")?.getAttribute("data-team-deactivate");
         if (deId) {
           const a = teamArtists.find((x) => x.artistId === deId);
-          if (!confirm(`Remove ${a ? a.name : "this specialist"} from your team? You can add them again anytime.`)) return;
+          if (!(await showConfirm(`Remove ${a ? a.name : "this specialist"}?`, "They'll be taken off your team. You can add them again anytime.", "Remove"))) return;
           try { await postJson(`/api/team/${deId}/deactivate`, {}); await loadTeam(); }
           catch (error) { teamStatus.textContent = error.message; }
         }
@@ -3815,7 +4188,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         renderAiStatusCard();
         const list = document.getElementById("conversations-list");
         if (interactionsCache && !force) { renderConversations(); return; }
-        list.innerHTML = `<p class="muted">Loading conversations…</p>`;
+        list.innerHTML = `<div class="skeleton-row"><div class="skeleton" style="width:78%;height:42px;"></div><div class="skeleton" style="width:64%;height:42px;"></div><div class="skeleton" style="width:71%;height:42px;"></div></div>`;
         try {
           const payload = await getJson("/api/conversations");
           if (!payload?.ok) throw new Error(payload?.error || "Failed");
@@ -4013,26 +4386,79 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         }
       }
 
+      // Session expiry shouldn't feel like the app broke: tell her what
+      // happened, then take her back through sign-in.
+      function handleSessionExpired() {
+        toast("Your session expired — signing you back in…", "info");
+        setTimeout(() => { window.location.href = "/auth/google"; }, 1200);
+      }
+
+      // Maps raw failures to words a non-technical user can act on.
+      function friendlyError(status, serverMessage) {
+        if (serverMessage && !/^(internal|server error|request failed)/i.test(serverMessage)) return serverMessage;
+        if (status >= 500) return "Something went wrong on our side. Please try that again in a moment.";
+        if (status === 404) return "We couldn't find that — it may have been removed. Try refreshing.";
+        if (status === 429) return "Too many requests at once — give it a few seconds and try again.";
+        return serverMessage || "That didn't work. Please try again.";
+      }
+
       async function postJson(url, body) {
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        let response;
+        try {
+          response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        } catch {
+          throw new Error("You seem to be offline — check your connection and try again.");
+        }
         if (response.status === 401) {
-          window.location.href = "/auth/google";
+          handleSessionExpired();
           return;
         }
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Request failed");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(friendlyError(response.status, payload.error));
         return payload;
       }
 
       async function getJson(url) {
-        const response = await fetch(url);
+        let response;
+        try {
+          response = await fetch(url);
+        } catch {
+          throw new Error("You seem to be offline — check your connection and try again.");
+        }
         if (response.status === 401) {
-          window.location.href = "/auth/google";
+          handleSessionExpired();
           return null;
         }
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Request failed");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(friendlyError(response.status, payload.error));
         return payload;
+      }
+
+      // Styled confirmation dialog — replaces the browser's bare confirm() for
+      // destructive actions. Returns a Promise<boolean>.
+      function showConfirm(title, message, confirmLabel = "Yes, do it") {
+        return new Promise((resolve) => {
+          const overlay = document.getElementById("confirm-overlay");
+          document.getElementById("confirm-title").textContent = title;
+          document.getElementById("confirm-message").textContent = message;
+          const okBtn = document.getElementById("confirm-ok");
+          okBtn.textContent = confirmLabel;
+          overlay.classList.add("open");
+          const done = (result) => {
+            overlay.classList.remove("open");
+            okBtn.removeEventListener("click", onOk);
+            document.getElementById("confirm-cancel").removeEventListener("click", onCancel);
+            overlay.removeEventListener("click", onBackdrop);
+            resolve(result);
+          };
+          const onOk = () => done(true);
+          const onCancel = () => done(false);
+          const onBackdrop = (e) => { if (e.target === overlay) done(false); };
+          okBtn.addEventListener("click", onOk);
+          document.getElementById("confirm-cancel").addEventListener("click", onCancel);
+          overlay.addEventListener("click", onBackdrop);
+          setTimeout(() => okBtn.focus(), 40);
+        });
       }
 
       configForm.addEventListener("submit", async (e) => {
@@ -4110,7 +4536,12 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             const i = document.querySelector(`[data-drawer-edit-price]`) || document.querySelector(`[data-edit-input="${leadId}"]`);
             await postJson(`/api/leads/${leadId}/decision`, { decision: "EDIT", approvedPrice: i ? i.value : "" });
           }
-          else if (action === "confirm") await postJson(`/api/leads/${leadId}/confirm`, {});
+          else if (action === "confirm") {
+            const wasFirstBooking = (sessionState?.dashboard?.bookings || []).length === 0;
+            await postJson(`/api/leads/${leadId}/confirm`, {});
+            if (wasFirstBooking) celebrateFirstBooking();
+            else toast("Booking confirmed and on your calendar. 🎉", "success");
+          }
           else if (action === "advance") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Advance Paid" });
           else if (action === "full") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
           else if (action === "reply") {
@@ -4248,7 +4679,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           <div class="drawer-section">
             <div class="drawer-section-title">Quote &amp; status</div>
             <div style="margin-bottom:10px;">${priceStr}</div>
-            <div class="drawer-row"><span class="drawer-row-label">Status</span><span class="drawer-row-value">${escapeHtml(lead.status)}</span></div>
+            <div class="drawer-row"><span class="drawer-row-label">Status</span><span class="drawer-row-value">${escapeHtml(statusLabel(lead.status))}</span></div>
             ${lead.status === "Awaiting Client" && lead.holdExpiresAt ? `<div class="drawer-row"><span class="drawer-row-label">Hold expires</span><span class="drawer-row-value" style="color:${new Date(lead.holdExpiresAt) < new Date() ? "var(--danger)" : "var(--warning)"};">${escapeHtml(formatDate(lead.holdExpiresAt))}${new Date(lead.holdExpiresAt) < new Date() ? " — lapsed" : ""}</span></div>` : ""}
             ${lead.profileTier ? `<div class="drawer-row"><span class="drawer-row-label">Client type</span><span class="drawer-row-value">${lead.profileTier === "High" ? "VIP / celebrity" : lead.profileTier === "Mid" ? "Premium" : "Regular"}</span></div>` : ""}
             ${lead.assignedArtist ? `<div class="drawer-row"><span class="drawer-row-label">Assigned to</span><span class="drawer-row-value">${escapeHtml(lead.assignedArtist)}</span></div>` : ""}
@@ -4326,7 +4757,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       document.addEventListener("keydown", (e) => { if (e.key === "Escape" && leadDrawer.classList.contains("open")) closeLeadDrawer(); });
 
       // Handle drawer action buttons.
-      leadDrawer.addEventListener("click", (e) => {
+      leadDrawer.addEventListener("click", async (e) => {
         const editBtn = e.target.closest("[data-drawer-edit-details]");
         if (editBtn) {
           const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === editBtn.getAttribute("data-drawer-edit-details"));
@@ -4339,12 +4770,12 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const leadId = btn.getAttribute("data-drawer-lead-id");
         if (action === "no") {
           const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
-          if (!confirm(`Decline ${lead?.clientName || "this lead"}? They'll be moved to Lost.`)) return;
+          if (!(await showConfirm(`Decline ${lead?.clientName || "this request"}?`, "They'll be moved to Lost.", "Decline"))) return;
         }
         runLeadAction(action, leadId, btn);
       });
 
-      leadsBoard.addEventListener("click", (e) => {
+      leadsBoard.addEventListener("click", async (e) => {
         // Copy booking link from empty state
         const share = e.target.closest("[data-share]");
         if (share) { copyToClipboard(share.getAttribute("data-share"), share); return; }
@@ -4374,8 +4805,8 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           // Declining a lead is destructive — confirm so a mis-tap doesn't lose a client.
           if (action === "no") {
             const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
-            const who = lead ? lead.clientName : "this lead";
-            if (!confirm(`Decline ${who}? They'll be moved to Lost. This can't be undone from here.`)) return;
+            const who = lead ? lead.clientName : "this request";
+            if (!(await showConfirm(`Decline ${who}?`, "They'll be moved to Lost. This can't be undone from here.", "Decline"))) return;
           }
           runLeadAction(action, leadId, b);
           return;
@@ -4788,6 +5219,10 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         // "Book again" for a returning client: name and number ready to go.
         if (prefill?.name) document.getElementById("qb-name").value = prefill.name;
         if (prefill?.phone) document.getElementById("qb-phone").value = prefill.phone;
+        if (prefill?.eventDate) {
+          dateInput.value = prefill.eventDate;
+          document.getElementById("qb-conflict").innerHTML = conflictWarningHtml(prefill.eventDate);
+        }
         quickBookingModal.classList.add("open");
         setTimeout(() => document.getElementById(prefill?.name ? "qb-date" : "qb-name").focus(), 50);
       }
@@ -4814,9 +5249,11 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         try {
           const data = Object.fromEntries(new FormData(quickBookingForm).entries());
           data.advancePaid = document.getElementById("qb-advance-paid").checked;
+          const wasFirstBooking = (sessionState?.dashboard?.bookings || []).length === 0;
           const r = await postJson("/api/bookings/quick", data);
           closeQuickBooking();
-          toast(`${r.booking?.clientName || "Booking"} confirmed and added to your calendar.`, "success");
+          if (wasFirstBooking) celebrateFirstBooking();
+          else toast(`${r.booking?.clientName || "Booking"} confirmed and added to your calendar.`, "success");
           await refreshSession();
           activateTab("bookings");
         } catch (error) {
@@ -5011,6 +5448,8 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
       // ─── Bookings table: reschedule / expenses / cancel ───
       bookingsBody.addEventListener("click", async (e) => {
+        const rp = e.target.closest("[data-booking-record-payment]");
+        if (rp) { openPaymentModal(rp.getAttribute("data-booking-record-payment")); return; }
         const rs = e.target.closest("[data-booking-reschedule]");
         if (rs) { openReschedule(rs.getAttribute("data-booking-reschedule")); return; }
         const ex = e.target.closest("[data-booking-expenses]");
@@ -5019,7 +5458,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         if (cx) {
           const bookingId = cx.getAttribute("data-booking-cancel");
           const b = (sessionState?.dashboard?.bookings || []).find((x) => x.bookingId === bookingId);
-          if (!confirm(`Cancel ${b ? b.clientName + "'s" : "this"} booking? The date frees up on your calendar. Payments already received stay on record.`)) return;
+          if (!(await showConfirm(`Cancel ${b ? b.clientName + "'s" : "this"} booking?`, "The date frees up on your calendar. Payments already received stay on record.", "Cancel booking"))) return;
           setLoading(cx, "Cancelling…");
           try {
             await postJson(`/api/bookings/${bookingId}/cancel`, {});
@@ -5139,11 +5578,69 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       });
 
       // ─── Booking-link share button in topbar ───
-      document.getElementById("share-link-btn")?.addEventListener("click", () => {
+      function copyBookingLink() {
         const wsId = sessionState?.workspace?.workspaceId;
         if (!wsId) return;
         const url = `${window.location.origin}/book/${encodeURIComponent(wsId)}`;
-        navigator.clipboard?.writeText(url).then(() => toast("Booking link copied!", "success")).catch(() => toast(url, "success"));
+        navigator.clipboard?.writeText(url).then(() => toast("Booking link copied — paste it in your Instagram bio or any chat!", "success")).catch(() => toast(url, "info"));
+      }
+      document.getElementById("share-link-btn")?.addEventListener("click", copyBookingLink);
+      // Empty states across the app carry a "copy my booking link" CTA.
+      document.body.addEventListener("click", (e) => {
+        if (e.target.closest("[data-share-booking-link]")) copyBookingLink();
+      });
+
+      // ─── Record payment modal ───
+      const paymentModal = document.getElementById("payment-modal");
+      let paymentModalBookingId = "";
+
+      function openPaymentModal(bookingId) {
+        const b = (sessionState?.dashboard?.bookings || []).find((x) => x.bookingId === bookingId);
+        if (!b) return;
+        paymentModalBookingId = bookingId;
+        const paid = bookingPaidTotal(b);
+        const owed = Math.max(0, Number(b.finalPrice || 0) - paid);
+        document.getElementById("payment-modal-context").textContent =
+          `${b.clientName} · ${b.eventType} on ${formatDay(b.eventDate)} — ${formatMoney(owed)} still due of ${formatMoney(b.finalPrice)}.`;
+        const ledger = parseLedger(b.paymentsLog);
+        document.getElementById("payment-modal-ledger").innerHTML = ledger.length
+          ? `<div style="background:var(--surface,#f8f5f2);border:1px solid var(--line,#eee);border-radius:8px;padding:8px 12px;font-size:12.5px;">` +
+            ledger.map((p) => `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note ? " · " + escapeHtml(p.note) : ""}</span><strong>${formatMoney(p.amount)}</strong></div>`).join("") +
+            `</div>`
+          : "";
+        const amountInput = document.getElementById("pay-amount");
+        amountInput.value = owed > 0 ? String(owed <= Number(b.advanceAmount || 0) || paid > 0 ? owed : b.advanceAmount) : "";
+        document.getElementById("pay-note").value = "";
+        document.getElementById("payment-form-status").textContent = "";
+        paymentModal.classList.add("open");
+        setTimeout(() => amountInput.focus(), 50);
+      }
+
+      function closePaymentModal() { paymentModal.classList.remove("open"); }
+      document.getElementById("payment-modal-close")?.addEventListener("click", closePaymentModal);
+      paymentModal?.addEventListener("click", (e) => { if (e.target === paymentModal) closePaymentModal(); });
+
+      document.getElementById("payment-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById("payment-form-submit");
+        const amount = Number(document.getElementById("pay-amount").value);
+        if (!amount || amount <= 0) { document.getElementById("payment-form-status").textContent = "Enter the amount you received."; return; }
+        setLoading(btn, "Saving…");
+        try {
+          const res = await postJson(`/api/bookings/${paymentModalBookingId}/payments`, {
+            amount,
+            method: document.getElementById("pay-method").value,
+            note: document.getElementById("pay-note").value,
+          });
+          closePaymentModal();
+          const nowPaid = res?.booking?.paymentStatus === "Paid in Full";
+          toast(nowPaid ? `🎉 ${res.booking.clientName} is fully paid — lovely!` : `Payment of ${formatMoney(amount)} recorded.`, "success");
+          await refreshSession();
+        } catch (error) {
+          document.getElementById("payment-form-status").textContent = error.message;
+        } finally {
+          clearLoading(btn, "Save payment");
+        }
       });
 
       // ─── Date-range filter triggers ───

@@ -57,3 +57,13 @@ export function buildPublicDocumentUrl(
   url.searchParams.set("sig", sig);
   return url.toString();
 }
+
+// Quote links go to a branded view page (with an Accept button and a WhatsApp
+// link preview) that embeds the PDF, rather than the bare PDF stream. Uses the
+// same signature as the underlying document so one token covers both.
+export function buildQuoteViewUrl(workspaceId: string, leadId: string): string {
+  const sig = signDocumentToken("quote", workspaceId, leadId);
+  const url = new URL(`/q/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}`, appConfig.baseUrl);
+  url.searchParams.set("sig", sig);
+  return url.toString();
+}

@@ -252,3 +252,100 @@ test("editLeadDetailsSchema accepts partial updates and rejects bad formats", ()
   // Empty object is a valid no-op payload.
   assert.deepEqual(Object.keys(editLeadDetailsSchema.parse({})).length, 0);
 });
+
+// --- Sequential document numbers (nextDocumentNumber) ---------------------------
+
+const { nextDocumentNumber } = await import("../src/services/documents.ts");
+
+test("nextDocumentNumber issues professional, year-scoped sequences", () => {
+  const now = new Date("2026-06-10T12:00:00Z");
+  // First document of the year.
+  assert.equal(nextDocumentNumber("Q", [], now), "Q-2026-0001");
+  // Continues past the highest issued number, ignoring junk and other years.
+  assert.equal(
+    nextDocumentNumber("Q", ["Q-2026-0001", "Q-2026-0007", "Q-2025-0042", "", null, "garbage"], now),
+    "Q-2026-0008",
+  );
+  // Separate sequence per prefix.
+  assert.equal(nextDocumentNumber("INV", ["Q-2026-0007"], now), "INV-2026-0001");
+  // New year restarts at 0001.
+  assert.equal(
+    nextDocumentNumber("INV", ["INV-2026-0031"], new Date("2027-01-02T08:00:00Z")),
+    "INV-2027-0001",
+  );
+});
+
+// --- Partial payment ledger (parsePaymentsLog / derivePaymentStatus) ------------
+
+const { parsePaymentsLog, paymentsTotal, derivePaymentStatus } = await import("../src/services/booking.ts");
+
+test("parsePaymentsLog tolerates junk and keeps only positive amounts", () => {
+  assert.deepEqual(parsePaymentsLog(""), []);
+  assert.deepEqual(parsePaymentsLog("not json"), []);
+  assert.deepEqual(parsePaymentsLog('{"amount":5}'), []);
+  const log = parsePaymentsLog(JSON.stringify([
+    { amount: 5000, method: "UPI", note: "advance", at: "2026-06-01T10:00:00Z" },
+    { amount: -100, method: "Cash" },
+    { amount: "3000", method: "Cash", note: "", at: "" },
+  ]));
+  assert.equal(log.length, 2);
+  assert.equal(paymentsTotal(log), 8000);
+});
+
+test("derivePaymentStatus reflects the money actually received", () => {
+  // Nothing received yet.
+  assert.equal(derivePaymentStatus(50000, 15000, 0), "Advance Due");
+  // Partial advance is still due.
+  assert.equal(derivePaymentStatus(50000, 15000, 5000), "Advance Due");
+  // Advance covered.
+  assert.equal(derivePaymentStatus(50000, 15000, 15000), "Advance Paid");
+  assert.equal(derivePaymentStatus(50000, 15000, 30000), "Advance Paid");
+  // Fully paid (including overpayment).
+  assert.equal(derivePaymentStatus(50000, 15000, 50000), "Paid in Full");
+  assert.equal(derivePaymentStatus(50000, 15000, 55000), "Paid in Full");
+});
+
+// --- Recorded payment input (recordPaymentSchema) --------------------------------
+
+const { recordPaymentSchema } = await import("../src/api-schema.ts");
+
+test("recordPaymentSchema accepts instalments and rejects bad amounts", () => {
+  const ok = recordPaymentSchema.parse({ amount: "5000", method: "Cash", note: "mid payment" });
+  assert.equal(ok.amount, 5000);
+  assert.equal(ok.method, "Cash");
+  const defaulted = recordPaymentSchema.parse({ amount: 1200 });
+  assert.equal(defaulted.method, "UPI");
+  assert.equal(defaulted.note, "");
+  assert.throws(() => recordPaymentSchema.parse({ amount: 0 }));
+  assert.throws(() => recordPaymentSchema.parse({ amount: -50 }));
+  assert.throws(() => recordPaymentSchema.parse({ amount: 100, method: "Cheque" }));
+});
+
+// --- Brand colour on documents (parseHexColor) -----------------------------------
+
+const { parseHexColor, getDocumentTheme } = await import("../src/services/document-themes.ts");
+
+test("parseHexColor accepts #RGB/#RRGGBB and rejects junk and near-white", () => {
+  const terracotta = parseHexColor("#C26B45");
+  assert.ok(terracotta);
+  assert.ok(Math.abs(terracotta.red - 0xc2 / 255) < 1e-6);
+  assert.ok(parseHexColor("#abc"));
+  assert.equal(parseHexColor(""), null);
+  assert.equal(parseHexColor("red"), null);
+  assert.equal(parseHexColor("#12345"), null);
+  // Near-white would be unreadable on paper — fall back to stock theme.
+  assert.equal(parseHexColor("#ffffff"), null);
+  assert.equal(parseHexColor("#fefefe"), null);
+});
+
+test("getDocumentTheme tints with the brand colour but keeps body text readable", () => {
+  const stock = getDocumentTheme("classic");
+  const branded = getDocumentTheme("classic", "#C26B45");
+  // Headings take the brand hue.
+  assert.notDeepEqual(branded.title, stock.title);
+  assert.deepEqual(branded.title, branded.sectionHeading);
+  // Body copy unchanged for readability.
+  assert.deepEqual(branded.bodyText, stock.bodyText);
+  // A bad brand colour falls back to the stock theme untouched.
+  assert.deepEqual(getDocumentTheme("classic", "not-a-colour"), stock);
+});
