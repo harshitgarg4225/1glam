@@ -573,7 +573,9 @@
           } else {
             el("success-text").textContent =
               "Thank you, " + payload.clientName + ". Your " + data.eventType +
-              " request for " + data.eventDate + " has been sent to " + data.businessName + ".";
+              " request for " + data.eventDate + " has been sent to " + data.businessName +
+              ". Your date is tentatively held — it's locked in once " + data.businessName +
+              " confirms and the advance is paid. You'll hear back on WhatsApp.";
 
             if (ownerWhatsApp) {
               const text =

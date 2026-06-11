@@ -53,6 +53,10 @@ export type DocumentAdjustments = {
   amountOverride?: number;
   lineItems?: { label: string; amount: number }[];
   note?: string;
+  // Percentage discount applied to the (possibly overridden) amount + line
+  // items, rendered as an explicit "Discount (10%) -Rs X" line so the client
+  // sees the original value and what they're saving.
+  discountPercent?: number;
 };
 
 export type DocumentRenderOptions = {
@@ -79,7 +83,12 @@ export function parseDocumentAdjustments(raw: string | undefined | null): Docume
         ? Number(parsed.amountOverride)
         : undefined;
     const note = typeof parsed.note === "string" ? parsed.note.slice(0, 600) : undefined;
-    return { amountOverride, lineItems, note };
+    const rawDiscount = Number(parsed.discountPercent);
+    const discountPercent =
+      Number.isFinite(rawDiscount) && rawDiscount > 0 && rawDiscount < 100
+        ? Math.round(rawDiscount * 100) / 100
+        : undefined;
+    return { amountOverride, lineItems, note, discountPercent };
   } catch {
     return {};
   }
@@ -128,7 +137,13 @@ function applyAdjustments(base: number, adj: DocumentAdjustments | undefined) {
   const items = adj?.lineItems ?? [];
   const itemsTotal = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const extraLines: [string, string][] = items.map((item) => [item.label, inr(item.amount)]);
-  return { total: effectiveBase + itemsTotal, extraLines, note: adj?.note?.trim() || "" };
+  let total = effectiveBase + itemsTotal;
+  if (adj?.discountPercent) {
+    const discount = Math.round((total * adj.discountPercent) / 100);
+    extraLines.push([`Discount (${adj.discountPercent}%)`, `- ${inr(discount)}`]);
+    total -= discount;
+  }
+  return { total, extraLines, note: adj?.note?.trim() || "" };
 }
 
 // Builds the quote PDF bytes in memory (no Drive upload). Used for both the
@@ -512,6 +527,27 @@ function drawHeader(
       height: logo.height,
     });
   } else {
+    // No logo: a monogram badge with the brand's initials so the header never
+    // looks unfinished. Built from the subtitle (business or owner name).
+    const initials = input.subtitle
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0].toUpperCase())
+      .join("");
+    if (initials) {
+      const cx = 595 - 56 - 22;
+      const cy = 716;
+      page.drawEllipse({ x: cx, y: cy, xScale: 22, yScale: 22, color: theme.title });
+      const textWidth = bold.widthOfTextAtSize(initials, 16);
+      page.drawText(initials, {
+        x: cx - textWidth / 2,
+        y: cy - 6,
+        size: 16,
+        font: bold,
+        color: rgb(1, 1, 1),
+      });
+    }
     page.drawText(`No. ${input.docNumber}`, {
       x: 400,
       y: 720,

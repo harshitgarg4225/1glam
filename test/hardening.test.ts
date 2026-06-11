@@ -349,3 +349,15 @@ test("getDocumentTheme tints with the brand colour but keeps body text readable"
   // A bad brand colour falls back to the stock theme untouched.
   assert.deepEqual(getDocumentTheme("classic", "not-a-colour"), stock);
 });
+
+// --- Discounts on documents (parseDocumentAdjustments) ---------------------------
+
+test("parseDocumentAdjustments keeps a valid discount and drops junk ones", () => {
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ discountPercent: 10 })).discountPercent, 10);
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ discountPercent: 12.5 })).discountPercent, 12.5);
+  // 0, negative, ≥100 and non-numeric are all ignored.
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ discountPercent: 0 })).discountPercent, undefined);
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ discountPercent: -5 })).discountPercent, undefined);
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ discountPercent: 100 })).discountPercent, undefined);
+  assert.equal(parseDocumentAdjustments(JSON.stringify({ discountPercent: "lots" })).discountPercent, undefined);
+});
