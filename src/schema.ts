@@ -103,6 +103,8 @@ export const workspaceConfigSchema = z.object({
   autoReplyEnabled: z.string().optional().default("No"),
   aiToneSamples: z.string().optional().default(""),
   aiToneProfile: z.string().optional().default(""),
+  aiServicesContext: z.string().optional().default(""),
+  aiPersonaName: z.string().optional().default(""),
   brandColor: z.string().optional().default(""),
   coverImageUrl: z.string().optional().default(""),
   headline: z.string().optional().default(""),

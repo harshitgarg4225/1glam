@@ -289,6 +289,7 @@
       .msg .msg-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
       .msg.inbound { background: var(--surface); border: 1px solid var(--line); margin-right: auto; }
       .msg.outbound { background: var(--accent-soft); margin-left: auto; }
+      .msg.ai-sent { background: #eef2ff; border: 1px solid #c5d0f5; }
 
       /* ─── Landing hero ─── */
       .landing-hero {
@@ -1135,6 +1136,7 @@
               <div class="kicker">🤖 Your AI assistant</div>
               <h2 style="margin-bottom:4px;" id="ai-status-title">AI auto-reply is off</h2>
               <p class="muted" style="margin:0;font-size:13.5px;" id="ai-status-sub">When on, the AI replies to routine client questions in your voice — it never quotes a price or confirms a booking without you.</p>
+              <p id="ai-auto-reply-count" class="muted" style="margin:4px 0 0;font-size:12.5px;"></p>
             </div>
             <div class="action-row" style="flex-wrap:wrap;gap:8px;">
               <button class="button" type="button" id="ai-toggle-btn">Turn on auto-reply</button>
@@ -1567,6 +1569,7 @@
             <summary>🤖 AI assistant &amp; auto-reply</summary>
             <div class="collapse-body">
               <div class="section-grid">
+
                 <div class="wide">
                   <label for="autoReplyEnabled">Let AI reply to client messages automatically</label>
                   <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">
@@ -1576,6 +1579,32 @@
                     <option value="No">Off — AI drafts replies, I send them myself</option>
                     <option value="Yes">On — AI replies automatically (within guardrails)</option>
                   </select>
+                </div>
+
+                <div style="margin-top:18px;border-top:1px solid var(--line,#eee);padding-top:16px;">
+                  <label for="aiPersonaName">AI signs off as</label>
+                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">The name the AI uses at the end of messages. Leave blank to use your first name from your profile. Example: <em>Riya ✨</em></p>
+                  <input id="aiPersonaName" name="aiPersonaName" placeholder="e.g. Riya ✨  or  Team Glow by Aisha" />
+                </div>
+
+                <div style="margin-top:0;">
+                  <label for="aiSignOff">Sign-off phrase</label>
+                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">The phrase before the name, e.g. <em>With love,</em> or <em>Warmly,</em></p>
+                  <input id="aiSignOff" name="aiSignOff" placeholder="With love," />
+                </div>
+
+                <div style="margin-top:0;">
+                  <label for="aiLanguage">Reply language</label>
+                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">How the AI should write. Examples: <em>English</em>, <em>Hinglish</em>, <em>Hindi</em>, <em>Mix of English and Hindi</em></p>
+                  <input id="aiLanguage" name="aiLanguage" placeholder="English" />
+                </div>
+
+                <div class="wide" style="margin-top:18px;border-top:1px solid var(--line,#eee);padding-top:16px;">
+                  <label for="aiServicesContext">What the AI should know about your services</label>
+                  <p class="muted" style="margin:2px 0 8px;font-size:12.5px;">
+                    Tell the AI what you offer and roughly what it costs, so it can answer client questions like "what do you charge for bridal?" without making things up. Plain English is fine — write it like you'd explain it to a friend.
+                  </p>
+                  <textarea id="aiServicesContext" name="aiServicesContext" rows="4" placeholder="e.g. I do bridal makeup (₹10,000–₹18,000 depending on location), engagement/reception (₹7,000–₹12,000), and party/event looks (₹4,000–₹6,000). I also do photoshoot makeup (₹5,000). I don't do hair separately. I travel within Hyderabad for free; outstation adds a travel fee. Advance of 30% confirms the booking."></textarea>
                 </div>
 
                 <div class="wide" style="margin-top:18px;border-top:1px solid var(--line,#eee);padding-top:16px;">
@@ -1610,6 +1639,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                     </div>
                   </div>
                 </div>
+
               </div>
             </div>
           </details>
@@ -1751,8 +1781,6 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             </div>
           </details>
 
-          <input type="hidden" name="aiLanguage" value="English" />
-          <input type="hidden" name="aiSignOff" value="With love," />
           <input type="hidden" name="basePriceShoot" value="10000" />
           <input type="hidden" name="basePriceOther" value="8000" />
           <input type="hidden" name="multiplierJan" value="1" />
@@ -3821,21 +3849,32 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           list.innerHTML = `<div class="empty-state"><div class="empty-icon">💬</div><h3>No conversations yet</h3><p>WhatsApp messages and interactions with your clients will appear here as threaded conversations.</p></div>`;
           return;
         }
-        list.innerHTML = threads.map((t) => `
+        const aiAutoCount = (interactionsCache || []).filter((i) => i.actor === "AI").length;
+        const aiCountEl = document.getElementById("ai-auto-reply-count");
+        if (aiCountEl) aiCountEl.textContent = aiAutoCount > 0 ? `🤖 ${aiAutoCount} auto-sent by AI` : "";
+
+        list.innerHTML = threads.map((t) => {
+          const hasAiMsg = t.msgs.some((m) => m.actor === "AI");
+          const aiBadge = hasAiMsg ? `<span style="font-size:11px;background:#f0f4ff;color:#3b5bdb;border-radius:4px;padding:1px 6px;margin-left:6px;">🤖 AI replied</span>` : "";
+          return `
           <details class="thread">
             <summary>
-              <span><strong>${escapeHtml(t.title)}</strong> <span class="muted">· ${t.msgs.length} messages</span></span>
+              <span><strong>${escapeHtml(t.title)}</strong>${aiBadge} <span class="muted">· ${t.msgs.length} messages</span></span>
               <span class="muted" style="font-size:12px;">${formatDate(t.last?.createdAt)}</span>
             </summary>
             <div class="thread-body">
-              ${t.msgs.map((m) => `
-                <div class="msg ${m.direction === "Outbound" ? "outbound" : "inbound"}">
-                  <div class="msg-meta">${escapeHtml(m.channel)} · ${escapeHtml(m.direction)} · ${formatDate(m.createdAt)}</div>
+              ${t.msgs.map((m) => {
+                const isAi = m.actor === "AI";
+                const aiLabel = isAi ? `<span style="font-size:11px;background:#f0f4ff;color:#3b5bdb;border-radius:3px;padding:1px 5px;margin-left:4px;">🤖 AI</span>` : "";
+                return `
+                <div class="msg ${m.direction === "Outbound" ? "outbound" : "inbound"}${isAi ? " ai-sent" : ""}">
+                  <div class="msg-meta">${escapeHtml(m.channel)} · ${escapeHtml(m.direction)}${aiLabel} · ${formatDate(m.createdAt)}</div>
                   ${escapeHtml(m.message)}
-                  ${m.aiSummary ? `<div class="msg-meta" style="margin-top:6px;">AI: ${escapeHtml(m.aiSummary)}</div>` : ""}
-                </div>`).join("")}
+                </div>`;
+              }).join("")}
             </div>
-          </details>`).join("");
+          </details>`;
+        }).join("");
       }
       document.getElementById("convo-search").addEventListener("input", debounce(renderConversations));
       document.getElementById("convo-refresh").addEventListener("click", () => loadConversations(true));

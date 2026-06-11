@@ -1138,6 +1138,8 @@ app.post("/api/ai/preview-tone", async (req, res, next) => {
       language: workspace.config.aiLanguage,
       signOff: workspace.config.aiSignOff,
       toneProfile: workspace.config.aiToneProfile,
+      servicesContext: workspace.config.aiServicesContext,
+      personaName: workspace.config.aiPersonaName,
     });
 
     res.json({ reply: result.reply });
@@ -1758,6 +1760,8 @@ app.post("/api/leads/:leadId/draft-followup", async (req, res, next) => {
       language: workspace.config.aiLanguage,
       signOff: workspace.config.aiSignOff,
       toneProfile: workspace.config.aiToneProfile,
+      servicesContext: workspace.config.aiServicesContext,
+      personaName: workspace.config.aiPersonaName,
     });
 
     let balanceCredits: number | null = null;
@@ -3511,6 +3515,8 @@ app.post("/webhooks/meta", async (req, res, next) => {
             language: workspace.config.aiLanguage,
             signOff: workspace.config.aiSignOff,
             toneProfile: workspace.config.aiToneProfile,
+            servicesContext: workspace.config.aiServicesContext,
+            personaName: workspace.config.aiPersonaName,
           });
 
           // Meter the AI reply when real AI ran (not the templated fallback).
@@ -3543,7 +3549,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
                   leadId: lead.leadId,
                   direction: "Outbound",
                   channel: ctx.channel,
-                  actor: ctx.actorId,
+                  actor: "AI",
                   message: conversation.reply,
                   aiSummary: "AI auto-reply sent",
                 });

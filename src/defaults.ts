@@ -103,6 +103,8 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     autoReplyEnabled: "No",
     aiToneSamples: "",
     aiToneProfile: "",
+    aiServicesContext: "",
+    aiPersonaName: "",
     brandColor: "",
     coverImageUrl: "",
     headline: "",
