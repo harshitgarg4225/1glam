@@ -522,7 +522,7 @@ export async function rescheduleBooking(
   email: string,
   tokens: Credentials,
   bookingId: string,
-  input: { eventDate: string; eventTime?: string },
+  input: { eventDate: string; eventTime?: string; venue?: string },
 ) {
   const workspace = await getRequiredWorkspace(email);
   const booking = await findBookingById(workspace, tokens, bookingId);
@@ -531,6 +531,7 @@ export async function rescheduleBooking(
   const lead = await findLeadById(workspace, tokens, booking.record.leadId);
 
   const eventTime = input.eventTime ?? booking.record.eventTime;
+  const venue = input.venue ?? booking.record.venue;
   if (booking.record.confirmedCalendarEventId) {
     await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, booking.record.confirmedCalendarEventId);
   }
@@ -538,6 +539,7 @@ export async function rescheduleBooking(
     ...(lead?.record ?? leadFromBooking(booking.record)),
     eventDate: input.eventDate,
     eventTime,
+    locationText: venue,
     bookingId,
   };
   const newEventId = await createConfirmedCalendarEvent(workspace, tokens, leadForEvent);
@@ -546,6 +548,7 @@ export async function rescheduleBooking(
     ...booking.record,
     eventDate: input.eventDate,
     eventTime,
+    venue,
     confirmedCalendarEventId: newEventId,
   };
   await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
@@ -555,9 +558,29 @@ export async function rescheduleBooking(
       ...lead.record,
       eventDate: input.eventDate,
       eventTime,
+      locationText: venue,
       confirmedCalendarEventId: newEventId,
       lastContactedAt: new Date().toISOString(),
     });
+  }
+  return updatedBooking;
+}
+
+// The job's done: mark both rows Completed so the list stays clean and the
+// post-event automations (review requests) can key off it.
+export async function completeBooking(email: string, tokens: Credentials, bookingId: string) {
+  const workspace = await getRequiredWorkspace(email);
+  const booking = await findBookingById(workspace, tokens, bookingId);
+  if (!booking) throw new Error("Booking not found");
+  if (booking.record.status === "Cancelled") throw new Error("This booking was cancelled.");
+  if (booking.record.status === "Completed") return booking.record;
+
+  const updatedBooking: BookingRecord = { ...booking.record, status: "Completed" };
+  await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
+
+  const lead = await findLeadById(workspace, tokens, booking.record.leadId);
+  if (lead && !["Lost", "Completed"].includes(lead.record.status)) {
+    await updateLeadRow(workspace, tokens, lead.rowNumber, { ...lead.record, status: "Completed" });
   }
   return updatedBooking;
 }

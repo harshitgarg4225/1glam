@@ -1054,7 +1054,8 @@
               <option>Advance Due</option><option>Advance Paid</option><option>Paid in Full</option>
             </select>
             <select id="booking-filter-date">
-              <option value="">All dates</option>
+              <option value="upcoming" selected>Upcoming</option>
+              <option value="">Everything</option>
               <option value="30">Next 30 days</option>
               <option value="90">Next 3 months</option>
               <option value="past">Past events</option>
@@ -1882,9 +1883,40 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <div class="wizard-field" style="flex:1;"><label for="rs-date">New date</label><input id="rs-date" type="date" required /></div>
             <div class="wizard-field" style="flex:1;"><label for="rs-time">New time (optional)</label><input id="rs-time" type="time" /></div>
           </div>
+          <div class="wizard-field"><label for="rs-venue">Venue</label><input id="rs-venue" type="text" maxlength="200" placeholder="Venue or area, city" /></div>
           <div id="rs-conflict" style="margin-bottom:14px;"></div>
-          <button class="button" type="submit" id="rs-submit" style="width:100%;">Move booking</button>
+          <button class="button" type="submit" id="rs-submit" style="width:100%;">Save changes</button>
           <div class="status" id="rs-status"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit lead details: typo fixes, venue changes, new time — day-to-day corrections -->
+    <div class="modal-overlay" id="lead-edit-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 style="margin:0;">✏️ Edit details</h3>
+          <button class="modal-close" type="button" id="lead-edit-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 14px;">Fix a typo or update the plan. If this client already has a confirmed booking, the booking and your calendar move with it.</p>
+        <form id="lead-edit-form">
+          <input type="hidden" id="le-lead-id" />
+          <div class="wizard-field"><label for="le-name">Client name</label><input id="le-name" required maxlength="120" /></div>
+          <div class="wizard-field"><label for="le-phone">WhatsApp number</label><input id="le-phone" required placeholder="+91…" /></div>
+          <div class="wizard-field"><label for="le-instagram">Instagram (optional)</label><input id="le-instagram" maxlength="120" /></div>
+          <div class="wizard-field">
+            <label for="le-event">Occasion</label>
+            <select id="le-event"><option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option></select>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <div class="wizard-field" style="flex:1;"><label for="le-date">Event date</label><input id="le-date" type="date" required /></div>
+            <div class="wizard-field" style="flex:1;"><label for="le-time">Time (optional)</label><input id="le-time" type="time" /></div>
+          </div>
+          <div class="wizard-field"><label for="le-venue">Where?</label><input id="le-venue" required maxlength="200" placeholder="Venue or area, city" /></div>
+          <div class="wizard-field"><label for="le-notes">Notes / tags</label><input id="le-notes" maxlength="500" placeholder="e.g. luxury bride, trial on 12th" /></div>
+          <div id="le-conflict" style="margin-bottom:14px;"></div>
+          <button class="button" type="submit" id="le-submit" style="width:100%;">Save changes</button>
+          <div class="status" id="le-status"></div>
         </form>
       </div>
     </div>
@@ -2653,6 +2685,10 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         return leads.filter((l) => {
           if (ev && l.eventType !== ev) return false;
           if (src && l.source !== src) return false;
+          if (q) {
+            const hay = `${l.clientName} ${l.locationText} ${l.clientTags} ${l.leadId} ${l.clientWhatsApp}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
           if (dateRange) {
             const d = l.eventDate ? new Date(l.eventDate) : null;
             if (!d || isNaN(d)) return dateRange !== "past";
@@ -2660,10 +2696,6 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             const days = parseInt(dateRange, 10);
             const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + days);
             return d >= today && d <= cutoff;
-          }
-          if (q) {
-            const hay = `${l.clientName} ${l.locationText} ${l.clientTags} ${l.leadId}`.toLowerCase();
-            if (!hay.includes(q)) return false;
           }
           return true;
         });
@@ -2768,17 +2800,22 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         return bookings.filter((b) => {
           if (ev && b.eventType !== ev) return false;
           if (pay && (b.paymentStatus || "") !== pay) return false;
+          if (q) {
+            const hay = `${b.clientName} ${b.venue} ${b.bookingId} ${b.clientWhatsApp}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
           if (dateRange) {
             const d = b.eventDate ? new Date(b.eventDate) : null;
+            // "Upcoming" is the everyday view: future jobs that are still on.
+            if (dateRange === "upcoming") {
+              if (["Cancelled", "Completed"].includes(b.status)) return false;
+              return !d || isNaN(d) || d >= today;
+            }
             if (!d || isNaN(d)) return dateRange !== "past";
             if (dateRange === "past") return d < today;
             const days = parseInt(dateRange, 10);
             const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + days);
             return d >= today && d <= cutoff;
-          }
-          if (q) {
-            const hay = `${b.clientName} ${b.venue} ${b.bookingId}`.toLowerCase();
-            if (!hay.includes(q)) return false;
           }
           return true;
         });
@@ -2836,6 +2873,11 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                     <button class="button small" data-booking-action="full" data-booking-id="${booking.bookingId}" style="background:var(--sage);">✓ Mark paid in full</button>
                   </div>`
                 : ""}
+              ${!["Cancelled", "Completed"].includes(booking.status) && booking.eventDate && new Date(booking.eventDate) < new Date(new Date().toDateString())
+                ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
+                    <button class="button small secondary" data-booking-action="complete" data-booking-id="${booking.bookingId}">🎉 Mark completed</button>
+                  </div>`
+                : ""}
               <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
                 <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Team</button>
                 ${booking.invoiceUrl
@@ -2858,8 +2900,9 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                   <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance reminder</button>
                 </div>
                 <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:5px;">
-                  <button class="button small secondary" data-booking-reschedule="${booking.bookingId}">📅 Reschedule</button>
+                  <button class="button small secondary" data-booking-reschedule="${booking.bookingId}">📅 Reschedule / edit</button>
                   <button class="button small secondary" data-booking-expenses="${booking.bookingId}">💸 Expenses</button>
+                  <button class="button small secondary" data-book-again-name="${escapeHtml(booking.clientName)}" data-book-again-phone="${escapeHtml(booking.clientWhatsApp)}">🔁 Book again</button>
                   <button class="button small secondary danger" data-booking-cancel="${booking.bookingId}">✕ Cancel booking</button>
                 </div>
               </details>
@@ -2922,6 +2965,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
               <div class="upcoming-right">
                 <span class="${paid}" style="font-size:11px;">${escapeHtml(b.paymentStatus || b.status)}</span>
                 ${Number(b.finalPrice || 0) > 0 ? `<span class="upcoming-amt">${formatMoney(b.finalPrice)}</span>` : ""}
+                ${b.clientWhatsApp ? `<a class="button tiny secondary" style="text-decoration:none;" href="https://wa.me/${b.clientWhatsApp.replace(/\D/g, "")}" target="_blank" rel="noreferrer">💬 Message</a>` : ""}
               </div>
             </div>`;
         }).join("")}</div>`;
@@ -4166,6 +4210,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <div class="drawer-section-title">Quote &amp; status</div>
             <div style="margin-bottom:10px;">${priceStr}</div>
             <div class="drawer-row"><span class="drawer-row-label">Status</span><span class="drawer-row-value">${escapeHtml(lead.status)}</span></div>
+            ${lead.status === "Awaiting Client" && lead.holdExpiresAt ? `<div class="drawer-row"><span class="drawer-row-label">Hold expires</span><span class="drawer-row-value" style="color:${new Date(lead.holdExpiresAt) < new Date() ? "var(--danger)" : "var(--warning)"};">${escapeHtml(formatDate(lead.holdExpiresAt))}${new Date(lead.holdExpiresAt) < new Date() ? " — lapsed" : ""}</span></div>` : ""}
             ${lead.profileTier ? `<div class="drawer-row"><span class="drawer-row-label">Client type</span><span class="drawer-row-value">${lead.profileTier === "High" ? "VIP / celebrity" : lead.profileTier === "Mid" ? "Premium" : "Regular"}</span></div>` : ""}
             ${lead.assignedArtist ? `<div class="drawer-row"><span class="drawer-row-label">Assigned to</span><span class="drawer-row-value">${escapeHtml(lead.assignedArtist)}</span></div>` : ""}
             ${lead.clientTags ? `<div class="drawer-row"><span class="drawer-row-label">Notes / tags</span><span class="drawer-row-value">${escapeHtml(lead.clientTags)}</span></div>` : ""}
@@ -4193,6 +4238,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <a href="/api/leads/${lead.leadId}/quote/preview" target="_blank" rel="noreferrer" class="button secondary">👁 Preview quote</a>
           </div>
           <div class="drawer-actions-row">
+            <button class="button secondary small" data-drawer-edit-details="${lead.leadId}">✏️ Edit details</button>
             <button class="button secondary small" data-drawer-action="quote" data-drawer-lead-id="${lead.leadId}">Generate quote</button>
             <button class="button secondary small" data-drawer-action="send-quote" data-drawer-lead-id="${lead.leadId}">Send quote</button>
             ${lead.status !== "Lost" && lead.status !== "Completed" ? `<button class="button secondary small danger" data-drawer-action="no" data-drawer-lead-id="${lead.leadId}">Decline</button>` : ""}
@@ -4242,6 +4288,12 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
       // Handle drawer action buttons.
       leadDrawer.addEventListener("click", (e) => {
+        const editBtn = e.target.closest("[data-drawer-edit-details]");
+        if (editBtn) {
+          const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === editBtn.getAttribute("data-drawer-edit-details"));
+          if (lead) openLeadEdit(lead);
+          return;
+        }
         const btn = e.target.closest("[data-drawer-action]");
         if (!btn) return;
         const action = btn.getAttribute("data-drawer-action");
@@ -4449,6 +4501,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           else if (action === "balance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); toast("Balance reminder sent.", "success"); }
           else if (action === "advance") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Advance Paid" }); toast("Marked as advance paid.", "success"); }
           else if (action === "full") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Paid in Full" }); toast("Marked as paid in full.", "success"); }
+          else if (action === "complete") { await postJson(`/api/bookings/${bookingId}/complete`, {}); toast("Marked completed — lovely work! 🎉", "success"); }
           await refreshSession();
         } catch (error) {
           toast(error.message, "error");
@@ -4666,6 +4719,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
               <div class="client-row-stats">
                 ${c.totalBooked > 0 ? `<span class="client-row-spend">${formatMoney(c.totalBooked)}</span>` : `<span class="client-row-spend muted" style="font-weight:500;font-size:12.5px;">Nothing booked yet</span>`}
                 <span class="client-row-visits">${c.bookings} ${c.bookings === 1 ? "booking" : "bookings"} · ${c.requests} ${c.requests === 1 ? "request" : "requests"}</span>
+                <button class="button tiny secondary" data-book-again-name="${escapeHtml(c.name || "")}" data-book-again-phone="${escapeHtml(c.phone || "")}">🔁 Book again</button>
               </div>
             </div>`;
         }).join("");
@@ -4673,6 +4727,8 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       }
       document.getElementById("client-search")?.addEventListener("input", renderClients);
       document.getElementById("clients-list")?.addEventListener("click", (e) => {
+        // "Book again" is handled by the body-level delegate — don't also open the drawer.
+        if (e.target.closest("[data-book-again-name]")) return;
         const row = e.target.closest("[data-client-index]");
         if (!row) return;
         const clients = document.getElementById("clients-list")._clients || [];
@@ -4684,15 +4740,22 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       // ─── Quick booking: walk-in/phone booking in one step ───
       const quickBookingModal = document.getElementById("quick-booking-modal");
       const quickBookingForm = document.getElementById("quick-booking-form");
-      function openQuickBooking() {
+      function openQuickBooking(prefill) {
         quickBookingForm.reset();
         document.getElementById("qb-status").textContent = "";
         document.getElementById("qb-conflict").innerHTML = "";
         const dateInput = document.getElementById("qb-date");
         dateInput.min = new Date().toISOString().slice(0, 10);
+        // "Book again" for a returning client: name and number ready to go.
+        if (prefill?.name) document.getElementById("qb-name").value = prefill.name;
+        if (prefill?.phone) document.getElementById("qb-phone").value = prefill.phone;
         quickBookingModal.classList.add("open");
-        setTimeout(() => document.getElementById("qb-name").focus(), 50);
+        setTimeout(() => document.getElementById(prefill?.name ? "qb-date" : "qb-name").focus(), 50);
       }
+      document.body.addEventListener("click", (e) => {
+        const again = e.target.closest("[data-book-again-name]");
+        if (again) openQuickBooking({ name: again.getAttribute("data-book-again-name"), phone: again.getAttribute("data-book-again-phone") || "" });
+      });
       document.getElementById("qb-date")?.addEventListener("change", (e) => {
         document.getElementById("qb-conflict").innerHTML = conflictWarningHtml(e.target.value);
       });
@@ -4755,6 +4818,55 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           submitAsk(askInput.value);
         }));
 
+      // ─── Edit lead details (typo fixes, venue changes — syncs booking too) ───
+      const leadEditModal = document.getElementById("lead-edit-modal");
+      function openLeadEdit(lead) {
+        document.getElementById("le-lead-id").value = lead.leadId;
+        document.getElementById("le-name").value = lead.clientName || "";
+        document.getElementById("le-phone").value = lead.clientWhatsApp || "";
+        document.getElementById("le-instagram").value = lead.clientInstagram || "";
+        document.getElementById("le-event").value = lead.eventType || "Other";
+        document.getElementById("le-date").value = lead.eventDate || "";
+        document.getElementById("le-time").value = lead.eventTime || "";
+        document.getElementById("le-venue").value = lead.locationText || "";
+        document.getElementById("le-notes").value = lead.clientTags || "";
+        document.getElementById("le-conflict").innerHTML = "";
+        document.getElementById("le-status").textContent = "";
+        leadEditModal.classList.add("open");
+      }
+      document.getElementById("lead-edit-close")?.addEventListener("click", () => leadEditModal.classList.remove("open"));
+      leadEditModal?.addEventListener("click", (e) => { if (e.target === leadEditModal) leadEditModal.classList.remove("open"); });
+      document.getElementById("le-date")?.addEventListener("change", (e) => {
+        document.getElementById("le-conflict").innerHTML = conflictWarningHtml(e.target.value, document.getElementById("le-lead-id").value);
+      });
+      document.getElementById("lead-edit-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById("le-submit");
+        const leadId = document.getElementById("le-lead-id").value;
+        setLoading(btn, "Saving…");
+        try {
+          await postJson(`/api/leads/${leadId}/details`, {
+            clientName: document.getElementById("le-name").value.trim(),
+            clientWhatsApp: document.getElementById("le-phone").value.trim(),
+            clientInstagram: document.getElementById("le-instagram").value.trim(),
+            eventType: document.getElementById("le-event").value,
+            eventDate: document.getElementById("le-date").value,
+            eventTime: document.getElementById("le-time").value,
+            locationText: document.getElementById("le-venue").value.trim(),
+            clientTags: document.getElementById("le-notes").value.trim(),
+          });
+          leadEditModal.classList.remove("open");
+          closeLeadDrawer();
+          toast("Details updated — booking and calendar follow automatically.", "success");
+          await refreshSession();
+        } catch (error) {
+          document.getElementById("le-status").textContent = error.message;
+          toast(error.message, "error");
+        } finally {
+          clearLoading(btn);
+        }
+      });
+
       // ─── Reschedule booking ───
       const rescheduleModal = document.getElementById("reschedule-modal");
       function openReschedule(bookingId) {
@@ -4765,6 +4877,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           `${b.clientName} · ${b.eventType} · currently ${formatDay(b.eventDate)}${b.eventTime ? " at " + b.eventTime : ""}`;
         document.getElementById("rs-date").value = b.eventDate || "";
         document.getElementById("rs-time").value = b.eventTime || "";
+        document.getElementById("rs-venue").value = b.venue || "";
         document.getElementById("rs-conflict").innerHTML = "";
         document.getElementById("rs-status").textContent = "";
         rescheduleModal.classList.add("open");
@@ -4785,9 +4898,10 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           await postJson(`/api/bookings/${bookingId}/reschedule`, {
             eventDate: document.getElementById("rs-date").value,
             eventTime: document.getElementById("rs-time").value || undefined,
+            venue: document.getElementById("rs-venue").value.trim() || undefined,
           });
           rescheduleModal.classList.remove("open");
-          toast("Booking moved — your calendar is updated. Remember to tell the client!", "success");
+          toast("Booking updated — your calendar follows. Remember to tell the client!", "success");
           await refreshSession();
         } catch (error) {
           document.getElementById("rs-status").textContent = error.message;
@@ -5085,6 +5199,23 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
       }
+
+      // ─── Keep the day fresh: new requests appear without her doing anything.
+      // Refreshes every 5 minutes while the tab is visible, and immediately when
+      // she returns to a tab that's been in her pocket for a while.
+      let lastRefreshAt = Date.now();
+      let refreshInFlight = false;
+      async function backgroundRefresh() {
+        if (refreshInFlight || document.hidden || !sessionState?.authenticated) return;
+        // Don't yank the UI while she's mid-form (modal open or typing).
+        if (document.querySelector(".modal-overlay.open") || document.activeElement?.matches("input, textarea, select")) return;
+        refreshInFlight = true;
+        try { await refreshSession(); lastRefreshAt = Date.now(); } catch {} finally { refreshInFlight = false; }
+      }
+      setInterval(backgroundRefresh, 5 * 60 * 1000);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && Date.now() - lastRefreshAt > 2 * 60 * 1000) backgroundRefresh();
+      });
 
       refreshSession()
         .then(() => { const stored = sessionStorage.getItem("activeTab"); if (stored) { activateTab(stored); sessionStorage.removeItem("activeTab"); } })

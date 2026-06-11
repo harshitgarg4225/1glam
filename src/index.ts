@@ -12,12 +12,13 @@ import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
 import { appConfig, assertDeploymentConfig } from "./config.js";
-import { createLeadSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema, quickBookingSchema } from "./api-schema.js";
+import { createLeadSchema, editLeadDetailsSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema, quickBookingSchema } from "./api-schema.js";
 import { askBusinessAssistant, buildAssistantSnapshot } from "./services/assistant.js";
 import { workspaceConfigSchema } from "./schema.js";
 import {
   applyOwnerDecision,
   cancelBooking,
+  completeBooking,
   confirmLeadBooking,
   createLeadForWorkspace,
   findLatestLeadByActor,
@@ -1576,8 +1577,8 @@ app.post("/api/bookings/quick", async (req, res, next) => {
   }
 });
 
-// Move a booking to a new date/time. Calendar event, booking row, and lead row
-// all stay in lockstep.
+// Move a booking to a new date/time/venue. Calendar event, booking row, and
+// lead row all stay in lockstep.
 app.post("/api/bookings/:bookingId/reschedule", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
@@ -1585,6 +1586,7 @@ app.post("/api/bookings/:bookingId/reschedule", async (req, res, next) => {
     }
     const eventDate = typeof req.body?.eventDate === "string" ? req.body.eventDate : "";
     const eventTime = typeof req.body?.eventTime === "string" ? req.body.eventTime : undefined;
+    const venue = typeof req.body?.venue === "string" && req.body.venue.trim() ? req.body.venue.trim().slice(0, 200) : undefined;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
       return res.status(400).json({ error: "Pick the new date first." });
     }
@@ -1592,9 +1594,84 @@ app.post("/api/bookings/:bookingId/reschedule", async (req, res, next) => {
       req.session.profile.email,
       req.session.googleTokens,
       req.params.bookingId,
-      { eventDate, eventTime },
+      { eventDate, eventTime, venue },
     );
     res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The job's done — mark it Completed (booking + lead) so the list stays clean.
+app.post("/api/bookings/:bookingId/complete", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const booking = await completeBooking(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Day-to-day corrections on a lead: typo in the number, venue change, new
+// time. When the lead already has a confirmed booking and date/time/venue
+// changed, the booking row and calendar event move with it; name/number
+// changes propagate too.
+app.post("/api/leads/:leadId/details", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const email = req.session.profile.email;
+    const tokens = req.session.googleTokens;
+    const parsed = editLeadDetailsSchema.parse(req.body);
+
+    const before = await getLeadRecord(email, tokens, req.params.leadId);
+    if (!before) return res.status(404).json({ error: "Lead not found" });
+
+    const updated = await updateLeadRecord(email, tokens, req.params.leadId, (lead) => ({
+      ...lead,
+      clientName: parsed.clientName ?? lead.clientName,
+      clientWhatsApp: parsed.clientWhatsApp ?? lead.clientWhatsApp,
+      clientInstagram: parsed.clientInstagram ?? lead.clientInstagram,
+      eventType: parsed.eventType ?? lead.eventType,
+      eventDate: parsed.eventDate ?? lead.eventDate,
+      eventTime: parsed.eventTime ?? lead.eventTime,
+      locationText: parsed.locationText ?? lead.locationText,
+      clientTags: parsed.clientTags ?? lead.clientTags,
+    }));
+
+    if (before.bookingId) {
+      const scheduleChanged =
+        (parsed.eventDate && parsed.eventDate !== before.eventDate) ||
+        (parsed.eventTime !== undefined && parsed.eventTime !== before.eventTime) ||
+        (parsed.locationText && parsed.locationText !== before.locationText);
+      if (scheduleChanged) {
+        // Reads the just-updated lead, so the recreated calendar event carries
+        // the new venue/time even when only one of them changed.
+        await rescheduleBooking(email, tokens, before.bookingId, {
+          eventDate: updated.eventDate,
+          eventTime: updated.eventTime,
+          venue: updated.locationText,
+        }).catch(() => {});
+      }
+      if ((parsed.clientName && parsed.clientName !== before.clientName) ||
+          (parsed.clientWhatsApp && parsed.clientWhatsApp !== before.clientWhatsApp)) {
+        await updateBookingRecord(email, tokens, before.bookingId, (b) => ({
+          ...b,
+          clientName: updated.clientName,
+          clientWhatsApp: updated.clientWhatsApp,
+        })).catch(() => {});
+      }
+    }
+
+    res.json({ ok: true, lead: updated });
   } catch (error) {
     next(error);
   }
