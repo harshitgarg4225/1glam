@@ -52,6 +52,8 @@ import {
 import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford } from "./services/wallet.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
+  buildImageMarker,
+  extractInboundMediaFromMetaWebhook,
   extractInboundTextFromMetaWebhook,
   extractMetaMessageId,
   ingestNormalizedLead,
@@ -88,6 +90,7 @@ import { generateConversationReply, deriveToneProfile } from "./services/grok.js
 import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
+import { fetchWithTimeout } from "./services/http.js";
 import { encryptionEnabled } from "./services/crypto.js";
 import {
   generateInvoiceDocument,
@@ -116,6 +119,7 @@ import {
   recoverSheet,
   setSheetProtection,
   uploadLogoImage,
+  uploadPublicImage,
   upsertMetaConnection,
   updateWorkspaceConfig,
 } from "./services/workspace.js";
@@ -901,6 +905,25 @@ app.post("/api/workspace/config", async (req, res, next) => {
       const existing = await getWorkspaceByEmail(req.session.profile.email);
       parsed.razorpayKeySecret = existing?.config.razorpayKeySecret || "";
     }
+    // Pretty booking slug: normalized, validated, and unique across all
+    // workspaces — it becomes a top-level public URL.
+    if (parsed.bookingSlug) {
+      const slug = normalizeSlug(parsed.bookingSlug);
+      if (!slug) {
+        return res.status(400).json({ error: "Booking link names use 3-40 letters, numbers or dashes (e.g. glow-by-aisha)." });
+      }
+      if (RESERVED_SLUGS.has(slug)) {
+        return res.status(400).json({ error: `"${slug}" is reserved — pick another booking link name.` });
+      }
+      const all = await listWorkspaces();
+      const taken = all.some(
+        (w) => w.email !== req.session.profile!.email && normalizeSlug(w.config?.bookingSlug || "") === slug,
+      );
+      if (taken) {
+        return res.status(409).json({ error: `"${slug}" is already taken — try another name.` });
+      }
+      parsed.bookingSlug = slug;
+    }
     const workspace = await updateWorkspaceConfig(
       req.session.profile.email,
       parsed,
@@ -908,6 +931,69 @@ app.post("/api/workspace/config", async (req, res, next) => {
     );
 
     res.json({ ok: true, workspace: scrubWorkspaceTokens(workspace) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Chat image upload: returns a public URL to attach to a client reply.
+app.post(
+  "/api/uploads/chat-image",
+  (req, res, next) => {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
+  async (req, res, next) => {
+    try {
+      if (!req.session.profile || !req.session.googleTokens) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      const result = await uploadPublicImage(req.session.profile.email, req.session.googleTokens, {
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// WhatsApp media proxy: client-sent photos arrive as media ids that need the
+// WABA token to fetch (Meta's lookaside URLs are short-lived). The owner's
+// session streams them through here so the inbox can render them.
+app.get("/api/media/whatsapp/:mediaId", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const accessToken = workspace?.metaConnections?.whatsapp?.accessToken || appConfig.waAccessToken;
+    if (!workspace || !accessToken) return res.status(404).json({ error: "Media not available" });
+    const mediaId = String(req.params.mediaId ?? "").replace(/[^\w.-]/g, "");
+    if (!mediaId) return res.status(400).json({ error: "Bad media id" });
+
+    const metaRes = await fetchWithTimeout(`https://graph.facebook.com/v23.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!metaRes.ok) return res.status(404).json({ error: "Media not available" });
+    const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+    if (!meta.url) return res.status(404).json({ error: "Media not available" });
+
+    const fileRes = await fetchWithTimeout(meta.url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!fileRes.ok) return res.status(404).json({ error: "Media not available" });
+    res.setHeader("Content-Type", meta.mime_type || "image/jpeg");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(Buffer.from(await fileRes.arrayBuffer()));
   } catch (error) {
     next(error);
   }
@@ -3675,11 +3761,19 @@ app.post("/api/leads/:leadId/reply", async (req, res, next) => {
       return res.status(400).json({ error: `${channel} is not connected` });
     }
 
+    // Optional image attachment (e.g. a look reference back to the client).
+    // Must be a public https URL — produced by our own chat-image upload.
+    const imageUrl =
+      typeof req.body?.imageUrl === "string" && /^https:\/\/\S+$/.test(req.body.imageUrl)
+        ? req.body.imageUrl.slice(0, 600)
+        : "";
     const message =
       typeof req.body?.message === "string" && req.body.message.trim().length > 0
         ? req.body.message.trim()
-        : lead.suggestedReply;
-    if (!message) {
+        : imageUrl
+          ? ""
+          : lead.suggestedReply;
+    if (!message && !imageUrl) {
       return res.status(400).json({ error: "Reply message is empty" });
     }
 
@@ -3694,6 +3788,7 @@ app.post("/api/leads/:leadId/reply", async (req, res, next) => {
       channel,
       actorId,
       message,
+      imageUrl: imageUrl || undefined,
     });
 
     const updatedLead = await updateLeadRecord(
@@ -3702,7 +3797,7 @@ app.post("/api/leads/:leadId/reply", async (req, res, next) => {
       req.params.leadId,
       (current) => ({
         ...current,
-        suggestedReply: message,
+        suggestedReply: message || current.suggestedReply,
         lastContactedAt: new Date().toISOString(),
       }),
     );
@@ -3725,7 +3820,7 @@ app.post("/api/leads/:leadId/reply", async (req, res, next) => {
       direction: "Outbound",
       channel,
       actor: actorId,
-      message,
+      message: imageUrl ? `[img:url:${imageUrl}]${message ? ` ${message}` : ""}` : message,
       aiSummary: "Reply sent from dashboard",
     });
 
@@ -4036,7 +4131,15 @@ app.post("/webhooks/meta", async (req, res, next) => {
       }
 
       const tokens = await getWorkspaceCredentials(workspace.email);
-      const inboundText = extractInboundTextFromMetaWebhook(body);
+      // Reference photos are first-class: a photo-only message still creates/
+      // updates the lead and lands in the inbox with the image attached.
+      const rawInboundText = extractInboundTextFromMetaWebhook(body);
+      const inboundMedia = extractInboundMediaFromMetaWebhook(body);
+      const inboundText =
+        rawInboundText || (inboundMedia ? inboundMedia.caption || "📷 (Client sent a photo)" : "");
+      const inboundLogMessage = inboundMedia
+        ? buildImageMarker({ ref: inboundMedia.ref, caption: rawInboundText || inboundMedia.caption })
+        : inboundText;
       let leadCreated = false;
       let resolvedLeadId = "";
 
@@ -4068,7 +4171,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             direction: "Inbound",
             channel,
             actor: actorId || "instagram-user",
-            message: inboundText,
+            message: inboundLogMessage,
             aiSummary: "Existing Instagram lead updated",
           });
         } else {
@@ -4084,6 +4187,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             locationText: parsedLead.locationText,
             clientTags: parsedLead.clientTags,
             inboundMessage: inboundText,
+            interactionMessage: inboundLogMessage,
             actorId: actorId || "instagram-user",
           });
           resolvedLeadId = result.lead.leadId;
@@ -4129,7 +4233,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             direction: "Inbound",
             channel,
             actor: actorId || "whatsapp-user",
-            message: inboundText,
+            message: inboundLogMessage,
             aiSummary: "Existing WhatsApp lead updated",
           });
         } else {
@@ -4144,6 +4248,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             locationText: parsedLead.locationText,
             clientTags: parsedLead.clientTags,
             inboundMessage: inboundText,
+            interactionMessage: inboundLogMessage,
             actorId: actorId || "whatsapp-user",
           });
           resolvedLeadId = result.lead.leadId;
@@ -4247,7 +4352,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
           direction: "Inbound",
           channel,
           actor: actorId || "meta-user",
-          message: inboundText || JSON.stringify(body).slice(0, 500),
+          message: inboundLogMessage || JSON.stringify(body).slice(0, 500),
           aiSummary: "Direct Meta webhook received",
         });
       }
@@ -4482,6 +4587,35 @@ app.get("/legal/data-deletion", (_req, res) => {
 </ul>`,
     ),
   );
+});
+
+// ---- Pretty booking links: /glowbyaisha → her booking page ----
+// Registered last so it can never shadow a real route; the reserved list
+// protects future top-level paths too. The pretty link is what goes in her
+// Instagram bio; it resolves to the canonical /book/:workspaceId page.
+function normalizeSlug(raw: string): string {
+  const slug = String(raw || "").trim().toLowerCase().replace(/\s+/g, "-");
+  return /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(slug) ? slug : "";
+}
+
+const RESERVED_SLUGS = new Set([
+  "api", "auth", "book", "pay", "sign", "dev", "webhooks", "compliance", "legal",
+  "d", "q", "b", "app", "admin", "login", "logout", "static", "assets", "public",
+  "healthz", "health", "status", "privacy", "terms", "about", "help", "support",
+  "settings", "dashboard", "index", "manifest.json", "sw.js", "favicon.ico", "robots.txt",
+]);
+
+app.get("/:slug", async (req, res, next) => {
+  try {
+    const slug = normalizeSlug(String(req.params.slug ?? ""));
+    if (!slug || RESERVED_SLUGS.has(slug)) return next();
+    const all = await listWorkspaces();
+    const match = all.find((w) => normalizeSlug(w.config?.bookingSlug || "") === slug);
+    if (!match) return next();
+    res.redirect(302, `/book/${encodeURIComponent(match.workspaceId)}`);
+  } catch {
+    next();
+  }
 });
 
 app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -108,6 +108,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     googleRating: "",
     googleReviewCount: "",
     quotePackages: "",
+    bookingSlug: "",
     brandColor: "",
     coverImageUrl: "",
     headline: "",

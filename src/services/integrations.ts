@@ -21,6 +21,9 @@ export type NormalizedInboundLead = {
   followers?: number;
   clientTags?: string;
   inboundMessage: string;
+  // Optional log-row override (e.g. with an [img:...] marker) so the inbox
+  // shows the photo while AI inputs stay clean text.
+  interactionMessage?: string;
   actorId: string;
 };
 
@@ -128,7 +131,7 @@ export async function ingestNormalizedLead(tokens: Credentials, input: Normalize
     direction: "Inbound",
     channel: input.source,
     actor: input.actorId,
-    message: input.inboundMessage,
+    message: input.interactionMessage || input.inboundMessage,
     aiSummary: `Lead ${result.lead.leadId} created from ${input.source}`,
   });
 
@@ -222,6 +225,64 @@ export function extractInboundTextFromMetaWebhook(payload: Record<string, unknow
   }
 
   return "";
+}
+
+// Pulls any inbound media from a Meta webhook. Clients send reference photos
+// constantly ("I want this look") — these must land in the inbox, not vanish.
+// WhatsApp images arrive as a media id (fetched later with the WABA token via
+// our authenticated proxy); Instagram/Messenger attachments arrive as direct
+// CDN URLs. Returns a compact marker ref the UI knows how to render.
+export type InboundMedia = {
+  // "wa:<mediaId>" (needs token-authenticated fetch) or "url:<cdnUrl>".
+  ref: string;
+  caption: string;
+};
+
+export function extractInboundMediaFromMetaWebhook(payload: Record<string, unknown>): InboundMedia | null {
+  const object = typeof payload.object === "string" ? payload.object : "";
+
+  if (object === "whatsapp_business_account") {
+    const entry = Array.isArray(payload.entry) ? payload.entry[0] : undefined;
+    const change = entry && Array.isArray((entry as Record<string, unknown>).changes)
+      ? ((entry as Record<string, unknown>).changes as Array<Record<string, unknown>>)[0]
+      : undefined;
+    const value = change?.value as Record<string, unknown> | undefined;
+    const message = Array.isArray(value?.messages)
+      ? (value?.messages as Array<Record<string, unknown>>)[0]
+      : undefined;
+    const image = message?.image as Record<string, unknown> | undefined;
+    if (message?.type === "image" && typeof image?.id === "string" && image.id) {
+      return { ref: `wa:${image.id}`, caption: typeof image.caption === "string" ? image.caption : "" };
+    }
+    return null;
+  }
+
+  if (object === "page" || object === "instagram") {
+    const entry = Array.isArray(payload.entry) ? payload.entry[0] : undefined;
+    const messaging = entry && Array.isArray((entry as Record<string, unknown>).messaging)
+      ? ((entry as Record<string, unknown>).messaging as Array<Record<string, unknown>>)[0]
+      : undefined;
+    const message = messaging?.message as Record<string, unknown> | undefined;
+    const attachments = Array.isArray(message?.attachments)
+      ? (message?.attachments as Array<Record<string, unknown>>)
+      : [];
+    for (const attachment of attachments) {
+      const attachmentPayload = attachment?.payload as Record<string, unknown> | undefined;
+      const url = typeof attachmentPayload?.url === "string" ? attachmentPayload.url : "";
+      if (attachment?.type === "image" && /^https:\/\//.test(url)) {
+        return { ref: `url:${url}`, caption: typeof message?.text === "string" ? message.text : "" };
+      }
+    }
+    return null;
+  }
+
+  return null;
+}
+
+// Builds the inline marker used to persist an image in an interaction row:
+// "[img:<ref>] caption". Old rows without markers are unaffected.
+export function buildImageMarker(media: InboundMedia): string {
+  return `[img:${media.ref}]${media.caption ? ` ${media.caption}` : ""}`;
 }
 
 // Pulls the provider's unique message id from a Meta webhook so redeliveries can

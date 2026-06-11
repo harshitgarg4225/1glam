@@ -1545,6 +1545,16 @@
               <button class="button secondary" type="button" id="copy-mypage-link">Copy</button>
               <a class="button secondary" id="preview-mypage-link" target="_blank" rel="noreferrer">Open in new tab</a>
             </div>
+            <div style="margin-top:12px;">
+              <label for="mypage-slug" style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Custom URL slug (optional)</label>
+              <div class="filter-bar" style="margin:6px 0 0;">
+                <span style="font-size:13px;color:var(--muted);white-space:nowrap;padding:0 4px 0 2px;" id="mypage-slug-prefix">/</span>
+                <input type="text" id="mypage-slug" placeholder="glowbyaisha" maxlength="40" style="flex:1;" />
+                <button class="button secondary small" type="button" id="save-mypage-slug">Save slug</button>
+              </div>
+              <p class="muted" style="margin:6px 0 0;font-size:12px;">Once set, clients can reach you at <strong id="mypage-slug-preview"></strong> — much easier to share. Only lowercase letters, numbers, and hyphens.</p>
+              <div class="status" id="mypage-slug-status"></div>
+            </div>
           </div>
           <div class="mini-card" style="margin-top:14px;">
             <div class="action-row" style="justify-content:space-between;align-items:center;">
@@ -4596,7 +4606,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const ws = sessionState?.workspace;
         if (!ws) return;
         const cfg = ws.config || {};
-        const bookingUrl = `${window.location.origin}/book/${encodeURIComponent(ws.workspaceId)}`;
+        const slug = cfg.bookingSlug || "";
+        const bookingUrl = slug
+          ? `${window.location.origin}/${slug}`
+          : `${window.location.origin}/book/${encodeURIComponent(ws.workspaceId)}`;
         document.getElementById("mypage-link").value = bookingUrl;
         document.getElementById("preview-mypage-link").href = bookingUrl;
         document.getElementById("mypage-bio").value = bookingUrl;
@@ -4606,6 +4619,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (previewFrame && previewFrame.dataset.src !== bookingUrl) {
           previewFrame.dataset.src = bookingUrl;
           previewFrame.src = bookingUrl;
+        }
+        const slugInput = document.getElementById("mypage-slug");
+        if (slugInput) {
+          slugInput.value = slug;
+          const preview = document.getElementById("mypage-slug-preview");
+          if (preview) preview.textContent = slug ? `${window.location.origin}/${slug}` : "";
         }
         setValue(mypageForm, "aboutText", cfg.aboutText);
         setValue(mypageForm, "headline", cfg.headline);
@@ -4647,6 +4666,31 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         copyToClipboard(document.getElementById("mypage-link").value, e.currentTarget));
       document.getElementById("copy-mypage-bio").addEventListener("click", (e) =>
         copyToClipboard(document.getElementById("mypage-bio").value, e.currentTarget));
+
+      document.getElementById("mypage-slug")?.addEventListener("input", (e) => {
+        const val = e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+        const preview = document.getElementById("mypage-slug-preview");
+        if (preview) preview.textContent = val ? `${window.location.origin}/${val}` : "";
+      });
+
+      document.getElementById("save-mypage-slug")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        const raw = document.getElementById("mypage-slug").value.trim();
+        const statusEl = document.getElementById("mypage-slug-status");
+        statusEl.textContent = "";
+        setLoading(btn, "Saving…");
+        try {
+          await saveConfigPatch({ bookingSlug: raw });
+          await refreshSession();
+          loadMyPage();
+          toast("Slug saved — your new link is live.", "success");
+        } catch (error) {
+          statusEl.textContent = error.message;
+          toast(error.message, "error");
+        } finally {
+          clearLoading(btn);
+        }
+      });
 
       mypageForm.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -4728,10 +4772,23 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               ${t.msgs.map((m) => {
                 const isAi = m.actor === "AI";
                 const aiLabel = isAi ? `<span style="font-size:11px;background:#f0f4ff;color:#3b5bdb;border-radius:3px;padding:1px 5px;margin-left:4px;">🤖 AI</span>` : "";
+                const imgMatch = (m.message || "").match(/\[img:(wa:[^\]]+|url:[^\]]+)\](.*)$/s);
+                let msgHtml;
+                if (imgMatch) {
+                  const ref = imgMatch[1];
+                  const caption = imgMatch[2].trim();
+                  const imgSrc = ref.startsWith("wa:")
+                    ? `/api/media/whatsapp/${encodeURIComponent(ref.slice(3))}`
+                    : ref.slice(4);
+                  const captionHtml = caption ? `<div style="margin-top:4px;font-size:13px;">${escapeHtml(caption)}</div>` : "";
+                  msgHtml = `<img src="${escapeHtml(imgSrc)}" loading="lazy" style="max-width:220px;max-height:280px;border-radius:8px;display:block;" onerror="this.alt='Image unavailable';this.style.display='none';" />${captionHtml}`;
+                } else {
+                  msgHtml = escapeHtml(m.message);
+                }
                 return `
                 <div class="msg ${m.direction === "Outbound" ? "outbound" : "inbound"}${isAi ? " ai-sent" : ""}">
                   <div class="msg-meta">${escapeHtml(m.channel)} · ${escapeHtml(m.direction)}${aiLabel} · ${formatDate(m.createdAt)}</div>
-                  ${escapeHtml(m.message)}
+                  ${msgHtml}
                 </div>`;
               }).join("")}
             </div>
@@ -5035,7 +5092,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           else if (action === "full") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
           else if (action === "reply") {
             const i = document.querySelector(`[data-drawer-reply]`) || document.querySelector(`[data-reply-input="${leadId}"]`);
-            await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" });
+            const pendingImageUrl = document.getElementById("drawer-image-preview")?.dataset?.imageUrl || "";
+            const body = { message: i?.value || "" };
+            if (pendingImageUrl) body.imageUrl = pendingImageUrl;
+            await postJson(`/api/leads/${leadId}/reply`, body);
+            const preview = document.getElementById("drawer-image-preview");
+            if (preview) { preview.dataset.imageUrl = ""; preview.innerHTML = ""; preview.style.display = "none"; }
           }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
           else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast("Quote sent to client.", "success"); }
@@ -5228,8 +5290,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             })()}
             <div style="display:flex;gap:8px;align-items:center;">
               <input data-drawer-reply type="text" style="flex:1;" placeholder="Your message to the client…" />
+              <label title="Send image" style="cursor:pointer;display:flex;align-items:center;" class="button small secondary">
+                📎<input type="file" data-drawer-image-input accept="image/*" style="display:none;" />
+              </label>
               <button class="button small secondary" data-drawer-action="reply" data-drawer-lead-id="${lead.leadId}">Send</button>
             </div>
+            <div id="drawer-image-preview" style="display:none;margin-top:6px;position:relative;display:inline-block;"></div>
           </div>`;
 
         leadDrawerActions.innerHTML = `
@@ -5247,6 +5313,36 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
         computeOrderTotals();
       }
+
+      // Handle image attachment in the reply row.
+      leadDrawerBody.addEventListener("change", async (e) => {
+        if (!e.target.matches("[data-drawer-image-input]")) return;
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const preview = document.getElementById("drawer-image-preview");
+        preview.innerHTML = `<span class="muted" style="font-size:12px;">Uploading…</span>`;
+        preview.style.display = "block";
+        try {
+          const fd = new FormData();
+          fd.append("image", file);
+          const res = await fetch("/api/uploads/chat-image", { method: "POST", body: fd });
+          const json = await res.json();
+          if (!json.ok) throw new Error(json.error || "Upload failed");
+          preview.dataset.imageUrl = json.imageUrl;
+          preview.innerHTML = `<img src="${escapeHtml(json.imageUrl)}" style="max-height:120px;max-width:100%;border-radius:8px;" /><button type="button" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:12px;line-height:1;" data-clear-drawer-image>×</button>`;
+          toast("Image ready — tap Send to deliver it.", "success");
+        } catch (err) {
+          preview.innerHTML = `<span class="muted" style="font-size:12px;color:var(--danger);">${escapeHtml(err.message)}</span>`;
+        }
+        e.target.value = "";
+      });
+
+      leadDrawerBody.addEventListener("click", (e) => {
+        if (e.target.matches("[data-clear-drawer-image]")) {
+          const preview = document.getElementById("drawer-image-preview");
+          if (preview) { preview.dataset.imageUrl = ""; preview.innerHTML = ""; preview.style.display = "none"; }
+        }
+      });
 
       // Order editor interactions (delegated on the stable drawer body element).
       leadDrawerBody.addEventListener("input", (e) => {
