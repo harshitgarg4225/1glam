@@ -61,7 +61,7 @@ import {
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance } from "./services/places.js";
-import { getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply } from "./services/gmb.js";
+import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply } from "./services/gmb.js";
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
@@ -671,6 +671,16 @@ app.get("/auth/google", (_req, res) => {
   res.redirect(getAuthUrl());
 });
 
+// Incremental consent: re-runs Google sign-in asking additionally for Business
+// Profile access, so the artist can create/manage her Google listing in-app.
+// include_granted_scopes keeps her existing Sheets/Calendar grants intact.
+app.get("/auth/google/business", (_req, res) => {
+  if (!appConfig.googleClientId || !appConfig.googleClientSecret) {
+    return res.status(500).send("Google OAuth is not configured. Add env vars first.");
+  }
+  res.redirect(getAuthUrl([BUSINESS_MANAGE_SCOPE]));
+});
+
 app.get("/auth/meta/start", (req, res, next) => {
   try {
     const channel = req.query.channel;
@@ -957,6 +967,65 @@ app.get("/api/gmb/status", async (req, res, next) => {
     const workspace = await getWorkspaceByEmail(req.session.profile.email);
     if (!workspace) return res.status(404).json({ error: "Workspace not found" });
     res.json({ ok: true, status: getGmbStatus(workspace) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- In-app Google Business Profile creation ----
+// Whether she has granted the business.manage scope yet, and where to grant it.
+app.get("/api/gmb/create-status", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    res.json({ ok: true, ...getGmbCreateStatus(workspace) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Creates her Google Business listing (service-area, "Make-up artist") from
+// inside the product, and returns Google's verification options. Falls back
+// with a clear reason when the scope or Google's API approval is missing.
+app.post("/api/gmb/create-profile", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const body = (req.body ?? {}) as { businessName?: unknown; phone?: unknown; serviceAreas?: unknown; website?: unknown };
+    const businessName = String(body.businessName ?? "").trim().slice(0, 120);
+    const phone = String(body.phone ?? "").trim().slice(0, 25);
+    const serviceAreas = Array.isArray(body.serviceAreas)
+      ? body.serviceAreas.map((a) => String(a ?? "").trim()).filter(Boolean).slice(0, 20)
+      : String(body.serviceAreas ?? "").split(",").map((a) => a.trim()).filter(Boolean).slice(0, 20);
+    const website = String(body.website ?? "").trim().slice(0, 300) || undefined;
+    if (!businessName || !phone || !serviceAreas.length) {
+      return res.status(400).json({ error: "Business name, phone, and at least one city are required." });
+    }
+
+    const result = await createBusinessProfile(workspace, req.session.googleTokens, {
+      businessName,
+      phone,
+      serviceAreas,
+      website,
+    });
+    if (!result.ok) {
+      return res.json({ ok: false, reason: result.reason, error: result.message });
+    }
+    res.json({
+      ok: true,
+      locationName: result.locationName,
+      verificationOptions: result.verificationOptions.map((method) => ({
+        method,
+        label: VERIFICATION_LABELS[method] || method,
+      })),
+    });
   } catch (error) {
     next(error);
   }

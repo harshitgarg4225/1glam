@@ -1311,22 +1311,49 @@
             <div class="status" id="gmb-status"></div>
             <button class="button small secondary" type="button" id="gmb-create-toggle" style="margin-top:10px;">Don't have a Google listing yet? Create one →</button>
             <div id="gmb-create-guide" class="mini-card" style="display:none;margin-top:12px;">
-              <div class="kicker">Create your Google Business Profile — free, ~5 minutes</div>
-              <p class="muted" style="margin:8px 0 12px;font-size:13.5px;">A Google listing is how clients find you on Google and Maps, and where your reviews live. You don't need an office or shop — Google lets travelling artists register as a <strong>service-area business</strong> with no address shown.</p>
-              <ol style="margin:0 0 14px 18px;padding:0;font-size:13.5px;line-height:1.9;color:var(--text);">
-                <li>Tap the button below — it opens Google's free setup page.</li>
-                <li>Enter your business name exactly as clients know you<span id="gmb-guide-name"></span>.</li>
-                <li>For business type, choose <strong>"Service business"</strong> — you visit clients, they don't visit you. No address needed.</li>
-                <li>For category, type <strong>"Make-up artist"</strong>.</li>
-                <li>For service area, add the cities you work in — your home city plus anywhere you travel for bookings.</li>
-                <li>Add your WhatsApp number and your booking page link (from <strong>My Page</strong>).</li>
-                <li>Google will verify you — usually a quick video call or phone code. Once verified, come back here.</li>
-              </ol>
-              <div class="action-row" style="flex-wrap:wrap;gap:8px;">
-                <a class="button" href="https://business.google.com/create" target="_blank" rel="noreferrer">Open Google setup (free)</a>
-                <button class="button secondary" type="button" id="gmb-recheck-btn">I've created it — find my business</button>
+              <div class="kicker">Create your Google Business Profile — right here, free</div>
+              <p class="muted" style="margin:8px 0 12px;font-size:13.5px;">A Google listing is how clients find you on Google and Maps, and where your reviews live. You don't need a shop — travelling artists register as a <strong>service-area business</strong> with no address shown. Fill this in and we'll create the listing on Google for you.</p>
+
+              <form id="gmb-create-form">
+                <div class="section-grid">
+                  <div class="wide"><label for="gmbc-name">Business name (exactly as clients know you)</label><input id="gmbc-name" required maxlength="120" /></div>
+                  <div><label for="gmbc-phone">Business phone / WhatsApp</label><input id="gmbc-phone" required maxlength="25" placeholder="+91…" /></div>
+                  <div><label for="gmbc-website">Your booking page (auto)</label><input id="gmbc-website" readonly /></div>
+                  <div class="wide"><label for="gmbc-areas">Cities you serve (comma-separated)</label><input id="gmbc-areas" required placeholder="e.g. Mumbai, Pune, Goa" /></div>
+                </div>
+                <p class="muted" style="margin:8px 0 0;font-size:12.5px;">Category is set to <strong>Make-up artist</strong> automatically.</p>
+                <div class="action-row" style="margin-top:12px;flex-wrap:wrap;gap:8px;">
+                  <button class="button" type="submit" id="gmbc-submit">✨ Create my Google listing</button>
+                  <button class="button secondary" type="button" id="gmbc-grant" style="display:none;">🔐 Allow Business Profile access</button>
+                </div>
+                <div class="status" id="gmbc-status"></div>
+              </form>
+
+              <div id="gmbc-success" style="display:none;margin-top:12px;background:#e8f7ee;border:1px solid #bfe6cd;border-radius:10px;padding:14px 16px;">
+                <strong style="color:#1e6b3a;">🎉 Your Google listing has been created!</strong>
+                <p class="muted" style="margin:8px 0;font-size:13px;">One last step — Google needs to verify it's really you. Your verification options:</p>
+                <ul id="gmbc-verify-options" style="margin:0 0 10px 18px;padding:0;font-size:13.5px;line-height:1.8;"></ul>
+                <a class="button small" href="https://business.google.com/locations" target="_blank" rel="noreferrer">Finish verification with Google</a>
+                <p class="muted" style="margin:10px 0 0;font-size:12px;">Once verified, come back and tap "Find my business" above to connect your review link.</p>
               </div>
-              <p class="muted" style="margin:10px 0 0;font-size:12px;">New listings can take a little while to appear in search after verification. If we can't find you right away, try again later — we'll keep this guide here.</p>
+
+              <details id="gmbc-manual" style="margin-top:14px;">
+                <summary class="more-summary">Prefer to do it yourself on Google? Step-by-step guide</summary>
+                <ol style="margin:10px 0 14px 18px;padding:0;font-size:13.5px;line-height:1.9;color:var(--text);">
+                  <li>Tap the button below — it opens Google's free setup page.</li>
+                  <li>Enter your business name exactly as clients know you<span id="gmb-guide-name"></span>.</li>
+                  <li>For business type, choose <strong>"Service business"</strong> — you visit clients, they don't visit you. No address needed.</li>
+                  <li>For category, type <strong>"Make-up artist"</strong>.</li>
+                  <li>For service area, add the cities you work in — your home city plus anywhere you travel for bookings.</li>
+                  <li>Add your WhatsApp number and your booking page link (from <strong>My Page</strong>).</li>
+                  <li>Google will verify you — usually a quick video call or phone code. Once verified, come back here.</li>
+                </ol>
+                <div class="action-row" style="flex-wrap:wrap;gap:8px;">
+                  <a class="button" href="https://business.google.com/create" target="_blank" rel="noreferrer">Open Google setup (free)</a>
+                  <button class="button secondary" type="button" id="gmb-recheck-btn">I've created it — find my business</button>
+                </div>
+                <p class="muted" style="margin:10px 0 0;font-size:12px;">New listings can take a little while to appear in search after verification. If we can't find you right away, try again later — we'll keep this guide here.</p>
+              </details>
             </div>
           </div>
         </div>
@@ -1885,11 +1912,20 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       <!-- Documents: unified list of every quote, invoice & contract -->
       <section class="tab-panel" data-panel="documents">
         <div class="panel section">
-          <div class="kicker">Paperwork</div>
-          <h2>Documents</h2>
-          <p class="muted" style="margin:0 0 16px;font-size:14px;">
-            Every quote, invoice and contract in one place. Preview, edit, send, void or delete — and move each client from quote to paid without leaving this screen.
-          </p>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">Paperwork</div>
+              <h2>Documents</h2>
+              <p class="muted" style="margin:0 0 16px;font-size:14px;">
+                Every quote, invoice and contract in one place. Create, preview, edit, send, record payments — move each client from quote to paid without leaving this screen.
+              </p>
+            </div>
+            <div class="action-row" style="gap:8px;flex-wrap:wrap;">
+              <button class="button" type="button" id="doc-new-quote">➕ New quote</button>
+              <button class="button secondary" type="button" id="doc-new-invoice">➕ New invoice</button>
+            </div>
+          </div>
+          <div id="doc-money-summary" class="payment-summary" style="display:none;margin:0 0 14px;"></div>
           <div class="filter-bar">
             <input type="search" id="doc-search" class="grow" placeholder="Search client, number…" />
             <select id="doc-filter-type">
@@ -1902,6 +1938,9 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
               <option value="">All statuses</option>
               <option value="Draft">Draft</option>
               <option value="Sent">Sent</option>
+              <option value="Accepted">Accepted</option>
+              <option value="Advance Due">Advance due</option>
+              <option value="Advance Paid">Advance paid</option>
               <option value="Signed">Signed</option>
               <option value="Paid">Paid</option>
               <option value="Voided">Voided</option>
@@ -1947,6 +1986,20 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           <button class="button secondary" type="button" id="confirm-cancel">Keep it</button>
           <button class="button danger" type="button" id="confirm-ok">Yes, do it</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Create a quote/invoice straight from the Documents tab -->
+    <div class="modal-overlay" id="doc-create-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 style="margin:0;" id="doc-create-title">New quote</h3>
+          <button class="modal-close" type="button" id="doc-create-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 10px;" id="doc-create-hint"></p>
+        <input type="search" id="doc-create-search" placeholder="Search by name…" style="width:100%;box-sizing:border-box;margin-bottom:10px;" />
+        <div id="doc-create-list" style="max-height:330px;overflow:auto;display:flex;flex-direction:column;gap:8px;"></div>
+        <div class="status" id="doc-create-status"></div>
       </div>
     </div>
 
@@ -2443,17 +2496,21 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           return true;
         });
         document.getElementById("doc-count").textContent = rows.length ? `${rows.length} document${rows.length === 1 ? "" : "s"}` : "";
+        renderDocMoneySummary();
         if (!rows.length) {
-          body.innerHTML = `<tr><td colspan="6" class="muted" style="padding:32px;text-align:center;">No documents yet. Generate a quote from Requests, or an invoice/contract from Bookings.</td></tr>`;
+          body.innerHTML = `<tr><td colspan="6" class="muted" style="padding:32px;text-align:center;">No documents yet. Tap <strong>➕ New quote</strong> above to create your first one.</td></tr>`;
           return;
         }
         body.innerHTML = rows.map((d) => {
           const voided = d.status === "Voided";
-          const nameCell = `<strong>${DOC_ICONS[d.kind]} ${escapeHtml(DOC_LABELS[d.kind])}</strong>${d.edited ? ` <span class="pill" style="font-size:10px;">edited</span>` : ""}<div class="muted mono" style="font-size:11px;">${escapeHtml(d.number)}</div>`;
+          const nameCell = `<strong>${DOC_ICONS[d.kind]} ${escapeHtml(DOC_LABELS[d.kind])}</strong>${d.edited ? ` <span class="pill" style="font-size:10px;">edited</span>` : ""}<div class="muted mono" style="font-size:11px;">${escapeHtml(d.number)}</div>${d.generatedAt ? `<div class="muted" style="font-size:11px;">Created ${escapeHtml(formatDay(d.generatedAt))}</div>` : ""}`;
           const actions = [`<button class="button tiny secondary" data-doc-act="preview" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}">👁 Preview</button>`];
           if (!voided) {
             actions.push(`<button class="button tiny secondary" data-doc-act="send" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}">📤 Send</button>`);
             actions.push(`<button class="button tiny secondary" data-doc-act="edit" data-kind="${d.kind}" data-id="${escapeHtml(d.recordId)}">✏️ Edit</button>`);
+            if (d.kind === "invoice" && d.payable) {
+              actions.push(`<button class="button tiny" data-doc-act="record-payment" data-id="${escapeHtml(d.recordId)}" style="background:var(--sage);">💰 Record payment</button>`);
+            }
             if (d.payable && d.leadId) {
               actions.push(`<button class="button tiny secondary" data-doc-act="paylink" data-lead="${escapeHtml(d.leadId)}">💳 Pay link</button>`);
             }
@@ -2478,6 +2535,108 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         }).join("");
       }
 
+      // Money at a glance across all paperwork: what's quoted and waiting, what
+      // clients have said yes to, and what's invoiced but not yet collected.
+      function renderDocMoneySummary() {
+        const el = document.getElementById("doc-money-summary");
+        if (!el) return;
+        const quotes = documentsCache.filter((d) => d.kind === "quote" && d.status !== "Voided");
+        const quotedOut = quotes.filter((d) => d.status === "Sent");
+        const accepted = quotes.filter((d) => d.status === "Accepted");
+        const bookings = sessionState?.dashboard?.bookings || [];
+        const invoiced = bookings.filter((b) => bookingIsActive(b) && (b.invoiceUrl || b.invoiceGeneratedAt));
+        const collected = invoiced.reduce((s, b) => s + bookingPaidTotal(b), 0);
+        const outstanding = invoiced.reduce((s, b) => s + Math.max(0, Number(b.finalPrice || 0) - bookingPaidTotal(b)), 0);
+        if (!documentsCache.length) { el.style.display = "none"; return; }
+        el.style.display = "";
+        el.innerHTML = `
+          <div class="payment-summary-item"><strong>${formatMoney(quotedOut.reduce((s, d) => s + Number(d.amount || 0), 0))}</strong> quoted, awaiting reply (${quotedOut.length})</div>
+          <div class="payment-summary-item" style="color:var(--success);"><strong>${formatMoney(accepted.reduce((s, d) => s + Number(d.amount || 0), 0))}</strong> accepted (${accepted.length})</div>
+          <div class="payment-summary-item" style="color:var(--success);"><strong>${formatMoney(collected)}</strong> collected on invoices</div>
+          <div class="payment-summary-item" style="color:var(--warning);"><strong>${formatMoney(outstanding)}</strong> invoiced, still to collect</div>`;
+      }
+
+      // ─── Create documents straight from the Documents tab ───
+      // New quote → pick any open request; new invoice → pick any active
+      // booking. One tap creates the document and it appears in the list.
+      let docCreateKind = "quote";
+      const docCreateModal = document.getElementById("doc-create-modal");
+
+      function openDocCreate(kind) {
+        docCreateKind = kind;
+        document.getElementById("doc-create-title").textContent = kind === "quote" ? "➕ New quote" : "➕ New invoice";
+        document.getElementById("doc-create-hint").textContent = kind === "quote"
+          ? "Pick the client to quote. The amount comes from their request (you can edit it after)."
+          : "Pick the booking to invoice. The invoice uses the agreed price and any payments already recorded.";
+        document.getElementById("doc-create-search").value = "";
+        document.getElementById("doc-create-status").textContent = "";
+        renderDocCreateList();
+        docCreateModal.classList.add("open");
+        setTimeout(() => document.getElementById("doc-create-search").focus(), 50);
+      }
+
+      function renderDocCreateList() {
+        const list = document.getElementById("doc-create-list");
+        const q = (document.getElementById("doc-create-search").value || "").toLowerCase();
+        let rows;
+        if (docCreateKind === "quote") {
+          rows = (sessionState?.dashboard?.leads || [])
+            .filter((l) => !["Lost", "Completed"].includes(l.status))
+            .filter((l) => !q || `${l.clientName} ${l.eventType} ${l.locationText}`.toLowerCase().includes(q))
+            .slice(0, 40)
+            .map((l) => ({
+              id: l.leadId,
+              title: l.clientName,
+              sub: `${l.eventType} · ${formatDay(l.eventDate)} · ${formatMoney(l.finalApprovedPrice || l.initialAiPrice)}`,
+              note: l.quoteUrl ? "Has a quote — creating again refreshes it" : "",
+            }));
+        } else {
+          rows = (sessionState?.dashboard?.bookings || [])
+            .filter(bookingIsActive)
+            .filter((b) => !q || `${b.clientName} ${b.eventType} ${b.venue}`.toLowerCase().includes(q))
+            .slice(0, 40)
+            .map((b) => ({
+              id: b.bookingId,
+              title: b.clientName,
+              sub: `${b.eventType} · ${formatDay(b.eventDate)} · ${formatMoney(b.finalPrice)}`,
+              note: b.invoiceUrl ? "Has an invoice — creating again refreshes it" : "",
+            }));
+        }
+        list.innerHTML = rows.length
+          ? rows.map((r) => `
+              <button type="button" class="mini-card" data-doc-create-id="${escapeHtml(r.id)}" style="text-align:left;cursor:pointer;font:inherit;width:100%;">
+                <strong>${escapeHtml(r.title)}</strong>
+                <div class="muted" style="font-size:12.5px;margin-top:2px;">${escapeHtml(r.sub)}</div>
+                ${r.note ? `<div class="muted" style="font-size:11.5px;margin-top:2px;">${escapeHtml(r.note)}</div>` : ""}
+              </button>`).join("")
+          : `<p class="muted" style="font-size:13.5px;padding:16px 4px;">${docCreateKind === "quote" ? "No open requests to quote. Add a client from the Requests tab first." : "No active bookings to invoice yet."}</p>`;
+      }
+
+      document.getElementById("doc-new-quote")?.addEventListener("click", () => openDocCreate("quote"));
+      document.getElementById("doc-new-invoice")?.addEventListener("click", () => openDocCreate("invoice"));
+      document.getElementById("doc-create-close")?.addEventListener("click", () => docCreateModal.classList.remove("open"));
+      docCreateModal?.addEventListener("click", (e) => { if (e.target === docCreateModal) docCreateModal.classList.remove("open"); });
+      document.getElementById("doc-create-search")?.addEventListener("input", debounce(renderDocCreateList, 120));
+      document.getElementById("doc-create-list")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-doc-create-id]");
+        if (!btn) return;
+        const id = btn.getAttribute("data-doc-create-id");
+        const statusEl = document.getElementById("doc-create-status");
+        btn.disabled = true;
+        statusEl.textContent = docCreateKind === "quote" ? "Creating quote…" : "Creating invoice…";
+        try {
+          if (docCreateKind === "quote") await postJson(`/api/leads/${id}/quote`, {});
+          else await postJson(`/api/bookings/${id}/invoice`, {});
+          docCreateModal.classList.remove("open");
+          toast(`${docCreateKind === "quote" ? "Quote" : "Invoice"} created — it's in your list, ready to send.`, "success");
+          await refreshSession();
+          await loadDocuments();
+        } catch (error) {
+          statusEl.textContent = error.message;
+          btn.disabled = false;
+        }
+      });
+
       function docSendUrl(kind, id) {
         if (kind === "quote") return `/api/leads/${encodeURIComponent(id)}/send-quote`;
         if (kind === "invoice") return `/api/bookings/${encodeURIComponent(id)}/send-invoice`;
@@ -2499,6 +2658,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const kind = btn.getAttribute("data-kind");
         const id = btn.getAttribute("data-id");
         if (act === "preview") { window.open(docPreviewUrl(kind, id), "_blank"); return; }
+        if (act === "record-payment") { openPaymentModal(id); return; }
         if (act === "paylink") {
           const wsId = sessionState?.workspace?.workspaceId;
           const leadId = btn.getAttribute("data-lead");
@@ -3673,21 +3833,97 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           clearLoading(searchBtn);
         }
       });
-      // Guided Google Business Profile creation for artists with no listing yet
-      // (most freelancers). Travelling artists register as a service-area
-      // business, so no studio address is required.
+      // In-app Google Business Profile creation. We create the listing on
+      // Google for her (service-area business, Make-up artist category) — she
+      // only finishes Google's identity verification. If she hasn't granted the
+      // Business Profile permission yet, the form swaps to a one-tap grant
+      // button; if Google hasn't approved our API access yet, we fall back to
+      // opening the manual step-by-step guide.
       function showGmbCreateGuide() {
         const guide = document.getElementById("gmb-create-guide");
         if (!guide) return;
         const cfg = sessionState?.workspace?.config;
         const nameHint = document.getElementById("gmb-guide-name");
         if (nameHint && cfg?.businessName) nameHint.textContent = ` — "${cfg.businessName}"`;
+        // Prefill the in-app creation form from what she's already told us.
+        const wsId = sessionState?.workspace?.workspaceId;
+        const nameEl = document.getElementById("gmbc-name");
+        const phoneEl = document.getElementById("gmbc-phone");
+        const areasEl = document.getElementById("gmbc-areas");
+        const webEl = document.getElementById("gmbc-website");
+        if (nameEl && !nameEl.value) nameEl.value = cfg?.businessName || "";
+        if (phoneEl && !phoneEl.value) phoneEl.value = cfg?.ownerWhatsApp || "";
+        if (areasEl && !areasEl.value) areasEl.value = cfg?.city || "";
+        if (webEl && wsId) webEl.value = `${window.location.origin}/book/${encodeURIComponent(wsId)}`;
         guide.style.display = "";
+        refreshGmbCreateStatus();
       }
       document.getElementById("gmb-create-toggle")?.addEventListener("click", () => {
         const guide = document.getElementById("gmb-create-guide");
         if (guide.style.display === "none") showGmbCreateGuide();
         else guide.style.display = "none";
+      });
+
+      async function refreshGmbCreateStatus() {
+        const grantBtn = document.getElementById("gmbc-grant");
+        const submitBtn = document.getElementById("gmbc-submit");
+        const statusEl = document.getElementById("gmbc-status");
+        try {
+          const payload = await getJson("/api/gmb/create-status");
+          if (!payload?.ok) return;
+          if (!payload.scopeGranted) {
+            grantBtn.style.display = "";
+            grantBtn.dataset.url = payload.grantUrl;
+            submitBtn.disabled = true;
+            statusEl.textContent = "First, allow BusyDays to manage Business Profiles on your Google account — one tap, then you're back here.";
+          } else {
+            grantBtn.style.display = "none";
+            submitBtn.disabled = false;
+            statusEl.textContent = "";
+          }
+        } catch { /* non-critical */ }
+      }
+      document.getElementById("gmbc-grant")?.addEventListener("click", (e) => {
+        window.location.href = e.currentTarget.dataset.url || "/auth/google/business";
+      });
+
+      document.getElementById("gmb-create-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const submitBtn = document.getElementById("gmbc-submit");
+        const statusEl = document.getElementById("gmbc-status");
+        statusEl.textContent = "";
+        setLoading(submitBtn, "Creating your listing…");
+        try {
+          const payload = await postJson("/api/gmb/create-profile", {
+            businessName: document.getElementById("gmbc-name").value.trim(),
+            phone: document.getElementById("gmbc-phone").value.trim(),
+            serviceAreas: document.getElementById("gmbc-areas").value,
+            website: document.getElementById("gmbc-website").value.trim(),
+          });
+          if (payload?.ok) {
+            document.getElementById("gmb-create-form").style.display = "none";
+            const list = document.getElementById("gmbc-verify-options");
+            const options = payload.verificationOptions || [];
+            list.innerHTML = options.length
+              ? options.map((o) => `<li>${escapeHtml(o.label)}</li>`).join("")
+              : "<li>Google will show your verification options on the next screen.</li>";
+            document.getElementById("gmbc-success").style.display = "";
+            toast("🎉 Your Google listing is created — just verify it with Google.", "success");
+          } else if (payload?.reason === "scope") {
+            statusEl.textContent = payload.error || "Allow Business Profile access first.";
+            refreshGmbCreateStatus();
+          } else if (payload?.reason === "approval") {
+            statusEl.textContent = payload.error || "Google is still approving our API access.";
+            const manual = document.getElementById("gmbc-manual");
+            if (manual) manual.open = true;
+          } else {
+            statusEl.textContent = payload?.error || "Google couldn't create the listing. Check the details and try again.";
+          }
+        } catch (error) {
+          statusEl.textContent = error.message;
+        } finally {
+          clearLoading(submitBtn, "✨ Create my Google listing");
+        }
       });
       document.getElementById("gmb-recheck-btn")?.addEventListener("click", () => {
         const cfg = sessionState?.workspace?.config;

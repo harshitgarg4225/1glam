@@ -11,12 +11,16 @@ export function createOAuthClient() {
   );
 }
 
-export function getAuthUrl() {
+export function getAuthUrl(extraScopes: string[] = []) {
   const client = createOAuthClient();
+  const scope = [...new Set([...appConfig.googleScopes, ...extraScopes])];
   return client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: appConfig.googleScopes,
+    scope,
+    // Keep previously granted scopes when asking for new ones, so adding
+    // Business Profile access never drops Sheets/Calendar permissions.
+    include_granted_scopes: true,
   });
 }
 
