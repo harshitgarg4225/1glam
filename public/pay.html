@@ -153,17 +153,34 @@
       document.getElementById("balance-due").textContent = inr(d.balanceDue);
       document.getElementById("payment-terms").textContent = d.paymentTerms || "";
 
-      const alreadyPaid = ["Advance Paid", "Paid in Full"].includes(d.paymentStatus || "");
-      if (alreadyPaid) {
+      // Stage-aware: collect the advance first; once it's in, the same page
+      // collects the remaining balance. Fully paid → celebrate and stop.
+      const fullyPaid = (d.paymentStatus || "") === "Paid in Full";
+      const advanceIn = (d.paymentStatus || "") === "Advance Paid";
+      const balanceStage = advanceIn && Number(d.balanceDue) > 0;
+      const stageAmount = balanceStage ? Number(d.balanceDue) : Number(d.advanceAmount);
+
+      if (fullyPaid || (advanceIn && !balanceStage)) {
+        document.getElementById("already-paid-banner").textContent = fullyPaid
+          ? "✓ Fully paid — thank you! See you at the event."
+          : "✓ Advance received — your date is locked!";
         document.getElementById("already-paid-banner").style.display = "block";
         document.getElementById("payment-card").classList.remove("hidden");
         document.querySelector(".upload-section").style.display = "none";
         return;
       }
 
+      if (balanceStage) {
+        const banner = document.getElementById("already-paid-banner");
+        banner.textContent = "✓ Advance received — your date is locked! The remaining balance is below.";
+        banner.style.display = "block";
+        document.getElementById("online-pay-btn").innerHTML = "💳 Pay balance ₹<span id=\"online-amount\"></span> online";
+        document.getElementById("upi-btn").innerHTML = "📲 Pay balance ₹<span id=\"upi-amount\"></span> via UPI";
+      }
+
       // Best path: pay online via the artist's Razorpay — instant, auto-confirmed.
-      if (d.onlinePayAvailable && d.razorpayKeyId && d.advanceAmount > 0) {
-        document.getElementById("online-amount").textContent = Math.round(d.advanceAmount).toLocaleString("en-IN");
+      if (d.onlinePayAvailable && d.razorpayKeyId && stageAmount > 0) {
+        document.getElementById("online-amount").textContent = Math.round(stageAmount).toLocaleString("en-IN");
         document.getElementById("online-pay-btn").classList.remove("hidden");
         document.getElementById("online-note").classList.remove("hidden");
         loadRazorpayScript();
@@ -171,8 +188,12 @@
 
       if (d.upiDeepLink && d.upiId) {
         const btn = document.getElementById("upi-btn");
-        btn.href = d.upiDeepLink;
-        document.getElementById("upi-amount").textContent = Math.round(d.advanceAmount).toLocaleString("en-IN");
+        // The server builds the deep link for the advance; for the balance
+        // stage just swap the amount in the same UPI link.
+        btn.href = balanceStage
+          ? d.upiDeepLink.replace(/am=[^&]*/, "am=" + encodeURIComponent(stageAmount.toFixed(2)))
+          : d.upiDeepLink;
+        document.getElementById("upi-amount").textContent = Math.round(stageAmount).toLocaleString("en-IN");
         btn.classList.remove("hidden");
         const idRow = document.getElementById("upi-id-row");
         document.getElementById("upi-id-text").textContent = d.upiId;
@@ -227,7 +248,11 @@
               });
               const vdata = await vres.json();
               if (!vres.ok || !vdata.ok) throw new Error(vdata.error || "Couldn't confirm the payment.");
-              document.getElementById("already-paid-banner").style.display = "block";
+              const banner = document.getElementById("already-paid-banner");
+              banner.textContent = vdata.paymentStatus === "Paid in Full"
+                ? "✓ Fully paid — thank you! See you at the event."
+                : "✓ Advance received — your date is locked!";
+              banner.style.display = "block";
               document.getElementById("online-pay-btn").classList.add("hidden");
               document.getElementById("online-note").classList.add("hidden");
               document.getElementById("upi-btn").classList.add("hidden");

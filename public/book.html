@@ -145,6 +145,7 @@
         <h1 id="biz-name"></h1>
         <p class="tagline hidden" id="biz-tagline"></p>
         <p class="brand-meta" id="biz-meta"></p>
+        <a class="hidden" id="google-rating-badge" target="_blank" rel="noreferrer" style="align-items:center;gap:6px;margin:2px 0 10px;padding:5px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface);font-size:13.5px;font-weight:600;color:var(--text);text-decoration:none;"></a>
         <p id="about" class="about hidden"></p>
         <div id="gallery" class="gallery hidden"></div>
 
@@ -297,6 +298,16 @@
         if (profile.tagline) {
           el("biz-tagline").textContent = profile.tagline;
           show("biz-tagline");
+        }
+        // Trust badge: her real Google rating, linking to her reviews.
+        if (profile.googleRating > 0) {
+          const badge = el("google-rating-badge");
+          badge.textContent = "★ " + profile.googleRating.toFixed(1) +
+            (profile.googleReviewCount > 0 ? " · " + profile.googleReviewCount + " Google reviews" : " on Google");
+          if (profile.googleReviewLink) badge.href = profile.googleReviewLink;
+          else badge.removeAttribute("href");
+          badge.classList.remove("hidden");
+          badge.style.display = "inline-flex";
         }
         const metaBits = [];
         if (profile.city) metaBits.push(profile.city);

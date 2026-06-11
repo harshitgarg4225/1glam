@@ -327,6 +327,71 @@ function getMetaScopes(channel: MetaChannel) {
   return channel === "instagram" ? INSTAGRAM_SCOPES : WHATSAPP_SCOPES;
 }
 
+// ---- WhatsApp template creation (in-app, no Meta Business Manager trip) ----
+// Creates a pre-approved message template on the artist's WABA. Meta reviews
+// templates (usually minutes, up to 24h); "already exists" is treated as
+// success so the setup button is safely re-runnable.
+
+export type WaTemplateSpec = {
+  name: string;
+  body: string; // with {{1}}..{{n}} placeholders
+  examples: string[]; // one example value per placeholder
+};
+
+export type WaTemplateResult = {
+  name: string;
+  status: "created" | "exists" | "failed";
+  detail: string;
+};
+
+export async function createWhatsAppTemplate(
+  accessToken: string,
+  wabaId: string,
+  spec: WaTemplateSpec,
+): Promise<WaTemplateResult> {
+  try {
+    const url = new URL(`https://graph.facebook.com/v23.0/${wabaId}/message_templates`);
+    const proof = buildAppSecretProof(accessToken);
+    if (proof) url.searchParams.set("appsecret_proof", proof);
+    const response = await fetchWithTimeout(url.toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        name: spec.name,
+        language: "en",
+        category: "UTILITY",
+        components: [
+          {
+            type: "BODY",
+            text: spec.body,
+            ...(spec.examples.length ? { example: { body_text: [spec.examples] } } : {}),
+          },
+        ],
+      }),
+    });
+    if (response.ok) {
+      return { name: spec.name, status: "created", detail: "Submitted to Meta for approval (usually minutes)." };
+    }
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: { message?: string; error_user_msg?: string };
+    };
+    const message = payload.error?.error_user_msg || payload.error?.message || `Meta returned ${response.status}.`;
+    if (/already exists|name already/i.test(message)) {
+      return { name: spec.name, status: "exists", detail: "Already set up." };
+    }
+    return { name: spec.name, status: "failed", detail: message };
+  } catch (error) {
+    return {
+      name: spec.name,
+      status: "failed",
+      detail: error instanceof Error ? error.message : "Couldn't reach Meta.",
+    };
+  }
+}
+
 async function graphGet(path: string, accessToken: string) {
   const url = new URL(`https://graph.facebook.com/v23.0/${path}`);
   url.searchParams.set("access_token", accessToken);

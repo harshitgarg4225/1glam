@@ -1137,9 +1137,12 @@
               <div class="kicker">Your people</div>
               <h2>Clients</h2>
             </div>
-            <button class="button secondary" type="button" id="open-broadcast">📣 Announce</button>
+            <div class="action-row" style="gap:8px;flex-wrap:wrap;">
+              <button class="button secondary" type="button" id="open-client-import">⬆️ Import clients</button>
+              <button class="button secondary" type="button" id="open-broadcast">📣 Announce</button>
+            </div>
           </div>
-          <p class="muted" style="margin:0 0 14px;font-size:13.5px;">Everyone who has ever reached out or booked, in one place — with what they've spent and when you last saw them.</p>
+          <p class="muted" style="margin:0 0 14px;font-size:13.5px;">Everyone who has ever reached out or booked, in one place — with what they've spent and when you last saw them. Tap a client for their full history and your private notes.</p>
           <div class="filter-bar">
             <input type="search" id="client-search" class="grow" placeholder="Search by name or number…" />
             <span class="muted" id="client-count"></span>
@@ -1188,12 +1191,15 @@
         </div>
         <div class="panel section" style="margin-top:20px;">
           <div class="kicker">Time off</div>
-          <h2>Block a day off</h2>
-          <p class="muted" style="margin:0 0 12px;font-size:13.5px;">Blocked days disappear from your booking page instantly — clients can't request them.</p>
+          <h2>Block days off</h2>
+          <p class="muted" style="margin:0 0 12px;font-size:13.5px;">Blocked days disappear from your booking page instantly — clients can't request them. Travelling? Block the whole trip in one go.</p>
           <div class="filter-bar">
-            <input type="date" id="block-date-input" />
-            <button class="button" type="button" id="block-date-btn">Block this day</button>
+            <input type="date" id="block-date-input" aria-label="From date" />
+            <span class="muted" style="font-size:13px;">to</span>
+            <input type="date" id="block-date-end" aria-label="To date (optional)" />
+            <button class="button" type="button" id="block-date-btn">Block</button>
           </div>
+          <p class="muted" style="margin:6px 0 0;font-size:12px;">Leave the second date empty to block a single day.</p>
           <div id="blocked-dates-list" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"></div>
         </div>
       </section>
@@ -1280,6 +1286,13 @@
           <div class="kicker">Everyone you work with</div>
           <h2>Your specialists</h2>
           <div id="team-list"><p class="muted">Loading team…</p></div>
+        </div>
+
+        <div class="panel section" style="margin-top:20px;">
+          <div class="kicker">Who earned what</div>
+          <h2>Earnings by specialist</h2>
+          <p class="muted" style="margin:0 0 12px;font-size:13.5px;">Job value handled by each specialist, from your bookings. Use it for commission and payouts.</p>
+          <div id="team-earnings"><p class="muted">Loading…</p></div>
         </div>
       </section>
 
@@ -1496,6 +1509,26 @@
           <h2>Connect your channels</h2>
           <p class="muted" style="margin:-4px 0 16px;font-size:14px;">Link your Instagram and WhatsApp so new enquiries arrive automatically and you can reply from one place.</p>
           <div class="workspace" id="meta-summary"></div>
+        </div>
+
+        <div class="panel section" style="margin-top:20px;">
+          <div class="kicker">One-tap setup</div>
+          <h2>WhatsApp message templates</h2>
+          <p class="muted" style="margin:0 0 12px;font-size:13.5px;">
+            WhatsApp only delivers automated messages (quotes, reminders, review requests) reliably through <strong>pre-approved templates</strong>. Instead of creating them by hand in Meta Business Manager, tap below — we create the full set on your WhatsApp Business account and wire them up for you. Meta approves them automatically, usually within minutes.
+          </p>
+          <div class="action-row" style="gap:8px;flex-wrap:wrap;">
+            <button class="button" type="button" id="wa-templates-setup-btn">✨ Create my WhatsApp templates</button>
+          </div>
+          <div id="wa-templates-results" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="panel section" style="margin-top:20px;" id="push-panel" hidden>
+          <div class="kicker">Stay in the loop</div>
+          <h2>Notifications on your phone</h2>
+          <p class="muted" style="margin:0 0 12px;font-size:13.5px;">Get a ping the moment a new request lands — even when the app is closed. Works best with BusyDays installed on your home screen.</p>
+          <button class="button" type="button" id="push-enable-btn">🔔 Turn on notifications</button>
+          <span class="muted" id="push-status" style="font-size:12.5px;margin-left:10px;"></span>
         </div>
       </section>
 
@@ -1761,8 +1794,15 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
               </div>
               <div class="section-grid" style="margin-top:20px;">
                 <div class="wide">
-                  <label for="logoUrl">Logo URL (shown top-right of every document)</label>
-                  <input id="logoUrl" name="logoUrl" placeholder="https://… a PNG or JPG of your logo" />
+                  <label for="logo-upload-input">Your logo (shown top-right of every document)</label>
+                  <p class="muted" style="margin:2px 0 8px;font-size:12.5px;">Upload a PNG or JPG from your phone or computer — it appears on every quote, invoice and contract. No logo? We use your initials in a styled badge.</p>
+                  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    <img id="logo-preview" alt="" style="display:none;height:48px;max-width:130px;object-fit:contain;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff;" />
+                    <input type="file" id="logo-upload-input" accept="image/*" style="display:none;" />
+                    <button class="button small secondary" type="button" id="logo-upload-btn">⬆️ Upload logo</button>
+                    <span class="muted" id="logo-upload-status" style="font-size:12.5px;"></span>
+                  </div>
+                  <input type="hidden" id="logoUrl" name="logoUrl" />
                 </div>
                 <div>
                   <label for="gstNumber">GSTIN (optional)</label>
@@ -1778,6 +1818,12 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                   <label for="quoteIntro">Quote intro / opening line</label>
                   <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Shown at the top of every quote — a warm note about your work, experience, or what's included. Leave blank to skip.</p>
                   <textarea id="quoteIntro" name="quoteIntro" placeholder="e.g. Thank you for choosing Glow by Aisha. Here is your personalised quote for your special day — I look forward to making you glow." style="min-height:72px;"></textarea>
+                </div>
+                <div class="wide">
+                  <label for="quotePackages">Saved quote packages (optional)</label>
+                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Define your usual bundles once, apply them to any quote in one tap from a client's order details. One per line: <em>Package name: Item=Price, Item=Price</em></p>
+                  <textarea id="quotePackages" name="quotePackages" placeholder="Bridal Package: Bridal makeup=15000, Trial session=2000, Draping=1000
+Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
                 </div>
                 <div class="wide">
                   <label for="cancellationPolicy">Cancellation &amp; rescheduling policy</label>
@@ -1923,6 +1969,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <div class="action-row" style="gap:8px;flex-wrap:wrap;">
               <button class="button" type="button" id="doc-new-quote">➕ New quote</button>
               <button class="button secondary" type="button" id="doc-new-invoice">➕ New invoice</button>
+              <a class="button secondary" href="/api/export/accountant" title="All invoices + payments for this financial year, as a CSV your accountant can open in Excel">📊 Export for accountant</a>
             </div>
           </div>
           <div id="doc-money-summary" class="payment-summary" style="display:none;margin:0 0 14px;"></div>
@@ -1989,6 +2036,54 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       </div>
     </div>
 
+    <!-- Client profile: full history + private notes -->
+    <div class="modal-overlay" id="client-profile-modal">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-head">
+          <h3 style="margin:0;" id="cp-name">Client</h3>
+          <button class="modal-close" type="button" id="client-profile-close" aria-label="Close">×</button>
+        </div>
+        <div id="cp-summary" class="muted" style="font-size:13.5px;margin:0 0 12px;"></div>
+        <div class="action-row" style="gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="cp-actions"></div>
+        <div style="margin-bottom:14px;">
+          <label for="cp-notes" style="font-size:13px;font-weight:600;">Your private notes</label>
+          <p class="muted" style="margin:2px 0 6px;font-size:12px;">Skin type, favourite looks, allergies, family details — only you see this.</p>
+          <textarea id="cp-notes" rows="3" placeholder="e.g. Sensitive skin — patch test first. Loves soft nude tones. Sister getting married next year!" style="width:100%;box-sizing:border-box;"></textarea>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <label for="cp-birthday" style="font-size:12.5px;">🎂 Birthday</label>
+            <input type="date" id="cp-birthday" style="font-size:13px;" />
+            <button class="button small" type="button" id="cp-notes-save">Save notes</button>
+            <span class="muted" id="cp-notes-status" style="font-size:12px;"></span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;">History</div>
+          <div id="cp-history" style="max-height:260px;overflow:auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import clients: paste from Excel / notebook -->
+    <div class="modal-overlay" id="client-import-modal">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-head">
+          <h3 style="margin:0;">⬆️ Import your clients</h3>
+          <button class="modal-close" type="button" id="client-import-close" aria-label="Close">×</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 10px;">
+          Bring your existing client list in — from Excel, another app, or your notebook. One client per line:
+          <strong>Name, phone</strong> (optionally <strong>, occasion, date (YYYY-MM-DD), city</strong>). Copy-paste straight from Excel — commas or tabs both work.
+        </p>
+        <textarea id="client-import-text" rows="8" placeholder="Priya Sharma, +91 98765 43210, Bridal, 2025-11-21, Mumbai
+Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:13px;"></textarea>
+        <p class="muted" id="client-import-preview" style="font-size:12.5px;margin:8px 0 0;"></p>
+        <div class="action-row" style="margin-top:12px;">
+          <button class="button" type="button" id="client-import-submit">Import clients</button>
+        </div>
+        <div class="status" id="client-import-status"></div>
+      </div>
+    </div>
+
     <!-- Create a quote/invoice straight from the Documents tab -->
     <div class="modal-overlay" id="doc-create-modal">
       <div class="modal">
@@ -2013,7 +2108,14 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         <p class="muted" style="font-size:13px;margin:0 0 6px;" id="payment-modal-context"></p>
         <div id="payment-modal-ledger" style="margin:0 0 12px;"></div>
         <form id="payment-form">
-          <div class="wizard-field"><label for="pay-amount">Amount received (₹)</label><input id="pay-amount" name="amount" type="number" min="1" required placeholder="e.g. 5000" /></div>
+          <div class="wizard-field">
+            <label for="pay-type">What are you recording?</label>
+            <select id="pay-type" name="type">
+              <option value="payment">Payment received</option>
+              <option value="refund">Refund returned to client</option>
+            </select>
+          </div>
+          <div class="wizard-field"><label for="pay-amount" id="pay-amount-label">Amount received (₹)</label><input id="pay-amount" name="amount" type="number" min="1" required placeholder="e.g. 5000" /></div>
           <div class="wizard-field">
             <label for="pay-method">How did it arrive?</label>
             <select id="pay-method" name="method">
@@ -2386,7 +2488,41 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
       function setValue(form, name, value) { const f = form.elements.namedItem(name); if (f) f.value = value ?? ""; }
-      function fillConfig(config) { Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v)); renderTemplatePicker(config.documentTemplate); reflectToneProfile(config.aiToneProfile); }
+      function fillConfig(config) {
+        Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v));
+        renderTemplatePicker(config.documentTemplate);
+        reflectToneProfile(config.aiToneProfile);
+        const logoPreview = document.getElementById("logo-preview");
+        if (logoPreview) {
+          if (config.logoUrl) { logoPreview.src = config.logoUrl; logoPreview.style.display = ""; }
+          else logoPreview.style.display = "none";
+        }
+      }
+
+      // ─── Logo upload (no URL-pasting required) ───
+      document.getElementById("logo-upload-btn")?.addEventListener("click", () => document.getElementById("logo-upload-input").click());
+      document.getElementById("logo-upload-input")?.addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const statusEl = document.getElementById("logo-upload-status");
+        statusEl.textContent = "Uploading…";
+        try {
+          const fd = new FormData();
+          fd.append("image", file);
+          const res = await fetch("/api/workspace/logo/upload", { method: "POST", body: fd });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed — try a smaller image.");
+          document.getElementById("logoUrl").value = data.logoUrl;
+          const preview = document.getElementById("logo-preview");
+          preview.src = data.logoUrl; preview.style.display = "";
+          statusEl.textContent = "✓ Logo saved — it's on all your documents now.";
+          await refreshSession();
+        } catch (error) {
+          statusEl.textContent = error.message;
+        } finally {
+          e.target.value = "";
+        }
+      });
 
       function reflectToneProfile(profile) {
         const wrap = document.getElementById("tone-profile-wrap");
@@ -2764,7 +2900,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         try {
           const log = JSON.parse(b.paymentsLog || "[]");
           if (Array.isArray(log) && log.length) {
-            return log.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+            return log.reduce((s, p) => s + (p.kind === "refund" ? -1 : 1) * (Number(p.amount) || 0), 0);
           }
         } catch {}
         const status = b.paymentStatus || "";
@@ -2899,6 +3035,18 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         });
         if (imminent.length) {
           items.push({ icon: "🚨", title: `${imminent.length} upcoming event${imminent.length > 1 ? "s" : ""} in 2 days — advance not received`, sub: imminent.map((b) => `${b.clientName} (${formatDay(b.eventDate)})`).join(", "), tab: "bookings", danger: true });
+        }
+
+        // Anniversary glam: events ~1 year ago are warm re-engagement leads
+        // (anniversary shoots, festive looks, referrals). Free revenue.
+        const anniversaries = bookings.filter((b) => {
+          if (!b.eventDate || b.status === "Cancelled") return false;
+          const d = new Date(b.eventDate); d.setHours(0, 0, 0, 0);
+          const daysAgo = Math.floor((today - d) / 86400000);
+          return daysAgo >= 330 && daysAgo <= 366;
+        });
+        if (anniversaries.length) {
+          items.push({ icon: "💞", title: `${anniversaries.length} client${anniversaries.length > 1 ? "s" : ""} had their event almost a year ago — a sweet time to reach out`, sub: anniversaries.map((b) => `${b.clientName} (${b.eventType}, ${formatDay(b.eventDate)})`).slice(0, 3).join(", "), tab: "clients", danger: false });
         }
 
         // Contracts sent but unsigned for 3+ days — nudge before the event sneaks up.
@@ -3640,15 +3788,30 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       }
       document.getElementById("block-date-btn")?.addEventListener("click", async (e) => {
         const input = document.getElementById("block-date-input");
-        const d = input.value;
-        if (!d) { toast("Pick a date first.", "error"); return; }
-        const dates = parseBlockedDates();
-        if (dates.includes(d)) { toast("That day is already blocked.", "error"); return; }
+        const endInput = document.getElementById("block-date-end");
+        const start = input.value;
+        const end = endInput.value || start;
+        if (!start) { toast("Pick a date first.", "error"); return; }
+        if (end < start) { toast("The end date is before the start date.", "error"); return; }
+        // Expand the range into individual days (capped so a typo like the
+        // wrong year can't write hundreds of dates).
+        const range = [];
+        const cursor = new Date(start + "T00:00:00");
+        const stop = new Date(end + "T00:00:00");
+        while (cursor <= stop && range.length < 90) {
+          range.push(cursor.toISOString().slice(0, 10));
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        if (range.length >= 90) { toast("That's more than 90 days — double-check the dates.", "error"); return; }
+        const existing = parseBlockedDates();
+        const fresh = range.filter((d) => !existing.includes(d));
+        if (!fresh.length) { toast(range.length > 1 ? "Those days are already blocked." : "That day is already blocked.", "error"); return; }
         setLoading(e.currentTarget, "Blocking…");
         try {
-          await saveBlockedDates([...dates, d]);
-          input.value = "";
-          toast(`${formatDay(d)} blocked — clients can't book it.`, "success");
+          await saveBlockedDates([...existing, ...fresh]);
+          input.value = ""; endInput.value = "";
+          toast(fresh.length === 1 ? `${formatDay(fresh[0])} blocked — clients can't book it.` : `${fresh.length} days blocked (${formatDay(fresh[0])} – ${formatDay(fresh[fresh.length - 1])}).`, "success");
+          renderCalendarGrid();
         } catch (error) { toast(error.message, "error"); }
         finally { clearLoading(document.getElementById("block-date-btn")); }
       });
@@ -3666,8 +3829,41 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       async function loadTeam() {
         try {
           const payload = await getJson("/api/team");
-          if (payload?.ok) { teamArtists = payload.artists || []; renderTeam(); renderLeads(); }
+          if (payload?.ok) { teamArtists = payload.artists || []; renderTeam(); renderTeamEarnings(); renderLeads(); }
         } catch (error) { document.getElementById("team-list").innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
+      }
+
+      // Per-specialist earnings from booking assignments: this month + all
+      // time, with collected money — the basis for commission/payouts.
+      function renderTeamEarnings() {
+        const box = document.getElementById("team-earnings");
+        if (!box) return;
+        const bookings = (sessionState?.dashboard?.bookings || []).filter((b) => b.status !== "Cancelled");
+        if (!bookings.length) {
+          box.innerHTML = `<p class="muted" style="font-size:13.5px;">Earnings appear here once you have bookings with assigned specialists.</p>`;
+          return;
+        }
+        const monthKey = new Date().toISOString().slice(0, 7);
+        const byArtist = {};
+        for (const b of bookings) {
+          const name = (b.assignedArtist || "").trim() || "Unassigned";
+          const row = (byArtist[name] = byArtist[name] || { jobs: 0, value: 0, collected: 0, monthJobs: 0, monthValue: 0 });
+          row.jobs += 1;
+          row.value += Number(b.finalPrice || 0);
+          row.collected += bookingPaidTotal(b);
+          if ((b.eventDate || "").startsWith(monthKey)) { row.monthJobs += 1; row.monthValue += Number(b.finalPrice || 0); }
+        }
+        const rows = Object.entries(byArtist).sort((a, b) => b[1].value - a[1].value);
+        box.innerHTML = `<div class="table-wrap cards-on-mobile"><table>
+          <thead><tr><th>Specialist</th><th>This month</th><th>All time</th><th>Collected</th></tr></thead>
+          <tbody>${rows.map(([name, r]) => `
+            <tr>
+              <td data-label="Specialist"><strong>${escapeHtml(name)}</strong></td>
+              <td data-label="This month">${r.monthJobs ? `${r.monthJobs} job${r.monthJobs > 1 ? "s" : ""} · ${formatMoney(r.monthValue)}` : "—"}</td>
+              <td data-label="All time">${r.jobs} job${r.jobs > 1 ? "s" : ""} · ${formatMoney(r.value)}</td>
+              <td data-label="Collected" style="color:var(--success);">${formatMoney(r.collected)}</td>
+            </tr>`).join("")}
+          </tbody></table></div>`;
       }
       function renderTeam() {
         const list = document.getElementById("team-list");
@@ -3824,7 +4020,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
                 <strong>${escapeHtml(c.name)}</strong>
                 <span class="muted">${escapeHtml(c.address)}${c.rating ? ` · ★ ${c.rating} (${c.userRatingsTotal || 0})` : ""}</span>
               </div>
-              <button class="button small" type="button" data-gmb-place="${escapeHtml(c.placeId)}">This is me</button>
+              <button class="button small" type="button" data-gmb-place="${escapeHtml(c.placeId)}" data-gmb-rating="${c.rating || ""}" data-gmb-count="${c.userRatingsTotal || ""}">This is me</button>
             </div>`).join("");
         } catch (error) {
           status.textContent = error.message;
@@ -3944,7 +4140,11 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const status = document.getElementById("gmb-status");
         setLoading(btn, "Connecting…");
         try {
-          const payload = await postJson("/api/gmb/select", { placeId: btn.getAttribute("data-gmb-place") });
+          const payload = await postJson("/api/gmb/select", {
+            placeId: btn.getAttribute("data-gmb-place"),
+            rating: Number(btn.getAttribute("data-gmb-rating")) || undefined,
+            userRatingsTotal: Number(btn.getAttribute("data-gmb-count")) || undefined,
+          });
           if (!payload?.ok) throw new Error(payload?.error || "Failed");
           await refreshSession();
           gmbForceSetup = false;
@@ -4891,8 +5091,18 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       function orderEditorHtml(lead) {
         const items = parseLeadOrderItems(lead);
         const rows = (items.length ? items : [{}]).map(orderRowHtml).join("");
+        const packages = parseQuotePackages();
+        const packagePicker = packages.length
+          ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+              <select data-order-package style="flex:1;font-size:13px;">
+                <option value="">✨ Apply a saved package…</option>
+                ${packages.map((p, i) => `<option value="${i}">${escapeHtml(p.name)} — ${formatMoney(p.total)}</option>`).join("")}
+              </select>
+            </div>`
+          : "";
         return `<div class="drawer-section">
           <div class="drawer-section-title">Order details</div>
+          ${packagePicker}
           <div style="display:flex;gap:6px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
             <span style="flex:2;">Line item</span><span style="flex:0 0 52px;text-align:center;">Qty</span><span style="flex:1;">Price</span><span style="flex:0 0 72px;text-align:right;">Total</span><span style="flex:0 0 26px;"></span>
           </div>
@@ -4905,6 +5115,38 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           <p class="muted" style="font-size:12px;margin:8px 0 0;">This sets the quoted price and flows into the quote, invoice and contract.</p>
         </div>`;
       }
+      // Saved quote packages from Settings: "Bridal Package: Bridal=15000, Trial=2000"
+      function parseQuotePackages() {
+        return String(sessionState?.workspace?.config?.quotePackages || "")
+          .split(/\n/)
+          .map((line) => {
+            const m = line.match(/^([^:]+):(.+)$/);
+            if (!m) return null;
+            const items = m[2].split(",").map((part) => {
+              const im = part.match(/^(.+)=\s*([\d.]+)\s*$/);
+              return im ? { label: im[1].trim(), quantity: 1, unitPrice: Number(im[2]) || 0 } : null;
+            }).filter((it) => it && it.label && it.unitPrice > 0);
+            if (!items.length) return null;
+            return { name: m[1].trim(), items, total: items.reduce((s, it) => s + it.unitPrice, 0) };
+          })
+          .filter(Boolean)
+          .slice(0, 12);
+      }
+
+      // Applying a package fills the order grid with its line items.
+      leadDrawerBody.addEventListener("change", (e) => {
+        const sel = e.target.closest("[data-order-package]");
+        if (!sel || sel.value === "") return;
+        const pkg = parseQuotePackages()[Number(sel.value)];
+        if (!pkg) return;
+        const grid = leadDrawerBody.querySelector("[data-order-grid]");
+        if (!grid) return;
+        grid.innerHTML = pkg.items.map((it) => orderRowHtml(it)).join("");
+        sel.value = "";
+        computeOrderTotals();
+        toast(`"${pkg.name}" applied — tweak the lines and save.`, "success");
+      });
+
       function computeOrderTotals() {
         let grand = 0;
         leadDrawerBody.querySelectorAll(".order-row").forEach((row) => {
@@ -5491,15 +5733,194 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       }
       document.getElementById("client-search")?.addEventListener("input", renderClients);
       document.getElementById("clients-list")?.addEventListener("click", (e) => {
-        // "Book again" is handled by the body-level delegate — don't also open the drawer.
+        // "Book again" is handled by the body-level delegate — don't also open the profile.
         if (e.target.closest("[data-book-again-name]")) return;
         const row = e.target.closest("[data-client-index]");
         if (!row) return;
         const clients = document.getElementById("clients-list")._clients || [];
         const c = clients[Number(row.getAttribute("data-client-index"))];
-        if (c?.latestLead) { openLeadDrawer(c.latestLead); }
-        else toast("No request history for this client yet.", "error");
+        if (c) openClientProfile(c);
       });
+
+      // ─── Client profile: lifetime history + private notes ───
+      const clientProfileModal = document.getElementById("client-profile-modal");
+      let clientProfilePhone = "";
+
+      async function openClientProfile(c) {
+        clientProfilePhone = String(c.phone || "").replace(/\D/g, "");
+        document.getElementById("cp-name").textContent = c.name || "Client";
+        const digits = clientProfilePhone;
+        const leads = (sessionState?.dashboard?.leads || []).filter((l) => String(l.clientWhatsApp || "").replace(/\D/g, "") === digits);
+        const bookings = (sessionState?.dashboard?.bookings || []).filter((b) => String(b.clientWhatsApp || "").replace(/\D/g, "") === digits);
+        const spent = bookings.filter((b) => b.status !== "Cancelled").reduce((s, b) => s + bookingPaidTotal(b), 0);
+        const booked = bookings.filter((b) => b.status !== "Cancelled").reduce((s, b) => s + Number(b.finalPrice || 0), 0);
+        document.getElementById("cp-summary").textContent =
+          `${c.phone || "No number"} · ${bookings.length} booking${bookings.length === 1 ? "" : "s"}, ${leads.length} request${leads.length === 1 ? "" : "s"} · ${formatMoney(booked)} booked, ${formatMoney(spent)} received`;
+        document.getElementById("cp-actions").innerHTML = [
+          digits ? `<a class="button small secondary" style="text-decoration:none;" href="https://wa.me/${digits}" target="_blank" rel="noreferrer">💬 WhatsApp</a>` : "",
+          `<button class="button small secondary" type="button" data-book-again-name="${escapeHtml(c.name || "")}" data-book-again-phone="${escapeHtml(c.phone || "")}">🔁 Book again</button>`,
+        ].filter(Boolean).join("");
+
+        // History: bookings and requests interleaved, newest first.
+        const events = [
+          ...bookings.map((b) => ({ at: b.eventDate || b.bookedAt, html: `<div class="upcoming-item"><div class="upcoming-body"><div class="upcoming-client">💄 ${escapeHtml(b.eventType)} · <span class="muted">${escapeHtml(formatDay(b.eventDate))}</span> ${b.status === "Cancelled" ? '<span class="pill danger" style="font-size:10px;">Cancelled</span>' : ""}</div><div class="upcoming-meta">${escapeHtml(b.venue || "")} · ${formatMoney(b.finalPrice)} · ${escapeHtml(b.paymentStatus || "")}</div></div></div>` })),
+          ...leads.filter((l) => !l.bookingId).map((l) => ({ at: l.eventDate || l.createdAt, html: `<div class="upcoming-item"><div class="upcoming-body"><div class="upcoming-client">📩 ${escapeHtml(l.eventType)} request · <span class="muted">${escapeHtml(formatDay(l.eventDate || l.createdAt))}</span></div><div class="upcoming-meta">${escapeHtml(statusLabel(l.status))}${l.locationText ? " · " + escapeHtml(l.locationText) : ""}</div></div></div>` })),
+        ].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+        document.getElementById("cp-history").innerHTML = events.length
+          ? events.map((ev) => ev.html).join("")
+          : `<p class="muted" style="font-size:13px;">No history yet.</p>`;
+
+        // Notes load asynchronously so the modal opens instantly.
+        document.getElementById("cp-notes").value = "";
+        document.getElementById("cp-birthday").value = "";
+        document.getElementById("cp-notes-status").textContent = "Loading notes…";
+        clientProfileModal.classList.add("open");
+        try {
+          const notes = await getJson(`/api/clients/${encodeURIComponent(digits || "unknown")}/notes`);
+          if (notes?.ok) {
+            document.getElementById("cp-notes").value = notes.notes || "";
+            document.getElementById("cp-birthday").value = notes.birthday || "";
+          }
+          document.getElementById("cp-notes-status").textContent = "";
+        } catch {
+          document.getElementById("cp-notes-status").textContent = "";
+        }
+      }
+      document.getElementById("client-profile-close")?.addEventListener("click", () => clientProfileModal.classList.remove("open"));
+      clientProfileModal?.addEventListener("click", (e) => { if (e.target === clientProfileModal) clientProfileModal.classList.remove("open"); });
+      document.getElementById("cp-notes-save")?.addEventListener("click", async (e) => {
+        const statusEl = document.getElementById("cp-notes-status");
+        setLoading(e.currentTarget, "Saving…");
+        try {
+          await postJson(`/api/clients/${encodeURIComponent(clientProfilePhone || "unknown")}/notes`, {
+            notes: document.getElementById("cp-notes").value,
+            birthday: document.getElementById("cp-birthday").value,
+          });
+          statusEl.textContent = "✓ Saved";
+          setTimeout(() => { statusEl.textContent = ""; }, 2000);
+        } catch (error) {
+          statusEl.textContent = error.message;
+        } finally {
+          clearLoading(document.getElementById("cp-notes-save"), "Save notes");
+        }
+      });
+
+      // ─── Import clients (paste from Excel / CSV) ───
+      const clientImportModal = document.getElementById("client-import-modal");
+      function parseImportText(text) {
+        return String(text || "")
+          .split(/\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const parts = line.split(/\t|,/).map((p) => p.trim());
+            return {
+              clientName: parts[0] || "",
+              clientWhatsApp: parts[1] || "",
+              eventType: parts[2] || "",
+              eventDate: parts[3] || "",
+              locationText: parts[4] || "",
+            };
+          })
+          .filter((row) => row.clientName && String(row.clientWhatsApp).replace(/\D/g, "").length >= 8);
+      }
+      document.getElementById("open-client-import")?.addEventListener("click", () => {
+        document.getElementById("client-import-text").value = "";
+        document.getElementById("client-import-preview").textContent = "";
+        document.getElementById("client-import-status").textContent = "";
+        clientImportModal.classList.add("open");
+        setTimeout(() => document.getElementById("client-import-text").focus(), 50);
+      });
+      document.getElementById("client-import-close")?.addEventListener("click", () => clientImportModal.classList.remove("open"));
+      clientImportModal?.addEventListener("click", (e) => { if (e.target === clientImportModal) clientImportModal.classList.remove("open"); });
+      document.getElementById("client-import-text")?.addEventListener("input", debounce(() => {
+        const rows = parseImportText(document.getElementById("client-import-text").value);
+        document.getElementById("client-import-preview").textContent = rows.length
+          ? `✓ ${rows.length} client${rows.length > 1 ? "s" : ""} ready to import.`
+          : "";
+      }, 200));
+      document.getElementById("client-import-submit")?.addEventListener("click", async (e) => {
+        const rows = parseImportText(document.getElementById("client-import-text").value);
+        const statusEl = document.getElementById("client-import-status");
+        if (!rows.length) { statusEl.textContent = "Add at least one line with a name and a phone number."; return; }
+        setLoading(e.currentTarget, "Importing…");
+        try {
+          const result = await postJson("/api/clients/import", { rows });
+          clientImportModal.classList.remove("open");
+          toast(`🎉 ${result.imported} client${result.imported === 1 ? "" : "s"} imported${result.skipped ? ` (${result.skipped} skipped — duplicates or missing numbers)` : ""}.`, "success");
+          await refreshSession();
+        } catch (error) {
+          statusEl.textContent = error.message;
+        } finally {
+          clearLoading(document.getElementById("client-import-submit"), "Import clients");
+        }
+      });
+
+      // ─── WhatsApp template setup (one tap, no Meta Business Manager) ───
+      document.getElementById("wa-templates-setup-btn")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        const box = document.getElementById("wa-templates-results");
+        setLoading(btn, "Creating templates…");
+        box.innerHTML = "";
+        try {
+          const payload = await postJson("/api/channels/whatsapp/templates/setup", {});
+          if (!payload?.ok) throw new Error(payload?.error || "Setup failed");
+          const icon = (s) => (s === "created" ? "🟢" : s === "exists" ? "✓" : "⚠️");
+          box.innerHTML = `<div style="background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13px;">` +
+            payload.results.map((r) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;"><span>${icon(r.status)} <code style="font-size:12px;">${escapeHtml(r.name)}</code></span><span class="muted" style="font-size:12px;">${escapeHtml(r.detail)}</span></div>`).join("") +
+            `</div>`;
+          const failed = payload.results.filter((r) => r.status === "failed").length;
+          toast(failed ? `Templates created with ${failed} issue${failed > 1 ? "s" : ""} — see details below.` : "🎉 All templates created and wired up. Meta usually approves them within minutes.", failed ? "info" : "success");
+          await refreshSession();
+        } catch (error) {
+          box.innerHTML = `<p class="muted" style="font-size:13px;">${escapeHtml(error.message)}</p>`;
+        } finally {
+          clearLoading(btn, "✨ Create my WhatsApp templates");
+        }
+      });
+
+      // ─── Web push notifications ───
+      function urlBase64ToUint8Array(base64) {
+        const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+        const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+        return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+      }
+      async function initPushPanel() {
+        const panel = document.getElementById("push-panel");
+        if (!panel || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+        try {
+          const cfg = await getJson("/api/push/config");
+          if (!cfg?.enabled) return;
+          panel.hidden = false;
+          panel._publicKey = cfg.publicKey;
+          const reg = await navigator.serviceWorker.ready;
+          const existing = await reg.pushManager.getSubscription();
+          if (existing) {
+            document.getElementById("push-enable-btn").textContent = "✓ Notifications are on";
+            document.getElementById("push-enable-btn").disabled = true;
+          }
+        } catch { /* non-critical */ }
+      }
+      document.getElementById("push-enable-btn")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        const statusEl = document.getElementById("push-status");
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission !== "granted") { statusEl.textContent = "Notifications were blocked — allow them in your browser settings."; return; }
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(document.getElementById("push-panel")._publicKey),
+          });
+          await postJson("/api/push/subscribe", { subscription: sub.toJSON() });
+          btn.textContent = "✓ Notifications are on";
+          btn.disabled = true;
+          toast("🔔 You'll get a ping for every new request.", "success");
+        } catch (error) {
+          statusEl.textContent = error.message || "Couldn't enable notifications.";
+        }
+      });
+      initPushPanel();
 
       // ─── Quick booking: walk-in/phone booking in one step ───
       const quickBookingModal = document.getElementById("quick-booking-modal");
@@ -5899,11 +6320,16 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         const ledger = parseLedger(b.paymentsLog);
         document.getElementById("payment-modal-ledger").innerHTML = ledger.length
           ? `<div style="background:var(--surface,#f8f5f2);border:1px solid var(--line,#eee);border-radius:8px;padding:8px 12px;font-size:12.5px;">` +
-            ledger.map((p) => `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note ? " · " + escapeHtml(p.note) : ""}</span><strong>${formatMoney(p.amount)}</strong></div>`).join("") +
+            ledger.map((p) => {
+              const refund = p.kind === "refund";
+              return `<div style="display:flex;justify-content:space-between;padding:2px 0;${refund ? "color:#b3422f;" : ""}"><span>${refund ? "↩ Refund · " : ""}${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note ? " · " + escapeHtml(p.note) : ""}</span><strong>${refund ? "-" : ""}${formatMoney(p.amount)}</strong></div>`;
+            }).join("") +
             `</div>`
           : "";
         const amountInput = document.getElementById("pay-amount");
         amountInput.value = owed > 0 ? String(owed <= Number(b.advanceAmount || 0) || paid > 0 ? owed : b.advanceAmount) : "";
+        document.getElementById("pay-type").value = "payment";
+        document.getElementById("pay-amount-label").textContent = "Amount received (₹)";
         document.getElementById("pay-note").value = "";
         document.getElementById("payment-form-status").textContent = "";
         paymentModal.classList.add("open");
@@ -5911,6 +6337,10 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       }
 
       function closePaymentModal() { paymentModal.classList.remove("open"); }
+      document.getElementById("pay-type")?.addEventListener("change", (e) => {
+        document.getElementById("pay-amount-label").textContent =
+          e.target.value === "refund" ? "Amount refunded (₹)" : "Amount received (₹)";
+      });
       document.getElementById("payment-modal-close")?.addEventListener("click", closePaymentModal);
       paymentModal?.addEventListener("click", (e) => { if (e.target === paymentModal) closePaymentModal(); });
 
@@ -5921,14 +6351,16 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         if (!amount || amount <= 0) { document.getElementById("payment-form-status").textContent = "Enter the amount you received."; return; }
         setLoading(btn, "Saving…");
         try {
+          const type = document.getElementById("pay-type").value;
           const res = await postJson(`/api/bookings/${paymentModalBookingId}/payments`, {
             amount,
             method: document.getElementById("pay-method").value,
             note: document.getElementById("pay-note").value,
+            type,
           });
           closePaymentModal();
           const nowPaid = res?.booking?.paymentStatus === "Paid in Full";
-          toast(nowPaid ? `🎉 ${res.booking.clientName} is fully paid — lovely!` : `Payment of ${formatMoney(amount)} recorded.`, "success");
+          toast(type === "refund" ? `Refund of ${formatMoney(amount)} recorded.` : nowPaid ? `🎉 ${res.booking.clientName} is fully paid — lovely!` : `Payment of ${formatMoney(amount)} recorded.`, "success");
           await refreshSession();
         } catch (error) {
           document.getElementById("payment-form-status").textContent = error.message;

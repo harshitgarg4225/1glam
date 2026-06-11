@@ -48,6 +48,9 @@ const envSchema = z.object({
   LEEGALITY_API_KEY: z.string().optional().default(""),
   LEEGALITY_API_KEY_HEADER: z.string().default("X-Auth-Token"),
   LEEGALITY_WEBHOOK_SECRET: z.string().optional().default(""),
+  // Web push (PWA notifications). Generate once with: npx web-push generate-vapid-keys
+  VAPID_PUBLIC_KEY: z.string().optional().default(""),
+  VAPID_PRIVATE_KEY: z.string().optional().default(""),
   GOOGLE_OAUTH_SCOPES: z
     .string()
     .default(
@@ -115,6 +118,8 @@ export const appConfig = {
   leegalityApiKeyHeader: parsed.LEEGALITY_API_KEY_HEADER,
   leegalityWebhookSecret: parsed.LEEGALITY_WEBHOOK_SECRET,
   googleScopes: parsed.GOOGLE_OAUTH_SCOPES.split(",").map((scope) => scope.trim()).filter(Boolean),
+  vapidPublicKey: parsed.VAPID_PUBLIC_KEY,
+  vapidPrivateKey: parsed.VAPID_PRIVATE_KEY,
   workspaceDbPath: path.join(process.cwd(), "data", "workspaces.json"),
 };
 
