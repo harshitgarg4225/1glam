@@ -571,6 +571,7 @@ app.get("/api/public/contract/:workspaceId/:bookingId", async (req, res, next) =
       signed: Boolean(booking.contractSignedAt),
       signedAt: booking.contractSignedAt,
       signerName: booking.contractSignerName,
+      sentAt: booking.contractSentAt,
       pdfUrl: buildPublicDocumentUrl("contract", workspaceId, bookingId),
     });
   } catch (error) {
@@ -2200,6 +2201,7 @@ function sanitizeAdjustmentsInput(body: unknown): string {
     amountOverride?: unknown;
     lineItems?: unknown;
     note?: unknown;
+    discountPercent?: unknown;
   };
   const lineItems = Array.isArray(input.lineItems)
     ? input.lineItems
@@ -2211,13 +2213,18 @@ function sanitizeAdjustmentsInput(body: unknown): string {
         .slice(0, 20)
     : [];
   const amountOverrideRaw = Number(input.amountOverride);
+  const discountRaw = Number(input.discountPercent);
   const adjustments = {
     amountOverride: Number.isFinite(amountOverrideRaw) && amountOverrideRaw > 0 ? amountOverrideRaw : undefined,
     lineItems: lineItems.length ? lineItems : undefined,
     note: typeof input.note === "string" && input.note.trim() ? input.note.trim().slice(0, 600) : undefined,
+    discountPercent:
+      Number.isFinite(discountRaw) && discountRaw > 0 && discountRaw < 100
+        ? Math.round(discountRaw * 100) / 100
+        : undefined,
   };
   // Empty edit clears the adjustments entirely.
-  if (!adjustments.amountOverride && !adjustments.lineItems && !adjustments.note) return "";
+  if (!adjustments.amountOverride && !adjustments.lineItems && !adjustments.note && !adjustments.discountPercent) return "";
   return JSON.stringify(adjustments);
 }
 

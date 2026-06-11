@@ -1455,6 +1455,9 @@
                 <div id="chart-event-type"></div>
               </div>
             </div>
+            <h3 style="margin:28px 0 4px;font-size:16px;">Your repeat clients</h3>
+            <p class="muted" style="margin:0 0 12px;font-size:13px;">Clients who book again are your most profitable — they cost nothing to win and they refer friends.</p>
+            <div id="chart-repeats"></div>
           </div>
         </div>
       </section>
@@ -2155,9 +2158,15 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         <form id="doc-edit-form">
           <input type="hidden" id="doc-edit-kind" />
           <input type="hidden" id="doc-edit-recordid" />
-          <div style="margin-bottom:12px;">
-            <label for="doc-edit-amount">Amount override (₹)</label>
-            <input type="number" id="doc-edit-amount" min="0" step="1" placeholder="Auto" />
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div>
+              <label for="doc-edit-amount">Amount override (₹)</label>
+              <input type="number" id="doc-edit-amount" min="0" step="1" placeholder="Auto" />
+            </div>
+            <div>
+              <label for="doc-edit-discount">Discount %</label>
+              <input type="number" id="doc-edit-discount" min="0" max="99" step="0.5" placeholder="e.g. 10" />
+            </div>
           </div>
           <label>Extra line items</label>
           <div id="doc-edit-lineitems" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
@@ -2543,6 +2552,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         document.getElementById("doc-edit-recordid").value = id;
         document.getElementById("doc-edit-title").textContent = `Edit ${DOC_LABELS[kind].toLowerCase()}${doc ? " · " + doc.client : ""}`;
         document.getElementById("doc-edit-amount").value = "";
+        document.getElementById("doc-edit-discount").value = "";
         document.getElementById("doc-edit-note").value = "";
         document.getElementById("doc-edit-lineitems").innerHTML = "";
         docEditModal.classList.add("open");
@@ -2569,10 +2579,12 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           label: row.querySelector("[data-li-label]").value.trim(),
           amount: Number(row.querySelector("[data-li-amount]").value) || 0,
         })).filter((it) => it.label && it.amount);
+        const discountRaw = document.getElementById("doc-edit-discount").value;
         const payload = {
           amountOverride: amountRaw ? Number(amountRaw) : undefined,
           lineItems,
           note: document.getElementById("doc-edit-note").value.trim() || undefined,
+          discountPercent: discountRaw ? Number(discountRaw) : undefined,
         };
         const saveBtn = document.getElementById("doc-edit-save");
         setLoading(saveBtn, "Saving…");
@@ -2727,6 +2739,17 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         });
         if (imminent.length) {
           items.push({ icon: "🚨", title: `${imminent.length} upcoming event${imminent.length > 1 ? "s" : ""} in 2 days — advance not received`, sub: imminent.map((b) => `${b.clientName} (${formatDay(b.eventDate)})`).join(", "), tab: "bookings", danger: true });
+        }
+
+        // Contracts sent but unsigned for 3+ days — nudge before the event sneaks up.
+        const unsignedContracts = bookings.filter((b) => {
+          if (bookingIsActive(b) === false) return false;
+          if (b.contractStatus !== "Sent" || b.contractSignedAt) return false;
+          const ds = daysSince(b.contractSentAt);
+          return ds !== null && ds >= 3;
+        });
+        if (unsignedContracts.length) {
+          items.push({ icon: "✍️", title: `${unsignedContracts.length} contract${unsignedContracts.length > 1 ? "s" : ""} sent but still unsigned — worth a gentle nudge`, sub: unsignedContracts.map((b) => `${b.clientName} (sent ${daysSince(b.contractSentAt)}d ago)`).slice(0, 3).join(", "), tab: "bookings", danger: false });
         }
 
         if (!items.length) { section.style.display = "none"; return; }
@@ -3969,6 +3992,36 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           byEventType.map((e) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;">
             <span>${escapeHtml(e.type)}</span><span style="font-weight:600;">${formatMoney(e.revenue)}</span>
           </div>`).join("") || "<p style='color:var(--muted);font-size:14px;'>No data yet.</p>";
+
+        renderRepeatClients();
+      }
+
+      // Repeat clients, grouped by phone number across all bookings.
+      function renderRepeatClients() {
+        const box = document.getElementById("chart-repeats");
+        if (!box) return;
+        const bookings = (sessionState?.dashboard?.bookings || []).filter((b) => b.status !== "Cancelled");
+        const byClient = {};
+        for (const b of bookings) {
+          const key = String(b.clientWhatsApp || "").replace(/\D/g, "") || b.clientName;
+          if (!key) continue;
+          (byClient[key] = byClient[key] || { name: b.clientName, count: 0, revenue: 0 }).count += 1;
+          byClient[key].revenue += Number(b.finalPrice || 0);
+          byClient[key].name = b.clientName || byClient[key].name;
+        }
+        const repeats = Object.values(byClient).filter((c) => c.count >= 2).sort((a, b) => b.revenue - a.revenue);
+        if (!repeats.length) {
+          box.innerHTML = "<p style='color:var(--muted);font-size:14px;'>No repeat clients yet. After an event, the automatic review request and a friendly check-in a few months later work wonders.</p>";
+          return;
+        }
+        const totalRevenue = bookings.reduce((s, b) => s + Number(b.finalPrice || 0), 0);
+        const repeatRevenue = repeats.reduce((s, c) => s + c.revenue, 0);
+        const pct = totalRevenue > 0 ? Math.round((repeatRevenue / totalRevenue) * 100) : 0;
+        box.innerHTML =
+          `<p style="font-size:14px;margin:0 0 10px;"><strong>${pct}%</strong> of your revenue comes from clients who booked more than once.</p>` +
+          repeats.slice(0, 10).map((c) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;">
+            <span>💖 ${escapeHtml(c.name)} <span class="muted" style="font-size:12px;">· ${c.count} bookings</span></span><span style="font-weight:600;">${formatMoney(c.revenue)}</span>
+          </div>`).join("");
       }
 
       // ---- My Page (booking page sharing + portfolio) ----
@@ -4755,6 +4808,11 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       document.getElementById("lead-drawer-close").addEventListener("click", closeLeadDrawer);
       leadDrawerOverlay.addEventListener("click", closeLeadDrawer);
       document.addEventListener("keydown", (e) => { if (e.key === "Escape" && leadDrawer.classList.contains("open")) closeLeadDrawer(); });
+      // Escape closes any open modal (keyboard users shouldn't get trapped).
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        document.querySelectorAll(".modal-overlay.open, .confirm-overlay.open").forEach((m) => m.classList.remove("open"));
+      });
 
       // Handle drawer action buttons.
       leadDrawer.addEventListener("click", async (e) => {

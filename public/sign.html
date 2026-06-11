@@ -21,7 +21,9 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 36px 32px; max-width: 460px; width: 100%; box-shadow: var(--shadow); }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 36px 32px; max-width: 640px; width: 100%; box-shadow: var(--shadow); }
+    .contract-frame { width: 100%; height: 46vh; min-height: 280px; border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 18px; }
+    .sent-note { text-align: center; font-size: 12.5px; color: var(--muted); margin-bottom: 16px; }
     .kicker { text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
     h1 { font-size: 26px; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }
     .biz { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
@@ -63,7 +65,9 @@
         <div class="row price-row"><span class="label">Booking value</span><span class="value" id="price"></span></div>
       </div>
 
-      <a class="view-link" id="pdf-link" href="#" target="_blank" rel="noreferrer">📄 Read the full contract (PDF)</a>
+      <iframe class="contract-frame" id="contract-frame" title="Your contract"></iframe>
+      <div class="sent-note" id="sent-note" style="display:none;"></div>
+      <a class="view-link" id="pdf-link" href="#" target="_blank" rel="noreferrer">📄 Open the contract in a new tab</a>
 
       <div id="signed-state" style="display:none;">
         <div class="signed-banner" id="signed-banner"></div>
@@ -123,6 +127,12 @@
         else document.getElementById("venue-row").style.display = "none";
         document.getElementById("price").textContent = fmtMoney(data.finalPrice);
         document.getElementById("pdf-link").href = data.pdfUrl;
+        document.getElementById("contract-frame").src = data.pdfUrl;
+        if (data.sentAt) {
+          const sn = document.getElementById("sent-note");
+          sn.style.display = "";
+          sn.textContent = "Contract sent on " + new Date(data.sentAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+        }
         if (data.signed) showSigned(data.signerName, data.signedAt);
         else document.getElementById("sign-form").style.display = "";
       } catch (err) {
