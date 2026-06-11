@@ -361,3 +361,27 @@ test("parseDocumentAdjustments keeps a valid discount and drops junk ones", () =
   assert.equal(parseDocumentAdjustments(JSON.stringify({ discountPercent: 100 })).discountPercent, undefined);
   assert.equal(parseDocumentAdjustments(JSON.stringify({ discountPercent: "lots" })).discountPercent, undefined);
 });
+
+// --- Refunds in the payment ledger -----------------------------------------------
+
+test("refund entries subtract from the total and statuses reflect net money", () => {
+  const log = parsePaymentsLog(JSON.stringify([
+    { amount: 15000, method: "UPI", kind: "payment", at: "2026-01-05" },
+    { amount: 5000, method: "Bank Transfer", kind: "refund", at: "2026-02-01", note: "date changed" },
+  ]));
+  assert.equal(log.length, 2);
+  assert.equal(log[1].kind, "refund");
+  assert.equal(paymentsTotal(log), 10000);
+  // Net of the refund the advance (15k) is no longer fully covered.
+  assert.equal(derivePaymentStatus(50000, 15000, paymentsTotal(log)), "Advance Due");
+  // Entries without a kind default to payments (backwards compatible).
+  const legacy = parsePaymentsLog(JSON.stringify([{ amount: 5000, method: "Cash" }]));
+  assert.equal(legacy[0].kind, "payment");
+  assert.equal(paymentsTotal(legacy), 5000);
+});
+
+test("recordPaymentSchema accepts refunds and defaults to payment", () => {
+  assert.equal(recordPaymentSchema.parse({ amount: 100 }).type, "payment");
+  assert.equal(recordPaymentSchema.parse({ amount: 100, type: "refund" }).type, "refund");
+  assert.throws(() => recordPaymentSchema.parse({ amount: 100, type: "chargeback" }));
+});

@@ -71,4 +71,6 @@ export const recordPaymentSchema = z.object({
   amount: z.coerce.number().positive().max(100000000),
   method: z.enum(["UPI", "Cash", "Bank Transfer", "Card", "Razorpay", "Other"]).optional().default("UPI"),
   note: z.string().max(120).optional().default(""),
+  // "refund" records money returned to the client (subtracts from the total).
+  type: z.enum(["payment", "refund"]).optional().default("payment"),
 });

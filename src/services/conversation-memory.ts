@@ -75,3 +75,30 @@ export async function saveConversationMemory(input: ConversationMemoryInput) {
 export function getConversationMemoryPath(workspaceId: string, leadId: string) {
   return path.join(process.cwd(), "data", "conversation-memory", workspaceId, `${leadId}.md`);
 }
+
+// Raw key-value access to the same store, for small per-client records (e.g.
+// client notes) that don't fit the conversation-markdown shape.
+export async function readMemoryRaw(workspaceId: string, key: string): Promise<string> {
+  if (conversationMemoryUsesPostgres()) {
+    try {
+      return await readConversationMemory(workspaceId, key);
+    } catch {
+      return "";
+    }
+  }
+  try {
+    return await fs.readFile(getConversationMemoryPath(workspaceId, key), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+export async function writeMemoryRaw(workspaceId: string, key: string, content: string): Promise<void> {
+  if (conversationMemoryUsesPostgres()) {
+    await writeConversationMemory(workspaceId, key, content);
+    return;
+  }
+  const filePath = getConversationMemoryPath(workspaceId, key);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, content, "utf8");
+}

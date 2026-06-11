@@ -47,6 +47,10 @@ export type PublicBusinessProfile = {
   tagline: string;
   eventTypes: PublicEventType[];
   availability: PublicAvailability;
+  // Trust badge: Google rating snapshot + the public review-page link.
+  googleRating: number;
+  googleReviewCount: number;
+  googleReviewLink: string;
 };
 
 export type PublicPaymentDetails = {
@@ -207,6 +211,9 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
     tagline: String(config.tagline || ""),
     eventTypes,
     availability: buildAvailability(config),
+    googleRating: Math.min(5, Math.max(0, Number(config.googleRating) || 0)),
+    googleReviewCount: Math.max(0, Math.round(Number(config.googleReviewCount) || 0)),
+    googleReviewLink: sanitizeUrl(config.googleReviewLink),
   };
 }
 
@@ -233,6 +240,26 @@ export async function getPublicBusinessProfile(workspaceId: string): Promise<Pub
   const workspace = await findWorkspaceByWorkspaceId(workspaceId);
   if (!workspace) return null;
   return buildPublicProfile(workspace);
+}
+
+// True when the artist's confirmed calendar has an all-day event on the date.
+async function hasAllDayCalendarEvent(
+  workspace: WorkspaceRecord,
+  tokens: Awaited<ReturnType<typeof getWorkspaceCredentials>>,
+  eventDate: string,
+): Promise<boolean> {
+  const calendarId = workspace.config.confirmedCalendarId || "primary";
+  const { calendar } = createGoogleClients(tokens);
+  const response = await calendar.events.list({
+    calendarId,
+    timeMin: `${eventDate}T00:00:00Z`,
+    timeMax: `${eventDate}T23:59:59Z`,
+    singleEvents: true,
+    maxResults: 20,
+  });
+  return (response.data.items ?? []).some(
+    (event) => Boolean(event.start?.date) && event.status !== "cancelled",
+  );
 }
 
 export async function createPublicBookingRequest(workspaceId: string, input: PublicBookingInput) {
@@ -268,6 +295,15 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
   }
 
   const tokens = await getWorkspaceCredentials(workspace.email);
+
+  // Personal-calendar guard: an all-day event on her confirmed Google Calendar
+  // ("OUT OF TOWN", a family wedding) blocks the date even if she forgot to
+  // block it in the app. Timed events don't block — a 1-hour errand shouldn't
+  // kill a whole day. Fails open so a calendar hiccup never breaks bookings.
+  const busyAllDay = await hasAllDayCalendarEvent(workspace, tokens, input.eventDate).catch(() => false);
+  if (busyAllDay) {
+    throw new Error("That date is unavailable. Please choose another.");
+  }
 
   const maxPerDay = Number(workspace.config.bookingMaxPerDay) || 0;
   const inboundMessage = buildInboundMessage(input);

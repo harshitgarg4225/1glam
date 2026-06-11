@@ -36,3 +36,28 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(request).then((cached) => cached || caches.match("/"))),
   );
 });
+
+// ─── Web push: new-request notifications, even with the app closed ───
+self.addEventListener("push", (event) => {
+  let payload = { title: "BusyDays", body: "You have a new update.", url: "/" };
+  try { payload = { ...payload, ...event.data.json() }; } catch {}
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      data: { url: payload.url || "/" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      for (const win of wins) {
+        if (win.url.startsWith(self.location.origin)) { win.focus(); return; }
+      }
+      return clients.openWindow(url);
+    }),
+  );
+});

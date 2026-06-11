@@ -201,6 +201,42 @@ function parsePortfolioList(raw: string): string[] {
     .filter(Boolean);
 }
 
+// Uploads the artist's logo from her phone/computer — no "host an image and
+// paste a URL" hoop. Stored in her own Drive, shared read-only, and saved
+// straight into config.logoUrl so PDFs and pages pick it up immediately.
+export async function uploadLogoImage(
+  email: string,
+  tokens: Credentials,
+  file: { buffer: Buffer; mimeType: string; originalName: string },
+): Promise<{ logoUrl: string }> {
+  const workspace = await findWorkspaceByEmail(email);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const { drive } = createGoogleClients(tokens);
+  const ext = (file.originalName.split(".").pop() || "png").toLowerCase();
+  const response = await drive.files.create({
+    requestBody: {
+      name: `logo-${nanoid(8)}.${ext}`,
+      mimeType: file.mimeType,
+      description: `Logo for ${workspace.config.businessName || workspace.name}`,
+    },
+    media: { mimeType: file.mimeType, body: Readable.from(file.buffer) },
+    fields: "id",
+  });
+
+  const fileId = response.data.id;
+  if (!fileId) throw new Error("Logo upload failed");
+  await drive.permissions.create({ fileId, requestBody: { role: "reader", type: "anyone" } });
+
+  const logoUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
+  workspace.config = { ...workspace.config, logoUrl };
+  workspace.updatedAt = new Date().toISOString();
+  await seedSpreadsheet(workspace.spreadsheetId, workspace.config, tokens, { includeSampleArtist: false });
+  await saveWorkspace(workspace);
+
+  return { logoUrl };
+}
+
 export async function persistWorkspaceTokens(email: string, tokens: Credentials) {
   return updateWorkspaceByEmail(email, (workspace) => ({
     ...workspace,
@@ -366,6 +402,9 @@ async function seedSpreadsheet(
     ["ai_tone_profile", config.aiToneProfile, "AI-derived style guide describing how you write (editable)"],
     ["ai_services_context", config.aiServicesContext, "What the AI should know about your services and pricing — shown to AI on every reply"],
     ["ai_persona_name", config.aiPersonaName, "Name the AI signs off as (leave blank to use your first name)"],
+    ["google_rating", config.googleRating, "Google rating snapshot shown on your booking page"],
+    ["google_review_count", config.googleReviewCount, "Google review count snapshot shown on your booking page"],
+    ["quote_packages", config.quotePackages, "Reusable quote packages, one per line: Name: Item=Price, Item=Price"],
     ["brand_color", config.brandColor, "Accent colour for your booking page (hex, e.g. #C26B45)"],
     ["cover_image_url", config.coverImageUrl, "Cover photo shown at the top of your booking page (URL)"],
     ["headline", config.headline, "Headline shown on your booking page"],
@@ -630,6 +669,9 @@ async function loadConfigFromSpreadsheet(
       aiToneProfile: String(values.ai_tone_profile ?? base.aiToneProfile),
       aiServicesContext: String(values.ai_services_context ?? base.aiServicesContext),
       aiPersonaName: String(values.ai_persona_name ?? base.aiPersonaName),
+      googleRating: String(values.google_rating ?? base.googleRating),
+      googleReviewCount: String(values.google_review_count ?? base.googleReviewCount),
+      quotePackages: String(values.quote_packages ?? base.quotePackages),
       brandColor: String(values.brand_color ?? base.brandColor),
       coverImageUrl: String(values.cover_image_url ?? base.coverImageUrl),
       headline: String(values.headline ?? base.headline),

@@ -25,6 +25,8 @@ import {
   getBookingRecord,
   getLeadRecord,
   getDashboardData,
+  importClients,
+  parsePaymentsLog,
   recordBookingPayment,
   rescheduleBooking,
   updateBookingRecord,
@@ -65,7 +67,10 @@ import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getG
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
+import { loadClientNotes, saveClientNotes } from "./services/client-notes.js";
+import { addPushSubscription, pushConfigured, removePushSubscription } from "./services/push.js";
 import {
+  createWhatsAppTemplate,
   exchangeForLongLivedToken,
   exchangeMetaCode,
   fetchInstagramLoginConnectionProfile,
@@ -101,7 +106,7 @@ import {
   verifyLeegalityWebhookRequest,
 } from "./services/contracts.js";
 import { sheetNames } from "./services/sheet-definitions.js";
-import type { MetaChannel, WorkspaceRecord } from "./types.js";
+import type { MetaChannel, WorkspaceConfig, WorkspaceRecord } from "./types.js";
 import {
   addPortfolioImage,
   disconnectMetaConnection,
@@ -110,6 +115,7 @@ import {
   provisionWorkspace,
   recoverSheet,
   setSheetProtection,
+  uploadLogoImage,
   upsertMetaConnection,
   updateWorkspaceConfig,
 } from "./services/workspace.js";
@@ -466,19 +472,23 @@ app.post("/api/public/:workspaceId/payment/:leadId/order", publicWriteLimiter, a
     }
     const details = await getPublicPaymentDetails(workspaceId, leadId);
     if (!details) return res.status(404).json({ error: "Payment details not found" });
-    if (["Advance Paid", "Paid in Full"].includes(details.paymentStatus)) {
-      return res.status(409).json({ error: "This advance has already been paid." });
+    if (details.paymentStatus === "Paid in Full") {
+      return res.status(409).json({ error: "This booking is already fully paid." });
     }
-    if (!(details.advanceAmount > 0)) {
-      return res.status(400).json({ error: "There's no advance due on this booking." });
+    // Stage-aware: before the advance is in, collect the advance; after it,
+    // the same page collects the (usually larger) balance.
+    const stage = details.paymentStatus === "Advance Paid" ? "balance" : "advance";
+    const amountInr = stage === "balance" ? details.balanceDue : details.advanceAmount;
+    if (!(amountInr > 0)) {
+      return res.status(400).json({ error: "There's nothing due on this booking right now." });
     }
 
     const order = await createOrderWithKeys(
       { keyId: razorpayKeyId, keySecret: razorpayKeySecret },
       {
-        amountInr: details.advanceAmount,
+        amountInr,
         receipt: leadId.slice(0, 40),
-        notes: { workspaceId, leadId, purpose: "advance" },
+        notes: { workspaceId, leadId, purpose: stage },
       },
     );
     res.json({
@@ -489,6 +499,7 @@ app.post("/api/public/:workspaceId/payment/:leadId/order", publicWriteLimiter, a
       keyId: razorpayKeyId,
       businessName: details.businessName,
       clientName: details.clientName,
+      purpose: stage,
     });
   } catch (error) {
     next(error);
@@ -518,26 +529,44 @@ app.post("/api/public/:workspaceId/payment/:leadId/verify", publicWriteLimiter, 
     }
     // Trust the order's own notes (set server-side at creation), never the client.
     const order = await fetchOrderWithKeys({ keyId: razorpayKeyId, keySecret: razorpayKeySecret }, orderId);
-    if (order.notes.leadId !== leadId || order.notes.workspaceId !== workspaceId || order.notes.purpose !== "advance") {
+    const purpose = order.notes.purpose === "balance" ? "balance" : "advance";
+    if (order.notes.leadId !== leadId || order.notes.workspaceId !== workspaceId || !["advance", "balance"].includes(String(order.notes.purpose))) {
       return res.status(400).json({ error: "Payment doesn't match this booking." });
     }
 
     const tokens = await getWorkspaceCredentials(workspace.email);
     const lead = await getLeadRecord(workspace.email, tokens, leadId);
     if (!lead) return res.status(404).json({ error: "Booking not found" });
+    const targetStatus = purpose === "balance" ? "Paid in Full" : "Advance Paid";
     // Idempotent: a retried verify (or webhook race) never double-processes.
-    if (!["Advance Paid", "Paid in Full"].includes(lead.paymentStatus)) {
-      await updatePaymentStatus(workspace.email, tokens, leadId, "Advance Paid");
+    const alreadyThere =
+      lead.paymentStatus === "Paid in Full" ||
+      (purpose === "advance" && lead.paymentStatus === "Advance Paid");
+    if (!alreadyThere) {
+      const amountInr = Math.round(Number(order.amount) / 100);
+      // Prefer the per-booking ledger (keeps collected/outstanding exact);
+      // fall back to the coarse status flip for leads without a booking row.
+      if (lead.bookingId && amountInr > 0) {
+        await recordBookingPayment(workspace.email, tokens, lead.bookingId, {
+          amount: amountInr,
+          method: "Razorpay",
+          note: `Online ${purpose} payment`,
+        }).catch(async () => {
+          await updatePaymentStatus(workspace.email, tokens, leadId, targetStatus);
+        });
+      } else {
+        await updatePaymentStatus(workspace.email, tokens, leadId, targetStatus);
+      }
       await logInteractionForWorkspace(workspace.email, tokens, {
         leadId,
         direction: "Inbound",
         channel: "WhatsApp",
         actor: lead.clientWhatsApp || leadId,
-        message: `Advance paid online via Razorpay (payment ${paymentId})`,
-        aiSummary: "Advance payment received and auto-confirmed via Razorpay",
+        message: `${purpose === "balance" ? "Balance" : "Advance"} paid online via Razorpay (payment ${paymentId})`,
+        aiSummary: `${purpose === "balance" ? "Balance" : "Advance"} payment received and auto-confirmed via Razorpay`,
       }).catch(() => {});
     }
-    res.json({ ok: true, paymentStatus: "Advance Paid" });
+    res.json({ ok: true, paymentStatus: targetStatus });
   } catch (error) {
     next(error);
   }
@@ -884,6 +913,36 @@ app.post("/api/workspace/config", async (req, res, next) => {
   }
 });
 
+// Logo upload: same Drive-backed flow as portfolio images, saved to logoUrl.
+app.post(
+  "/api/workspace/logo/upload",
+  (req, res, next) => {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
+  async (req, res, next) => {
+    try {
+      if (!req.session.profile || !req.session.googleTokens) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      const result = await uploadLogoImage(req.session.profile.email, req.session.googleTokens, {
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 app.post(
   "/api/workspace/portfolio/upload",
   (req, res, next) => {
@@ -944,10 +1003,18 @@ app.post("/api/gmb/select", async (req, res, next) => {
     const workspace = await getWorkspaceByEmail(req.session.profile.email);
     if (!workspace) return res.status(404).json({ error: "Workspace not found" });
 
+    // Snapshot her Google rating for the booking-page trust badge.
+    const rating = Number(req.body?.rating);
+    const reviewCount = Number(req.body?.userRatingsTotal);
     const googleReviewLink = buildGoogleReviewLink(placeId);
     const updated = await updateWorkspaceConfig(
       req.session.profile.email,
-      { ...workspace.config, googleReviewLink },
+      {
+        ...workspace.config,
+        googleReviewLink,
+        googleRating: Number.isFinite(rating) && rating > 0 && rating <= 5 ? String(rating) : workspace.config.googleRating,
+        googleReviewCount: Number.isFinite(reviewCount) && reviewCount > 0 ? String(Math.round(reviewCount)) : workspace.config.googleReviewCount,
+      },
       req.session.googleTokens,
     );
     res.json({ ok: true, googleReviewLink, workspace: updated });
@@ -1888,6 +1955,239 @@ app.post("/api/bookings/:bookingId/payments", async (req, res, next) => {
       parsed,
     );
     res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Web push notifications (PWA) ----
+app.get("/api/push/config", (req, res) => {
+  if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey });
+});
+
+app.post("/api/push/subscribe", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const sub = req.body?.subscription as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | undefined;
+    if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+      return res.status(400).json({ error: "Invalid subscription" });
+    }
+    await addPushSubscription(req.session.profile.email, {
+      endpoint: String(sub.endpoint),
+      keys: { p256dh: String(sub.keys.p256dh), auth: String(sub.keys.auth) },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/push/unsubscribe", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    await removePushSubscription(req.session.profile.email, String(req.body?.endpoint ?? ""));
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- One-tap WhatsApp template setup ----
+// Creates the full standard template pack on her connected WABA and wires the
+// names into config — replacing the "go to Meta Business Manager and create
+// these by hand" chore. Re-runnable: existing templates are left alone.
+const WHATSAPP_TEMPLATE_PACK: Array<{ configKey: keyof WorkspaceConfig; langKey: keyof WorkspaceConfig; name: string; body: string; examples: string[] }> = [
+  { configKey: "bookingConfirmTemplate", langKey: "bookingConfirmTemplateLang", name: "busydays_booking_request", body: "Hi {{1}}, we've received your {{2}} booking request for {{3}}. We'll confirm availability and get back to you shortly. Thank you!", examples: ["Priya", "Bridal Makeup", "2026-11-21"] },
+  { configKey: "approvalTemplate", langKey: "approvalTemplateLang", name: "busydays_booking_approved", body: "Hi {{1}}, great news — your date {{2}} is available! Your personalised quote total is Rs {{3}}. Reply here and we'll lock it in.", examples: ["Priya", "2026-11-21", "18000"] },
+  { configKey: "teamNotifyTemplate", langKey: "teamNotifyTemplateLang", name: "busydays_team_alert", body: "New job for you, {{1}}: a {{2}} on {{3}} at {{4}}. Please check the details with the studio.", examples: ["Pooja", "Bridal Makeup", "2026-11-21", "Taj Lands End"] },
+  { configKey: "quoteTemplate", langKey: "quoteTemplateLang", name: "busydays_quote", body: "Hi {{1}}, your quote for {{2}} on {{3}} is ready. View and accept it here: {{4}}", examples: ["Priya", "Bridal Makeup", "2026-11-21", "https://example.com/q/abc"] },
+  { configKey: "invoiceTemplate", langKey: "invoiceTemplateLang", name: "busydays_invoice", body: "Hi {{1}}, your invoice for {{2}} on {{3}} is ready here: {{4}}. Thank you!", examples: ["Priya", "Bridal Makeup", "2026-11-21", "https://example.com/d/invoice/abc"] },
+  { configKey: "contractTemplate", langKey: "contractTemplateLang", name: "busydays_contract", body: "Hi {{1}}, your booking agreement for {{2}} on {{3}} is ready to review and sign: {{4}}", examples: ["Priya", "Bridal Makeup", "2026-11-21", "https://example.com/sign/abc"] },
+  { configKey: "reminderTemplate", langKey: "reminderTemplateLang", name: "busydays_event_reminder", body: "Hi {{1}}, a quick reminder about your booking on {{2}} at {{3}}. We're looking forward to it!", examples: ["Priya", "2026-11-21", "10:00"] },
+  { configKey: "collectionTemplate", langKey: "collectionTemplateLang", name: "busydays_payment_reminder", body: "Hi {{1}}, a gentle reminder: your {{2}} payment of Rs {{3}} for the booking on {{4}} is pending. Thank you!", examples: ["Priya", "advance", "5000", "2026-11-21"] },
+  { configKey: "reviewTemplate", langKey: "reviewTemplateLang", name: "busydays_review_request", body: "Hi {{1}}, thank you for choosing {{2}}! If you loved your look, it would mean the world if you left us a quick review: {{3}}", examples: ["Priya", "Glow by Aisha", "https://g.page/review"] },
+  { configKey: "ownerAlertTemplate", langKey: "ownerAlertTemplateLang", name: "busydays_owner_alert", body: "BusyDays update: {{1}} — {{2}} on {{3}}.", examples: ["New request from Priya", "Bridal Makeup", "2026-11-21"] },
+];
+
+app.post("/api/channels/whatsapp/templates/setup", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    if (whatsapp?.status !== "connected" || !whatsapp.accessToken || !whatsapp.wabaId) {
+      return res.status(400).json({ error: "Connect WhatsApp first (Channels tab), then run template setup." });
+    }
+
+    const results = [];
+    // All the pack's config keys are string fields, so this patch is safe to
+    // spread over the full config.
+    const configPatch: Partial<WorkspaceConfig> = {};
+    for (const tpl of WHATSAPP_TEMPLATE_PACK) {
+      const result = await createWhatsAppTemplate(whatsapp.accessToken, whatsapp.wabaId, {
+        name: tpl.name,
+        body: tpl.body,
+        examples: tpl.examples,
+      });
+      results.push(result);
+      if (result.status !== "failed") {
+        (configPatch as Record<string, string>)[tpl.configKey] = tpl.name;
+        (configPatch as Record<string, string>)[tpl.langKey] = "en";
+      }
+    }
+
+    // Wire the successfully created/existing template names into her config so
+    // sends start using them immediately (once Meta approves).
+    if (Object.keys(configPatch).length) {
+      await updateWorkspaceConfig(
+        req.session.profile.email,
+        { ...workspace.config, ...configPatch },
+        req.session.googleTokens,
+      );
+    }
+
+    res.json({ ok: true, results });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Client profiles: private notes + bulk import ----
+app.get("/api/clients/:phone/notes", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const notes = await loadClientNotes(workspace.workspaceId, String(req.params.phone ?? ""));
+    res.json({ ok: true, ...notes });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/clients/:phone/notes", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const saved = await saveClientNotes(workspace.workspaceId, String(req.params.phone ?? ""), {
+      notes: String(req.body?.notes ?? ""),
+      birthday: typeof req.body?.birthday === "string" ? req.body.birthday : "",
+    });
+    res.json({ ok: true, ...saved });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk-imports existing clients (paste from Excel / CSV) as past clients.
+app.post("/api/clients/import", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) return res.status(400).json({ error: "Nothing to import — add at least one client." });
+    if (rows.length > 500) return res.status(400).json({ error: "Import up to 500 clients at a time." });
+    const result = await importClients(
+      req.session.profile.email,
+      req.session.googleTokens,
+      rows.map((row: Record<string, unknown>) => ({
+        clientName: String(row?.clientName ?? ""),
+        clientWhatsApp: String(row?.clientWhatsApp ?? ""),
+        eventType: String(row?.eventType ?? ""),
+        eventDate: String(row?.eventDate ?? ""),
+        locationText: String(row?.locationText ?? ""),
+        clientTags: String(row?.clientTags ?? ""),
+      })),
+    );
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Accountant / GST export ----
+// One CSV with every invoice and its payments for a date range (defaults to
+// the current Indian financial year) — what she hands to her accountant at
+// tax time instead of reconstructing the year from WhatsApp chats.
+app.get("/api/export/accountant", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    // Default: current Indian FY (1 April – 31 March).
+    const now = new Date();
+    const fyStartYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const from = typeof req.query.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from)
+      ? req.query.from
+      : `${fyStartYear}-04-01`;
+    const to = typeof req.query.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.to)
+      ? req.query.to
+      : `${fyStartYear + 1}-03-31`;
+
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const gstPct = Number(workspace.config.gstPercentage) || 0;
+    const esc = (value: unknown) => {
+      const s = String(value ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const rows: string[] = [
+      [
+        "Invoice Number", "Invoice Date", "Client", "Client Phone", "Event Type", "Event Date",
+        "Total (INR)", "Taxable Value (INR)", `GST @ ${gstPct}% (INR)`,
+        "Received (INR)", "Refunded (INR)", "Balance Due (INR)", "Payment Status", "Booking Status", "Payments Detail",
+      ].join(","),
+    ];
+
+    for (const booking of bookings) {
+      const invoiceDate = (booking.invoiceGeneratedAt || booking.bookedAt || "").slice(0, 10);
+      if (!invoiceDate || invoiceDate < from || invoiceDate > to) continue;
+      if (!booking.invoiceUrl && !booking.invoiceGeneratedAt) continue;
+      const log = parsePaymentsLog(booking.paymentsLog);
+      const received = log.filter((p) => p.kind !== "refund").reduce((s, p) => s + p.amount, 0);
+      const refunded = log.filter((p) => p.kind === "refund").reduce((s, p) => s + p.amount, 0);
+      const total = Math.round(Number(booking.finalPrice) || 0);
+      const taxable = gstPct > 0 ? Math.round(total / (1 + gstPct / 100)) : total;
+      const gstAmount = total - taxable;
+      const detail = log
+        .map((p) => `${p.kind === "refund" ? "-" : ""}${p.amount} ${p.method} ${(p.at || "").slice(0, 10)}${p.note ? ` (${p.note})` : ""}`)
+        .join("; ");
+      rows.push([
+        esc(booking.invoiceNumber || `INV-${booking.bookingId}`),
+        esc(invoiceDate),
+        esc(booking.clientName),
+        esc(booking.clientWhatsApp),
+        esc(booking.eventType),
+        esc(booking.eventDate),
+        String(total),
+        String(taxable),
+        String(gstAmount),
+        String(received),
+        String(refunded),
+        String(Math.max(0, total - received + refunded)),
+        esc(booking.paymentStatus),
+        esc(booking.status),
+        esc(detail),
+      ].join(","));
+    }
+
+    const filename = `busydays-invoices-${from}-to-${to}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    // UTF-8 BOM so Excel opens ₹/Indian names correctly.
+    res.send("\uFEFF" + rows.join("\n"));
   } catch (error) {
     next(error);
   }

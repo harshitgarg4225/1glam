@@ -7,6 +7,7 @@ import { enrichLeadWithGrok } from "./grok.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { resolveTravelIntelligence } from "./maps.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
+import { sendPushToWorkspace } from "./push.js";
 import { listArtists } from "./team.js";
 import { getWorkspaceByEmail } from "./workspace.js";
 import { bookingHeaders, leadHeaders, sheetNames } from "./sheet-definitions.js";
@@ -249,6 +250,13 @@ export async function createLeadForWorkspace(
 // skips (and shows as "needs setup" in the automation panel) until the owner
 // alert template is configured and WhatsApp can send.
 async function notifyOwnerOfNewLead(workspace: WorkspaceRecord, lead: LeadRecord) {
+  // Device push first (works with zero WhatsApp setup, even app-closed on PWA).
+  sendPushToWorkspace(workspace, {
+    title: `New request: ${lead.clientName}`,
+    body: `${lead.eventType} on ${lead.eventDate}${lead.locationText ? ` · ${lead.locationText}` : ""}`,
+    url: "/",
+  }).catch(() => undefined);
+
   try {
     const templateName = String(workspace.config.ownerAlertTemplate || "").trim();
     if (!templateName) return;
@@ -688,7 +696,15 @@ export async function updatePaymentStatus(
 // knows exactly how much has landed, and the status is derived from the math
 // instead of being a binary toggle.
 
-export type PaymentEntry = { amount: number; method: string; note: string; at: string };
+export type PaymentEntry = {
+  amount: number;
+  method: string;
+  note: string;
+  at: string;
+  // "refund" entries subtract from the running total (cancelled weddings are
+  // a fact of life); everything else counts as money received.
+  kind?: "payment" | "refund";
+};
 
 // Tolerant parser: bad/empty JSON yields an empty ledger rather than throwing.
 export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[] {
@@ -704,6 +720,7 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
           method: String(e.method ?? "").slice(0, 30),
           note: String(e.note ?? "").slice(0, 120),
           at: String(e.at ?? ""),
+          kind: e.kind === "refund" ? ("refund" as const) : ("payment" as const),
         };
       })
       .filter((entry) => entry.amount > 0);
@@ -713,7 +730,7 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
 }
 
 export function paymentsTotal(log: PaymentEntry[]): number {
-  return log.reduce((sum, entry) => sum + entry.amount, 0);
+  return log.reduce((sum, entry) => sum + (entry.kind === "refund" ? -entry.amount : entry.amount), 0);
 }
 
 // Payment status derived from how much has actually been received.
@@ -734,7 +751,7 @@ export async function recordBookingPayment(
   email: string,
   tokens: Credentials,
   bookingId: string,
-  input: { amount: number; method?: string; note?: string },
+  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" },
 ) {
   let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
   const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
@@ -744,6 +761,7 @@ export async function recordBookingPayment(
       method: String(input.method ?? "UPI").slice(0, 30),
       note: String(input.note ?? "").slice(0, 120),
       at: new Date().toISOString(),
+      kind: input.type === "refund" ? "refund" : "payment",
     });
     const paidTotal = paymentsTotal(log);
     derived = derivePaymentStatus(current.finalPrice, current.advanceAmount, paidTotal);
@@ -765,6 +783,100 @@ export async function recordBookingPayment(
   }
 
   return booking;
+}
+
+// ---- Client import ----
+// Brings her existing client list in (from a notebook, Excel, or another app)
+// as completed past clients: they appear in the Clients directory and power
+// repeat-client insights, without cluttering the active pipeline. One bulk
+// sheet append for the whole batch — no per-row AI or pricing.
+export type ImportClientRow = {
+  clientName: string;
+  clientWhatsApp: string;
+  eventType?: string;
+  eventDate?: string;
+  locationText?: string;
+  clientTags?: string;
+};
+
+export async function importClients(
+  email: string,
+  tokens: Credentials,
+  rows: ImportClientRow[],
+): Promise<{ imported: number; skipped: number }> {
+  const workspace = await getRequiredWorkspace(email);
+  const existing = await listLeadRows(workspace, tokens);
+  const knownPhones = new Set(
+    existing.map((l) => l.clientWhatsApp.replace(/\D/g, "")).filter((p) => p.length >= 8),
+  );
+
+  const now = new Date().toISOString();
+  const records: LeadRecord[] = [];
+  let skipped = 0;
+  for (const row of rows) {
+    const phone = String(row.clientWhatsApp || "").replace(/\D/g, "");
+    const name = String(row.clientName || "").trim().slice(0, 120);
+    if (!name || phone.length < 8 || knownPhones.has(phone)) {
+      skipped += 1;
+      continue;
+    }
+    knownPhones.add(phone);
+    records.push({
+      leadId: buildId("L"),
+      createdAt: now,
+      source: "Import",
+      clientName: name,
+      clientWhatsApp: row.clientWhatsApp.trim().slice(0, 25),
+      clientInstagram: "",
+      eventType: String(row.eventType || "Other").trim().slice(0, 40) || "Other",
+      eventDate: /^\d{4}-\d{2}-\d{2}$/.test(String(row.eventDate || "")) ? String(row.eventDate) : "",
+      eventTime: "",
+      locationText: String(row.locationText || "").trim().slice(0, 200),
+      distanceKm: 0,
+      travelTimeMin: 0,
+      outstationFlag: "No",
+      profileTier: "Mid",
+      followers: 0,
+      clientTags: String(row.clientTags || "").trim().slice(0, 200),
+      aiInsight: "",
+      suggestedReply: "",
+      demandCount: 0,
+      scarcityTag: "",
+      holdExpiresAt: "",
+      initialAiPrice: 0,
+      finalApprovedPrice: 0,
+      discountPercent: 0,
+      ownerDecision: "",
+      ownerNotes: "Imported past client",
+      status: "Completed",
+      assignedArtist: "",
+      lastContactedAt: "",
+      tentativeCalendarEventId: "",
+      confirmedCalendarEventId: "",
+      bookingId: "",
+      paymentStatus: "Not Started",
+      quoteUrl: "",
+      quoteGeneratedAt: "",
+      quoteVoidedAt: "",
+      quoteAdjustments: "",
+      orderItems: "",
+      quoteNumber: "",
+      quoteViewedAt: "",
+      quoteAcceptedAt: "",
+    });
+  }
+
+  if (records.length) {
+    const { sheets } = createGoogleClients(tokens);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.leads}!A:${toColumn(leadHeaders.length)}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: records.map((record) => leadToRow(record).map(String)) },
+    });
+  }
+
+  return { imported: records.length, skipped };
 }
 
 export async function countActiveLeadsForDate(

@@ -104,6 +104,12 @@ export type WorkspaceConfig = PricingRuleConfig & {
   aiToneProfile: string;
   aiServicesContext: string;
   aiPersonaName: string;
+  // Google rating snapshot captured when she connects her Business Profile —
+  // shown as a trust badge on her public booking page.
+  googleRating: string;
+  googleReviewCount: string;
+  // Reusable quote packages, one per line: "Name: Item=Price, Item=Price".
+  quotePackages: string;
   brandColor: string;
   coverImageUrl: string;
   headline: string;
@@ -179,6 +185,8 @@ export type WorkspaceRecord = {
   googleTokens?: StoredGoogleTokens;
   metaConnections?: Partial<Record<MetaChannel, MetaChannelConnection>>;
   wallet?: Wallet;
+  // Web-push subscriptions for the owner's devices (PWA notifications).
+  pushSubscriptions?: Array<{ endpoint: string; keys: { p256dh: string; auth: string } }>;
   config: WorkspaceConfig;
 };
 
