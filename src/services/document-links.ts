@@ -67,3 +67,38 @@ export function buildQuoteViewUrl(workspaceId: string, leadId: string): string {
   url.searchParams.set("sig", sig);
   return url.toString();
 }
+
+// Reschedule links are time-limited (72 hours) and signed over (workspaceId, bookingId, expiry).
+const RESCHEDULE_TTL_MS = 72 * 60 * 60 * 1000;
+
+function rescheduleSignature(workspaceId: string, bookingId: string, exp: number): string {
+  return createHmac("sha256", appConfig.sessionSecret)
+    .update(`reschedule:${workspaceId}:${bookingId}:${exp}`)
+    .digest("hex");
+}
+
+export function buildRescheduleUrl(workspaceId: string, bookingId: string): string {
+  const exp = Date.now() + RESCHEDULE_TTL_MS;
+  const sig = rescheduleSignature(workspaceId, bookingId, exp);
+  const url = new URL(`/reschedule/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}`, appConfig.baseUrl);
+  url.searchParams.set("exp", String(exp));
+  url.searchParams.set("sig", sig);
+  return url.toString();
+}
+
+export function verifyRescheduleToken(
+  workspaceId: string,
+  bookingId: string,
+  exp: string,
+  sig: string,
+): boolean {
+  if (!exp || !sig) return false;
+  const expNum = Number(exp);
+  if (Number.isNaN(expNum) || Date.now() > expNum) return false;
+  const expected = rescheduleSignature(workspaceId, bookingId, expNum);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(sig);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+

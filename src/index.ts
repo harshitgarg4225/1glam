@@ -25,7 +25,9 @@ import {
   getBookingRecord,
   getLeadRecord,
   getDashboardData,
+  getMonthlyRecap,
   importClients,
+  listActiveBookings,
   parsePaymentsLog,
   recordBookingPayment,
   rescheduleBooking,
@@ -78,6 +80,7 @@ import {
   fetchInstagramLoginConnectionProfile,
   fetchMetaConnectionProfile,
   fetchWhatsAppCloudConnectionProfile,
+  buildAppSecretProof,
   getMetaConnectUrl,
   parseMetaState,
   subscribePageToWebhooks,
@@ -101,7 +104,8 @@ import {
   nextDocumentNumber,
   parseDocumentAdjustments,
 } from "./services/documents.js";
-import { buildPublicDocumentUrl, isDocumentType, signDocumentToken, verifyDocumentToken } from "./services/document-links.js";
+import { buildPublicDocumentUrl, buildRescheduleUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken } from "./services/document-links.js";
+import { broadcastCampaign, estimateCampaignReach, type CampaignSegment } from "./services/campaigns.js";
 import {
   checkLeegalityDocumentDetails,
   createLeegalityContract,
@@ -2277,6 +2281,192 @@ app.get("/api/export/accountant", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// ── Re-engagement campaigns ─────────────────────────────────────────────────
+
+app.get("/api/campaigns/reach", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const segment = (req.query.segment as CampaignSegment) || "past-clients";
+    const count = await estimateCampaignReach(req.session.profile.email, req.session.googleTokens, segment);
+    res.json({ ok: true, count });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/campaigns/broadcast", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const { segment, message, imageUrl } = req.body as { segment: CampaignSegment; message: string; imageUrl?: string };
+    if (!segment || !message?.trim()) return res.status(400).json({ error: "segment and message are required" });
+    const result = await broadcastCampaign(req.session.profile.email, req.session.googleTokens, { segment, message: message.trim(), imageUrl });
+    res.json({ ok: true, ...result });
+  } catch (error) { next(error); }
+});
+
+// ── Monthly business recap ───────────────────────────────────────────────────
+
+app.get("/api/recap/monthly", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const now = new Date();
+    // Default: previous month so the month is complete.
+    const year = req.query.year ? Number(req.query.year) : (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear());
+    const month = req.query.month !== undefined ? Number(req.query.month) : (now.getMonth() === 0 ? 11 : now.getMonth() - 1);
+    const recap = await getMonthlyRecap(req.session.profile.email, req.session.googleTokens, year, month);
+    res.json({ ok: true, recap });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/recap/send-whatsapp", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const now = new Date();
+    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const month = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+    const recap = await getMonthlyRecap(req.session.profile.email, req.session.googleTokens, year, month);
+
+    const ownerPhone = String(workspace.config.ownerWhatsApp || "").replace(/\D/g, "");
+    if (!ownerPhone || ownerPhone.length < 8) return res.status(400).json({ error: "Set your WhatsApp number in Settings first." });
+
+    const msg = [
+      `📊 *${recap.month} Business Recap — ${workspace.config.businessName || "BusyDays"}*`,
+      ``,
+      `💌 New enquiries: *${recap.newLeads}*`,
+      `📅 Bookings confirmed: *${recap.confirmedBookings}*`,
+      recap.newClients > 0 ? `🆕 New clients: *${recap.newClients}*` : null,
+      ``,
+      `💰 Revenue booked: *₹${recap.totalRevenue.toLocaleString("en-IN")}*`,
+      `✅ Collected: *₹${recap.collected.toLocaleString("en-IN")}*`,
+      recap.avgBookingValue > 0 ? `📈 Avg booking: *₹${recap.avgBookingValue.toLocaleString("en-IN")}*` : null,
+      recap.topEventType && recap.topEventType !== "—" ? `🏆 Top occasion: *${recap.topEventType}*` : null,
+    ].filter(Boolean).join("\n");
+
+    const connection = workspace.metaConnections?.whatsapp;
+    const accessToken = connection?.accessToken || appConfig.waAccessToken;
+    const phoneNumberId = connection?.phoneNumberId || appConfig.waPhoneNumberId;
+    if (!accessToken || !phoneNumberId) {
+      return res.status(400).json({ error: "Connect WhatsApp first to send this recap." });
+    }
+
+    const waUrl = new URL(`https://graph.facebook.com/v23.0/${phoneNumberId}/messages`);
+    const proof = buildAppSecretProof(accessToken);
+    if (proof) waUrl.searchParams.set("appsecret_proof", proof);
+    const waResp = await fetch(waUrl.toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ messaging_product: "whatsapp", to: ownerPhone, type: "text", text: { body: msg } }),
+    });
+    if (!waResp.ok) {
+      const errText = await waResp.text();
+      return res.status(502).json({ ok: false, error: `WhatsApp delivery failed: ${errText}` });
+    }
+    res.json({ ok: true, month: recap.month });
+  } catch (error) { next(error); }
+});
+
+// ── Client self-service reschedule links ─────────────────────────────────────
+
+app.post("/api/bookings/:bookingId/reschedule-link", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const booking = await getBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    const url = buildRescheduleUrl(workspace.workspaceId, req.params.bookingId);
+
+    if (req.body?.send && booking.clientWhatsApp) {
+      const phone = String(booking.clientWhatsApp).replace(/\D/g, "");
+      const connection = workspace.metaConnections?.whatsapp;
+      const accessToken = connection?.accessToken || appConfig.waAccessToken;
+      const phoneNumberId = connection?.phoneNumberId || appConfig.waPhoneNumberId;
+      if (accessToken && phoneNumberId) {
+        const msg = `Hi ${booking.clientName} 🙏\n\nNeed to change the date for your ${booking.eventType} booking? Use this link to pick a new date that works for you:\n${url}\n\n— ${workspace.config.businessName || workspace.config.ownerName}`;
+        const waUrl = `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`;
+        await fetch(waUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: msg } }),
+        }).catch(() => null);
+      }
+    }
+    res.json({ ok: true, url });
+  } catch (error) { next(error); }
+});
+
+// Public reschedule page.
+app.get("/reschedule/:workspaceId/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyRescheduleToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).send("<html><body style='font-family:sans-serif;padding:40px;max-width:480px;margin:auto'><h2>Link expired</h2><p>This reschedule link has expired or is invalid. Ask the studio to send you a new one.</p></body></html>");
+    }
+    // Serve the reschedule page — workspace and booking details fetched client-side.
+    const path = await import("node:path");
+    res.sendFile(path.join(process.cwd(), "public", "reschedule.html"));
+  } catch (error) { next(error); }
+});
+
+// API endpoint the reschedule page calls to load workspace + booking details.
+app.get("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyRescheduleToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).json({ error: "Link expired" });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
+
+    const booking = await getBookingRecord(workspace.email, tokens, bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+    res.json({
+      ok: true,
+      businessName: workspace.config.businessName || workspace.config.ownerName,
+      brandColor: workspace.config.brandColor || "#C26B45",
+      booking: {
+        bookingId: booking.bookingId,
+        clientName: booking.clientName,
+        eventType: booking.eventType,
+        eventDate: booking.eventDate,
+        eventTime: booking.eventTime,
+        venue: booking.venue,
+      },
+    });
+  } catch (error) { next(error); }
+});
+
+// Client submits their chosen new date on the reschedule page.
+app.post("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyRescheduleToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).json({ error: "Link expired" });
+    }
+    const { eventDate, eventTime } = req.body as { eventDate?: string; eventTime?: string };
+    if (!eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+      return res.status(400).json({ error: "A valid date is required (YYYY-MM-DD)." });
+    }
+
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
+
+    await rescheduleBooking(workspace.email, tokens, bookingId, { eventDate, eventTime });
+    res.json({ ok: true });
+  } catch (error) { next(error); }
 });
 
 // Assigns the next sequential quote number (Q-2026-0007) the first time a

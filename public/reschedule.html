@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reschedule your booking</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --accent: #C26B45; --bg: #faf9f7; --card: #fff; --text: #1c1917; --muted: #78716c; --line: #e7e5e4; --radius: 14px; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 24px 16px 60px; }
+    .card { background: var(--card); border-radius: var(--radius); box-shadow: 0 2px 20px rgba(0,0,0,.07); width: 100%; max-width: 440px; padding: 32px 28px; }
+    .brand { text-align: center; margin-bottom: 24px; }
+    .brand-name { font-size: 22px; font-weight: 700; color: var(--accent); }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .sub { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    .info-box { background: #f5f3f0; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 14px; }
+    .info-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--line); }
+    .info-row:last-child { border: none; }
+    .info-label { color: var(--muted); }
+    .info-value { font-weight: 600; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    input[type=date], input[type=time] { width: 100%; padding: 11px 14px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 15px; background: var(--card); color: var(--text); appearance: none; -webkit-appearance: none; margin-bottom: 14px; }
+    input[type=date]:focus, input[type=time]:focus { outline: none; border-color: var(--accent); }
+    .btn { width: 100%; padding: 13px; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; margin-top: 6px; transition: opacity .15s; }
+    .btn:hover { opacity: .9; }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .status { margin-top: 14px; text-align: center; font-size: 14px; }
+    .status.error { color: #dc2626; }
+    .status.success { color: #16a34a; }
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .done-screen { text-align: center; padding: 20px 0; }
+    .done-icon { font-size: 48px; margin-bottom: 16px; }
+    .done-screen h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .done-screen p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .skeleton { background: linear-gradient(90deg, #f0ece7 25%, #e8e3de 50%, #f0ece7 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="brand"><div class="brand-name skeleton" id="brand-name" style="height:28px;width:160px;margin:0 auto;border-radius:8px;"></div></div>
+    <div id="main-content">
+      <div class="skeleton" style="height:22px;width:70%;margin-bottom:10px;"></div>
+      <div class="skeleton" style="height:14px;width:100%;margin-bottom:4px;"></div>
+      <div class="skeleton" style="height:14px;width:85%;margin-bottom:20px;"></div>
+      <div class="skeleton" style="height:100px;border-radius:10px;margin-bottom:20px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const pathParts = location.pathname.split("/");
+    const workspaceId = pathParts[pathParts.length - 2];
+    const bookingId = pathParts[pathParts.length - 1];
+    const sig = params.get("sig");
+    const exp = params.get("exp");
+
+    const card = document.getElementById("card");
+
+    async function init() {
+      const url = `/api/public/${encodeURIComponent(workspaceId)}/reschedule/${encodeURIComponent(bookingId)}?sig=${encodeURIComponent(sig || "")}&exp=${encodeURIComponent(exp || "")}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data.ok) {
+        document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:#dc2626;font-size:15px;">${data.error || "This link has expired. Please ask the studio for a new one."}</p>`;
+        document.getElementById("brand-name").textContent = "BusyDays";
+        return;
+      }
+
+      const b = data.booking;
+      const accent = data.brandColor || "#C26B45";
+      document.documentElement.style.setProperty("--accent", accent);
+      document.getElementById("brand-name").className = "";
+      document.getElementById("brand-name").textContent = data.businessName;
+
+      const today = new Date().toISOString().slice(0, 10);
+      const minDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+      document.getElementById("main-content").innerHTML = `
+        <h1>Reschedule your booking</h1>
+        <p class="sub">Hi ${escHtml(b.clientName)}! Pick a new date for your <strong>${escHtml(b.eventType)}</strong> booking${b.venue ? ` at ${escHtml(b.venue)}` : ""}.</p>
+        <div class="info-box">
+          <div class="info-row"><span class="info-label">Current date</span><span class="info-value">${formatDate(b.eventDate)}</span></div>
+          ${b.eventTime ? `<div class="info-row"><span class="info-label">Time</span><span class="info-value">${escHtml(b.eventTime)}</span></div>` : ""}
+          ${b.venue ? `<div class="info-row"><span class="info-label">Venue</span><span class="info-value">${escHtml(b.venue)}</span></div>` : ""}
+        </div>
+        <label for="new-date">New date</label>
+        <input type="date" id="new-date" min="${minDate}" required />
+        <label for="new-time">Preferred time (optional)</label>
+        <input type="time" id="new-time" value="${b.eventTime ? b.eventTime.slice(0,5) : ""}" />
+        <button class="btn" id="submit-btn" type="button">Confirm new date</button>
+        <div class="status" id="status"></div>
+      `;
+
+      document.getElementById("submit-btn").addEventListener("click", submitReschedule);
+    }
+
+    async function submitReschedule() {
+      const btn = document.getElementById("submit-btn");
+      const statusEl = document.getElementById("status");
+      const eventDate = document.getElementById("new-date").value;
+      const eventTime = document.getElementById("new-time").value;
+      if (!eventDate) { statusEl.textContent = "Please pick a date."; statusEl.className = "status error"; return; }
+
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span>Confirming…`;
+      statusEl.textContent = "";
+
+      const url = `/api/public/${encodeURIComponent(workspaceId)}/reschedule/${encodeURIComponent(bookingId)}?sig=${encodeURIComponent(sig || "")}&exp=${encodeURIComponent(exp || "")}`;
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventDate, eventTime: eventTime || undefined }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Something went wrong");
+        document.getElementById("main-content").innerHTML = `
+          <div class="done-screen">
+            <div class="done-icon">🎉</div>
+            <h2>All set!</h2>
+            <p>Your booking has been moved to <strong>${formatDate(eventDate)}</strong>${eventTime ? ` at ${eventTime}` : ""}.<br>The studio will be in touch to confirm details.</p>
+          </div>
+        `;
+      } catch (err) {
+        statusEl.textContent = err.message;
+        statusEl.className = "status error";
+        btn.disabled = false;
+        btn.textContent = "Confirm new date";
+      }
+    }
+
+    function formatDate(d) {
+      if (!d) return "—";
+      try {
+        return new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      } catch { return d; }
+    }
+    function escHtml(s) {
+      return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    init().catch((err) => {
+      document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:#dc2626;">${escHtml(err.message)}</p>`;
+      document.getElementById("brand-name").textContent = "BusyDays";
+    });
+  </script>
+</body>
+</html>

@@ -1150,6 +1150,79 @@ export function roundToPremiumNumber(value: number) {
   return premium > 0 ? premium : rounded;
 }
 
+export type MonthlyRecap = {
+  month: string;
+  year: number;
+  monthNum: number;
+  newLeads: number;
+  confirmedBookings: number;
+  completedBookings: number;
+  totalRevenue: number;
+  collected: number;
+  avgBookingValue: number;
+  topEventType: string;
+  newClients: number;
+};
+
+export async function getMonthlyRecap(
+  email: string,
+  tokens: Credentials,
+  year?: number,
+  monthNum?: number,
+): Promise<MonthlyRecap> {
+  const workspace = await getRequiredWorkspace(email);
+  const now = new Date();
+  const targetYear = year ?? now.getFullYear();
+  const targetMonth = monthNum ?? now.getMonth(); // 0-based; default to previous month
+  const prefix = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}`;
+
+  const leads = await listLeadRows(workspace, tokens);
+  const bookings = await listBookingRows(workspace, tokens);
+
+  const monthLeads = leads.filter((l) => l.createdAt.startsWith(prefix));
+  const monthBookings = bookings.filter((b) => b.bookedAt.startsWith(prefix));
+
+  const confirmed = monthBookings.filter((b) => !["Cancelled"].includes(b.status));
+  const completed = monthBookings.filter((b) => b.status === "Completed");
+
+  const totalRevenue = confirmed.reduce((s, b) => s + (b.finalPrice || 0), 0);
+  const collected = confirmed.reduce((s, b) => s + paymentsTotal(parsePaymentsLog(b.paymentsLog)), 0);
+
+  const eventCounts: Record<string, number> = {};
+  for (const b of confirmed) {
+    const t = b.eventType || "Other";
+    eventCounts[t] = (eventCounts[t] ?? 0) + 1;
+  }
+  const topEventType = Object.entries(eventCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
+
+  const existingPhones = new Set(
+    bookings
+      .filter((b) => b.bookedAt < prefix)
+      .map((b) => String(b.clientWhatsApp || "").replace(/\D/g, ""))
+      .filter(Boolean),
+  );
+  const newClients = monthBookings.filter((b) => {
+    const p = String(b.clientWhatsApp || "").replace(/\D/g, "");
+    return p && !existingPhones.has(p);
+  }).length;
+
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  return {
+    month: `${MONTH_NAMES[targetMonth]} ${targetYear}`,
+    year: targetYear,
+    monthNum: targetMonth,
+    newLeads: monthLeads.length,
+    confirmedBookings: confirmed.length,
+    completedBookings: completed.length,
+    totalRevenue,
+    collected,
+    avgBookingValue: confirmed.length ? Math.round(totalRevenue / confirmed.length) : 0,
+    topEventType,
+    newClients,
+  };
+}
+
 async function listLeadRows(workspace: WorkspaceRecord, tokens: Credentials) {
   const { sheets } = createGoogleClients(tokens);
   const response = await sheets.spreadsheets.values.get({
