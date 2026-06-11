@@ -42,6 +42,19 @@ export const quickBookingSchema = z.object({
   advancePaid: z.coerce.boolean().optional().default(false),
 });
 
+// Day-to-day corrections: venue changed, typo in the number, new time. All
+// fields optional — only what's provided is updated.
+export const editLeadDetailsSchema = z.object({
+  clientName: z.string().min(1).max(120).optional(),
+  clientWhatsApp: z.string().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number").optional(),
+  clientInstagram: z.string().max(120).optional(),
+  eventType: z.string().min(1).max(40).optional(),
+  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD").optional(),
+  eventTime: z.string().max(20).optional(),
+  locationText: z.string().min(1).max(200).optional(),
+  clientTags: z.string().max(500).optional(),
+});
+
 export const ownerDecisionSchema = z.object({
   decision: z.enum(["YES", "NO", "EDIT"]),
   approvedPrice: z.coerce.number().optional(),

@@ -236,3 +236,19 @@ test("balanceReminderDue fires within 2 days of the event, once", () => {
   assert.equal(balanceReminderDue("2026-06-01", "", now), false);
   assert.equal(balanceReminderDue("", "", now), false);
 });
+
+// --- Lead detail edits (editLeadDetailsSchema) ---------------------------------
+
+const { editLeadDetailsSchema } = await import("../src/api-schema.ts");
+
+test("editLeadDetailsSchema accepts partial updates and rejects bad formats", () => {
+  // Only what's provided is validated — a venue-only fix is fine.
+  const venueOnly = editLeadDetailsSchema.parse({ locationText: "Taj Lands End, Mumbai" });
+  assert.equal(venueOnly.locationText, "Taj Lands End, Mumbai");
+  assert.equal(venueOnly.clientName, undefined);
+  // Bad phone / date are rejected even in partial updates.
+  assert.throws(() => editLeadDetailsSchema.parse({ clientWhatsApp: "abc" }));
+  assert.throws(() => editLeadDetailsSchema.parse({ eventDate: "15-08-2026" }));
+  // Empty object is a valid no-op payload.
+  assert.deepEqual(Object.keys(editLeadDetailsSchema.parse({})).length, 0);
+});
