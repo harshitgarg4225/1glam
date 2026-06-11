@@ -103,14 +103,22 @@ export async function generateConversationReply(input: {
   language?: string;
   signOff?: string;
   toneProfile?: string;
+  servicesContext?: string;
+  personaName?: string;
 }): Promise<GrokConversationReply> {
   if (!appConfig.xaiApiKey) {
     return fallbackConversationReply(input);
   }
 
+  const personaSignOff = input.personaName
+    ? input.signOff
+      ? `${input.signOff} ${input.personaName}`
+      : input.personaName
+    : input.signOff;
+
   const voiceLines = [
     input.language ? `Write in this language/style: ${input.language}.` : "",
-    input.signOff ? `End with this sign-off when natural: "${input.signOff}".` : "",
+    personaSignOff ? `End with this sign-off when natural: "${personaSignOff}".` : "",
     input.toneProfile
       ? `Match the owner's personal writing voice, described as: ${input.toneProfile}`
       : "",
@@ -118,11 +126,16 @@ export async function generateConversationReply(input: {
     .filter(Boolean)
     .join(" ");
 
+  const servicesLine = input.servicesContext
+    ? `Services & pricing context (use this when clients ask about services or costs): ${input.servicesContext}`
+    : "";
+
   const systemPrompt =
     "You are a makeup artist booking conversation agent for an Indian beauty business. " +
     "Return strict JSON only with keys: reply, ownerSummary, memorySummary, openQuestions. " +
     "reply should be warm, polished, concise, and client-facing. " +
     (voiceLines ? voiceLines + " " : "") +
+    (servicesLine ? servicesLine + " " : "") +
     "ownerSummary should be brief internal context. " +
     "memorySummary should be a compact rolling summary for future turns. " +
     "openQuestions must be an array of concise strings for missing information. " +
