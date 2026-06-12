@@ -8,7 +8,7 @@ export const createLeadSchema = z.object({
   eventType: z.string().min(1),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   eventTime: z.string().optional(),
-  locationText: z.string().min(1),
+  locationText: z.string().optional().default("To be decided"),
   distanceKm: z.coerce.number().optional(),
   travelTimeMin: z.coerce.number().optional(),
   profileTier: z.enum(["Low", "Mid", "High"]).optional(),
@@ -37,8 +37,10 @@ export const quickBookingSchema = z.object({
   eventType: z.string().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   eventTime: z.string().max(20).optional(),
-  locationText: z.string().min(1).max(200),
-  price: z.coerce.number().positive().max(100000000),
+  // Venue and price are optional — artists often block the date first and
+  // settle details after a trial or a call.
+  locationText: z.string().max(200).optional().default("To be decided"),
+  price: z.coerce.number().min(0).max(100000000).optional().default(0),
   advancePaid: z.coerce.boolean().optional().default(false),
 });
 

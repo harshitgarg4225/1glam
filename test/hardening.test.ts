@@ -196,14 +196,21 @@ test("quickBookingSchema accepts a valid walk-in booking and coerces types", () 
   assert.equal(parsed.advancePaid, false);
 });
 
-test("quickBookingSchema rejects missing price, bad phone, and bad date", () => {
+test("quickBookingSchema rejects bad phone and bad date, allows decide-later price/venue", () => {
   const base = {
     clientName: "Meera", clientWhatsApp: "+919876543210", eventType: "Party",
     eventDate: "2026-08-15", locationText: "Mumbai", price: 5000,
   };
-  assert.throws(() => quickBookingSchema.parse({ ...base, price: 0 }));
+  assert.throws(() => quickBookingSchema.parse({ ...base, price: -1 }));
   assert.throws(() => quickBookingSchema.parse({ ...base, clientWhatsApp: "abc" }));
   assert.throws(() => quickBookingSchema.parse({ ...base, eventDate: "15-08-2026" }));
+  // Price 0 and a missing venue mean "block the date now, settle details later".
+  assert.equal(quickBookingSchema.parse({ ...base, price: 0 }).price, 0);
+  const noExtras = quickBookingSchema.parse({
+    clientName: "Meera", clientWhatsApp: "+919876543210", eventType: "Party", eventDate: "2026-08-15",
+  });
+  assert.equal(noExtras.price, 0);
+  assert.equal(noExtras.locationText, "To be decided");
 });
 
 // --- Automatic payment reminders (dueAdvanceMarker / balanceReminderDue) -------

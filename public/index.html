@@ -710,11 +710,64 @@
 
       @media (max-width: 640px) {
         .board:not(.list-mode) .board-col { flex: 0 0 calc(100vw - 72px); }
-        .toast-shelf { bottom: 16px; right: 12px; left: 12px; }
+        .toast-shelf { bottom: 88px; right: 12px; left: 12px; }
         .toast { max-width: none; }
         .filter-bar { gap: 7px; }
         .view-toggle-btn { padding: 6px 10px; font-size: 12px; }
       }
+
+      /* ─── Bottom navigation (mobile only) ─── */
+      .bottom-nav {
+        display: none !important;
+        position: fixed; bottom: 0; left: 0; right: 0; z-index: 7000;
+        background: var(--card); border-top: 1px solid var(--line);
+        padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+        justify-content: space-around; align-items: stretch;
+        box-shadow: 0 -4px 20px rgba(0,0,0,0.06);
+      }
+      .bnav-item {
+        background: none; border: none; cursor: pointer; font: inherit;
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+        font-size: 10.5px; font-weight: 600; color: var(--muted);
+        padding: 4px 10px; border-radius: 10px; position: relative; flex: 1; max-width: 88px;
+      }
+      .bnav-item.active { color: var(--accent); }
+      .bnav-icon { font-size: 20px; line-height: 1.2; }
+      .bnav-badge {
+        position: absolute; top: 0; right: 14px;
+        min-width: 15px; height: 15px; padding: 0 4px;
+        background: var(--accent); color: #fff; border-radius: 999px;
+        font-size: 9.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
+      }
+      .bnav-sheet-panel {
+        position: fixed; bottom: 0; left: 0; right: 0;
+        background: var(--card); border-radius: 18px 18px 0 0;
+        padding: 10px 16px calc(22px + env(safe-area-inset-bottom, 0px));
+        box-shadow: 0 -12px 50px rgba(0,0,0,0.22);
+        animation: sheet-up 0.22s cubic-bezier(.22,.68,0,1.1);
+      }
+      @keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+      .bnav-sheet-grab { width: 38px; height: 4px; border-radius: 4px; background: var(--line); margin: 4px auto 14px; }
+      .bnav-sheet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .bnav-sheet-item {
+        background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+        cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text);
+        display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px;
+      }
+      .bnav-sheet-item span { font-size: 22px; line-height: 1; }
+      @media (max-width: 640px) {
+        .bottom-nav.authed { display: flex !important; }
+        body.has-bottom-nav .shell { padding-bottom: 84px; }
+        body.has-bottom-nav nav.tabs.requires-auth { display: none !important; }
+      }
+
+      /* Mobile board swipe hint — shows once until she scrolls the board */
+      .board-swipe-hint {
+        display: none; text-align: center; font-size: 12px; color: var(--muted);
+        padding: 6px 0 2px; animation: hint-pulse 1.8s ease-in-out infinite;
+      }
+      @keyframes hint-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+      @media (max-width: 640px) { .board-swipe-hint.visible { display: block; } }
 
       /* ─── Tab notification badges ─── */
       .tab-badge {
@@ -817,7 +870,7 @@
         </div>
         <div class="topbar-account">
           <div class="account-id" id="login-state">Checking session...</div>
-          <button id="credits-pill" class="requires-auth credits-pill" type="button" title="Wallet & credits" style="display:none;">💳 <span id="credits-pill-value">—</span></button>
+          <button id="credits-pill" class="requires-auth credits-pill" type="button" title="Wallet & credits" style="display:none;">✨ <span id="credits-pill-value">—</span></button>
           <button id="quick-booking-btn" class="requires-auth button topbar-share-btn" type="button" title="Add a booking in one step" style="display:none;">➕ New booking</button>
           <button id="share-link-btn" class="requires-auth button secondary topbar-share-btn" type="button" title="Copy booking link" style="display:none;">🔗 Booking link</button>
           <button id="global-search-btn" class="requires-auth icon-btn" type="button" title="Search (Ctrl+K)" style="display:none;">🔍</button>
@@ -843,7 +896,8 @@
             <button class="tab-more-item" type="button" data-tab="wallet">💳 Wallet &amp; credits</button>
             <button class="tab-more-item" type="button" data-tab="analytics">📊 Insights</button>
             <button class="tab-more-item" type="button" data-tab="team">👥 Team</button>
-            <button class="tab-more-item" type="button" data-tab="channels">🔗 Channels</button>
+            <button class="tab-more-item" type="button" data-tab="channels">🔗 WhatsApp &amp; Instagram</button>
+            <button class="tab-more-item" type="button" data-tab="setup">⚙️ Settings</button>
           </div>
         </div>
       </nav>
@@ -1012,6 +1066,7 @@
             <div>
               <div class="kicker">Client requests</div>
               <h2>Your requests</h2>
+              <p class="muted" style="margin:4px 0 0;font-size:13px;">Every enquiry starts here. Approve a price, the client says yes, and it becomes a <strong>Booking</strong>.</p>
             </div>
             <button class="button secondary" type="button" id="toggle-add-client">➕ Add a client</button>
           </div>
@@ -1035,7 +1090,7 @@
                   </div>
                   <div><label for="eventDate">Event date</label><input id="eventDate" name="eventDate" type="date" required /></div>
                   <div><label for="eventTime">Time (optional)</label><input id="eventTime" name="eventTime" type="time" /></div>
-                  <div class="wide"><label for="locationText">Where is the event?</label><input id="locationText" name="locationText" required placeholder="Venue or area, city" /></div>
+                  <div class="wide"><label for="locationText">Where is the event? <span class="muted" style="font-weight:400;">(can add later)</span></label><input id="locationText" name="locationText" placeholder="Venue or area, city" /></div>
                 </div>
                 <details class="collapse" style="margin-top:14px;">
                   <summary>More details (optional)</summary>
@@ -1082,8 +1137,9 @@
             </div>
             <span class="muted" id="lead-count"></span>
           </div>
+          <div class="board-swipe-hint" id="board-swipe-hint">👈 Swipe sideways to see every stage — New → Waiting → Confirmed → Paid 👉</div>
           <div class="board" id="leads-board"></div>
-          <p class="muted" style="margin-top:12px;font-size:13px;">Drag a card between columns to move a client along, or tap the actions inside each card.</p>
+          <p class="muted" style="margin-top:12px;font-size:13px;">Tap any card to see details and actions, or drag it to the next column.</p>
         </div>
       </section>
 
@@ -1596,13 +1652,13 @@
               <a class="button secondary" id="preview-mypage-link" target="_blank" rel="noreferrer">Open in new tab</a>
             </div>
             <div style="margin-top:12px;">
-              <label for="mypage-slug" style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Custom URL slug (optional)</label>
+              <label for="mypage-slug" style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Make your link easy to say (optional)</label>
               <div class="filter-bar" style="margin:6px 0 0;">
                 <span style="font-size:13px;color:var(--muted);white-space:nowrap;padding:0 4px 0 2px;" id="mypage-slug-prefix">/</span>
                 <input type="text" id="mypage-slug" placeholder="glowbyaisha" maxlength="40" style="flex:1;" />
-                <button class="button secondary small" type="button" id="save-mypage-slug">Save slug</button>
+                <button class="button secondary small" type="button" id="save-mypage-slug">Save</button>
               </div>
-              <p class="muted" style="margin:6px 0 0;font-size:12px;">Once set, clients can reach you at <strong id="mypage-slug-preview"></strong> — much easier to share. Only lowercase letters, numbers, and hyphens.</p>
+              <p class="muted" style="margin:6px 0 0;font-size:12px;">Pick a short name — like your Instagram handle — and your link becomes <strong id="mypage-slug-preview"></strong>. Easy to tell a client over the phone. Lowercase letters, numbers, and hyphens only.</p>
               <div class="status" id="mypage-slug-status"></div>
             </div>
           </div>
@@ -2070,6 +2126,76 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
     </main>
     <div class="toast-shelf" id="toast-shelf"></div>
 
+    <!-- Bottom navigation (mobile): thumb-zone access to the 4 daily tabs -->
+    <nav class="bottom-nav requires-auth" id="bottom-nav" style="display:none;">
+      <button class="bnav-item active" type="button" data-tab="dashboard"><span class="bnav-icon">🏠</span><span>Today</span></button>
+      <button class="bnav-item" type="button" data-tab="leads"><span class="bnav-icon">📩</span><span>Requests</span><span class="bnav-badge" id="bnav-badge-leads" style="display:none;"></span></button>
+      <button class="bnav-item" type="button" data-tab="bookings"><span class="bnav-icon">📅</span><span>Bookings</span></button>
+      <button class="bnav-item" type="button" data-tab="conversations"><span class="bnav-icon">💬</span><span>Messages</span><span class="bnav-badge" id="bnav-badge-messages" style="display:none;"></span></button>
+      <button class="bnav-item" type="button" id="bnav-more"><span class="bnav-icon">☰</span><span>More</span></button>
+    </nav>
+
+    <!-- More sheet (mobile): everything else, including Settings front and centre -->
+    <div class="modal-overlay" id="bnav-sheet">
+      <div class="bnav-sheet-panel">
+        <div class="bnav-sheet-grab"></div>
+        <div class="bnav-sheet-grid">
+          <button class="bnav-sheet-item" type="button" data-tab="clients"><span>👥</span>Clients</button>
+          <button class="bnav-sheet-item" type="button" data-tab="documents"><span>📄</span>Documents</button>
+          <button class="bnav-sheet-item" type="button" data-tab="calendar"><span>🗓️</span>Calendar</button>
+          <button class="bnav-sheet-item" type="button" data-tab="mypage"><span>✨</span>My Page</button>
+          <button class="bnav-sheet-item" type="button" data-tab="reviews"><span>⭐</span>Reviews</button>
+          <button class="bnav-sheet-item" type="button" data-tab="analytics"><span>📊</span>Insights</button>
+          <button class="bnav-sheet-item" type="button" data-tab="team"><span>🧑‍🤝‍🧑</span>Team</button>
+          <button class="bnav-sheet-item" type="button" data-tab="wallet"><span>💳</span>Wallet</button>
+          <button class="bnav-sheet-item" type="button" data-tab="channels"><span>🔗</span>WhatsApp &amp; Insta</button>
+          <button class="bnav-sheet-item" type="button" data-tab="setup"><span>⚙️</span>Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- First-login welcome: what this app does, in her words, in 15 seconds -->
+    <div class="modal-overlay" id="welcome-modal">
+      <div class="modal" style="max-width:430px;text-align:center;">
+        <div style="font-size:44px;line-height:1;margin-top:6px;">💄</div>
+        <h2 style="margin:14px 0 6px;font-size:21px;">Welcome to BusyDays!</h2>
+        <p class="muted" style="font-size:14px;margin:0 0 20px;line-height:1.55;">Here's the whole idea, in three steps:</p>
+        <div style="text-align:left;display:flex;flex-direction:column;gap:14px;margin-bottom:22px;">
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <span style="background:var(--accent-soft);color:var(--accent);font-weight:700;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:14px;">1</span>
+            <div><strong style="font-size:14.5px;">Share your booking link</strong><p class="muted" style="margin:2px 0 0;font-size:13px;line-height:1.5;">Put it in your Instagram bio. Clients see your work and pick a date — no DM ping-pong.</p></div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <span style="background:var(--accent-soft);color:var(--accent);font-weight:700;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:14px;">2</span>
+            <div><strong style="font-size:14.5px;">Requests come to you</strong><p class="muted" style="margin:2px 0 0;font-size:13px;line-height:1.5;">Every enquiry lands in your <strong>Requests</strong> tab with a suggested price. Approve, adjust, or pass — your call.</p></div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <span style="background:var(--accent-soft);color:var(--accent);font-weight:700;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:14px;">3</span>
+            <div><strong style="font-size:14.5px;">Everything else is handled</strong><p class="muted" style="margin:2px 0 0;font-size:13px;line-height:1.5;">Calendar, quotes, invoices, payment reminders — automatic. You do the makeup, BusyDays does the busywork.</p></div>
+          </div>
+        </div>
+        <button class="button" type="button" id="welcome-start" style="width:100%;">Set up my page — 2 minutes</button>
+        <button class="button secondary" type="button" id="welcome-skip" style="width:100%;margin-top:8px;">I'll look around first</button>
+      </div>
+    </div>
+
+    <!-- Credits explainer: shown the first time she taps the credits pill -->
+    <div class="modal-overlay" id="credits-explainer-modal">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-head">
+          <h3 style="margin:0;">✨ What are credits?</h3>
+          <button class="modal-close" type="button" id="credits-explainer-close" aria-label="Close">×</button>
+        </div>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">Credits power the things BusyDays does <em>for</em> you — automatic WhatsApp messages, AI replies, payment reminders, and PDF documents.</p>
+        <ul style="font-size:13.5px;line-height:1.7;margin:0 0 14px;padding-left:20px;color:var(--muted);">
+          <li>You start with free credits — no payment needed to begin.</li>
+          <li>Nothing is ever charged without you topping up yourself.</li>
+          <li>Things you do by hand (replying, booking, recording payments) are always free.</li>
+        </ul>
+        <button class="button" type="button" id="credits-explainer-ok" style="width:100%;">Got it</button>
+      </div>
+    </div>
+
     <!-- Global search modal (Ctrl/Cmd + K) -->
     <div class="modal-overlay" id="global-search-modal">
       <div class="modal search-modal">
@@ -2211,8 +2337,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="wizard-field" style="flex:1;"><label for="qb-time">Time (optional)</label><input id="qb-time" name="eventTime" type="time" /></div>
           </div>
           <div id="qb-conflict" style="margin-bottom:14px;"></div>
-          <div class="wizard-field"><label for="qb-venue">Where?</label><input id="qb-venue" name="locationText" required placeholder="Venue or area, city" /></div>
-          <div class="wizard-field"><label for="qb-price">Agreed price (₹)</label><input id="qb-price" name="price" type="number" min="1" required /></div>
+          <div class="wizard-field"><label for="qb-venue">Where? <span class="muted" style="font-weight:400;">(can add later)</span></label><input id="qb-venue" name="locationText" placeholder="Venue or area, city" /></div>
+          <div class="wizard-field"><label for="qb-price">Price (₹) <span class="muted" style="font-weight:400;">(leave blank to decide later)</span></label><input id="qb-price" name="price" type="number" min="0" placeholder="e.g. 25000" /></div>
           <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:16px;cursor:pointer;">
             <input type="checkbox" id="qb-advance-paid" name="advancePaid" style="width:auto;" />
             They've already paid the advance
@@ -2421,6 +2547,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       const logoutButton = document.getElementById("logout-button");
       const snapshotContent = document.getElementById("snapshot-content");
       const leadsBoard = document.getElementById("leads-board");
+      // Mobile swipe hint: shown until she discovers the columns scroll sideways.
+      if (!localStorage.getItem("bd-board-swiped")) {
+        document.getElementById("board-swipe-hint")?.classList.add("visible");
+        leadsBoard.addEventListener("scroll", function onFirstScroll() {
+          if (leadsBoard.scrollLeft > 30) {
+            localStorage.setItem("bd-board-swiped", "1");
+            document.getElementById("board-swipe-hint")?.classList.remove("visible");
+            leadsBoard.removeEventListener("scroll", onFirstScroll);
+          }
+        }, { passive: true });
+      }
       const bookingsBody = document.getElementById("bookings-body");
       const documentStatus = document.getElementById("document-status");
       const tabNav = document.getElementById("tab-nav");
@@ -2430,16 +2567,26 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       let interactionsCache = null;
 
       // ─── Toast notifications ───
-      function toast(message, type = "info") {
+      // Optional `action: { label, onClick }` adds a tappable next-step button
+      // ("Send quote now →") so feedback teaches the flow instead of just confirming it.
+      function toast(message, type = "info", action) {
         const shelf = document.getElementById("toast-shelf");
         const el = document.createElement("div");
         el.className = `toast ${type}`;
         el.textContent = message;
+        if (action && action.label && action.onClick) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = action.label;
+          btn.style.cssText = "display:block;margin-top:8px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:inherit;font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:6px 12px;cursor:pointer;";
+          btn.addEventListener("click", () => { el.remove(); action.onClick(); });
+          el.appendChild(btn);
+        }
         shelf.appendChild(el);
         setTimeout(() => {
           el.classList.add("removing");
           el.addEventListener("animationend", () => el.remove(), { once: true });
-        }, type === "error" ? 5000 : 3200);
+        }, type === "error" ? 5000 : action ? 6500 : 3200);
       }
 
       // Her first booking is a milestone, not a row in a table. One-time
@@ -2507,7 +2654,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       const tabMoreMenu = document.getElementById("tab-more-menu");
       const tabMoreTrigger = document.getElementById("tab-more-trigger");
-      const MORE_TABS = ["wallet", "analytics", "team", "channels"];
+      const MORE_TABS = ["wallet", "analytics", "team", "channels", "setup"];
 
       function activateTab(name) {
         tabNav.querySelectorAll(".tab-button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
@@ -2515,6 +2662,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         tabMoreTrigger.classList.toggle("active", MORE_TABS.includes(name));
         tabMoreMenu.classList.remove("open");
         document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.getAttribute("data-panel") === name));
+        // Keep the bottom mobile nav in sync; tabs not on the bar light up "More".
+        const bnav = document.getElementById("bottom-nav");
+        if (bnav) {
+          const bnavTabs = ["dashboard", "leads", "bookings", "conversations"];
+          bnav.querySelectorAll(".bnav-item[data-tab]").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
+          document.getElementById("bnav-more")?.classList.toggle("active", !bnavTabs.includes(name));
+        }
+        document.getElementById("bnav-sheet")?.classList.remove("open");
+        window.scrollTo({ top: 0 });
         if (name === "documents") loadDocuments();
         if (name === "clients") renderClients();
         if (name === "calendar") { renderCalendar(); renderBlockedDates(); }
@@ -2525,6 +2681,20 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (name === "mypage") loadMyPage();
         if (name === "wallet") loadWallet();
       }
+
+      // ─── Bottom mobile nav ───
+      document.getElementById("bottom-nav")?.addEventListener("click", (e) => {
+        const more = e.target.closest("#bnav-more");
+        if (more) { document.getElementById("bnav-sheet").classList.add("open"); return; }
+        const item = e.target.closest(".bnav-item[data-tab]");
+        if (item) activateTab(item.getAttribute("data-tab"));
+      });
+      document.getElementById("bnav-sheet")?.addEventListener("click", (e) => {
+        const sheet = document.getElementById("bnav-sheet");
+        if (e.target === sheet) { sheet.classList.remove("open"); return; }
+        const item = e.target.closest(".bnav-sheet-item[data-tab]");
+        if (item) activateTab(item.getAttribute("data-tab"));
+      });
       tabNav.addEventListener("click", (e) => {
         if (e.target.closest("#tab-more-trigger")) {
           tabMoreMenu.classList.toggle("open");
@@ -2543,6 +2713,30 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       function debounce(fn, ms = 200) {
         let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
       }
+
+      // She types numbers the way she always has — "98765 43210" — and we make
+      // them WhatsApp-ready (+91 prefix for bare 10-digit Indian mobiles).
+      function normalizePhoneValue(raw) {
+        const trimmed = String(raw || "").trim();
+        if (!trimmed) return trimmed;
+        const digits = trimmed.replace(/[^\d+]/g, "");
+        if (digits.startsWith("+")) return digits;
+        const bare = digits.replace(/\D/g, "");
+        if (bare.length === 10 && /^[6-9]/.test(bare)) return `+91${bare}`;
+        if (bare.length === 12 && bare.startsWith("91")) return `+${bare}`;
+        if (bare.length === 11 && bare.startsWith("0") && /^[6-9]/.test(bare[1])) return `+91${bare.slice(1)}`;
+        return trimmed;
+      }
+      // Event delegation so it covers every phone field, including ones
+      // rendered later inside modals and drawers.
+      document.addEventListener("focusout", (e) => {
+        const t = e.target;
+        if (!t || t.tagName !== "INPUT") return;
+        const isPhone = /whatsapp|phone/i.test(t.name || "") || /whatsapp|phone/i.test(t.id || "");
+        if (!isPhone) return;
+        const fixed = normalizePhoneValue(t.value);
+        if (fixed !== t.value) t.value = fixed;
+      });
 
       function escapeHtml(value) {
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -3031,10 +3225,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       function setBadge(id, count) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        if (count > 0) { el.textContent = count > 99 ? "99+" : String(count); el.style.display = ""; }
-        else el.style.display = "none";
+        // Mirror onto the bottom mobile nav so badges follow her thumb.
+        for (const elId of [id, `bnav-${id}`]) {
+          const el = document.getElementById(elId);
+          if (!el) continue;
+          if (count > 0) { el.textContent = count > 99 ? "99+" : String(count); el.style.display = ""; }
+          else el.style.display = "none";
+        }
       }
 
       function renderSnapshot(leads, bookings) {
@@ -3147,12 +3344,37 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // The one obvious next step for a lead, based on where it is in the pipeline.
       function primaryActionFor(lead) {
         switch (lead.status) {
-          case "New": return { action: "yes", label: "Approve & quote" };
+          // "Approve price & hold date" describes exactly what the tap does —
+          // the earlier "Approve & quote" promised a quote it never sent.
+          case "New": return { action: "yes", label: "Approve price & hold date" };
           case "Awaiting Client": return { action: "confirm", label: "Confirm booking" };
           case "Confirmed": return { action: "advance", label: "Mark advance paid" };
           case "Payment Received": return { action: "full", label: "Mark paid in full" };
           default: return null;
         }
+      }
+
+      // Plain-words breakdown of how the AI arrived at a suggested price, so the
+      // number earns trust instead of appearing from nowhere.
+      function priceExplanation(lead) {
+        const cfg = sessionState?.workspace?.config;
+        if (!cfg || !lead.initialAiPrice) return "";
+        const baseKey = { Bridal: "basePriceBridal", Engagement: "basePriceEngagement", Reception: "basePriceReception", Party: "basePriceParty", Shoot: "basePriceShoot" }[lead.eventType] || "basePriceOther";
+        const base = Number(cfg[baseKey]) || 0;
+        const parts = [];
+        if (base > 0) parts.push(`your ${lead.eventType} starting price (${formatMoney(base)})`);
+        if (lead.eventDate) {
+          const monthKeys = ["multiplierJan","multiplierFeb","multiplierMar","multiplierApr","multiplierMay","multiplierJun","multiplierJul","multiplierAug","multiplierSep","multiplierOct","multiplierNov","multiplierDec"];
+          const m = new Date(lead.eventDate + "T00:00:00").getMonth();
+          const mult = Number(cfg[monthKeys[m]]) || 1;
+          if (mult > 1) parts.push("wedding-season demand for that month");
+          else if (mult < 1) parts.push("a quieter month for that date");
+        }
+        if (lead.profileTier === "High") parts.push("a VIP client profile");
+        else if (lead.profileTier === "Mid") parts.push("a premium client profile");
+        if (lead.outstationFlag === "Yes") parts.push("outstation travel");
+        if (!parts.length) return "";
+        return `Based on ${parts.join(", ")}. Adjust it any time before sending the quote.`;
       }
 
       function daysUntil(dateStr) {
@@ -3237,8 +3459,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           : lead.quoteGeneratedAt
           ? `<span class="pill" style="font-size:11px;">Quote ready</span>`
           : "";
-        const payChip = lead.paymentStatus
-          ? `<span class="${pillClass(lead.paymentStatus)}" style="font-size:11px;">${escapeHtml(lead.paymentStatus)}</span>`
+        const payLabels = { "Not Started": "", "Advance Paid": "💰 Advance in", "Paid in Full": "✅ Fully paid", "Advance Due": "Advance due" };
+        const payText = payLabels[lead.paymentStatus] !== undefined ? payLabels[lead.paymentStatus] : lead.paymentStatus;
+        const payChip = payText
+          ? `<span class="${pillClass(lead.paymentStatus)}" style="font-size:11px;">${escapeHtml(payText)}</span>`
           : "";
         const waitlistChip = lead.source === "Waitlist"
           ? `<span class="pill warning" style="font-size:11px;">⏳ Waitlist</span>`
@@ -4329,10 +4553,25 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const pill = document.getElementById("credits-pill");
         if (!pill || balance === undefined || balance === null) return;
         pill.style.display = "inline-flex";
-        document.getElementById("credits-pill-value").textContent = Number(balance).toLocaleString("en-IN");
+        document.getElementById("credits-pill-value").textContent = `${Number(balance).toLocaleString("en-IN")} credits`;
         pill.classList.toggle("low", balance <= LOW_BALANCE);
       }
-      document.getElementById("credits-pill")?.addEventListener("click", () => activateTab("wallet"));
+      // First tap explains what a credit is (the #1 "am I being charged?"
+      // worry); after that the pill goes straight to the wallet.
+      document.getElementById("credits-pill")?.addEventListener("click", () => {
+        if (!localStorage.getItem("bd-credits-explained")) {
+          localStorage.setItem("bd-credits-explained", "1");
+          document.getElementById("credits-explainer-modal").classList.add("open");
+          return;
+        }
+        activateTab("wallet");
+      });
+      document.getElementById("credits-explainer-close")?.addEventListener("click", () =>
+        document.getElementById("credits-explainer-modal").classList.remove("open"));
+      document.getElementById("credits-explainer-ok")?.addEventListener("click", () => {
+        document.getElementById("credits-explainer-modal").classList.remove("open");
+        activateTab("wallet");
+      });
 
       async function loadWallet() {
         const ledgerBody = document.getElementById("wallet-ledger");
@@ -4978,10 +5217,30 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           renderDashboard(payload);
           syncProtectButton(payload.workspace);
           loadTeam();
+          // Bottom mobile nav: visible only once she's signed in.
+          const bnav = document.getElementById("bottom-nav");
+          if (bnav) { bnav.classList.add("authed"); bnav.style.display = ""; document.body.classList.add("has-bottom-nav"); }
+          maybeShowWelcome(payload.workspace.config);
         } else {
           document.body.classList.remove("authenticated");
         }
       }
+
+      // First-login welcome: shows once, only while the workspace is still
+      // unconfigured, so she gets the 15-second pitch before the dashboard.
+      function maybeShowWelcome(cfg) {
+        if (localStorage.getItem("bd-welcomed")) return;
+        if (cfg?.businessName) { localStorage.setItem("bd-welcomed", "1"); return; }
+        localStorage.setItem("bd-welcomed", "1");
+        document.getElementById("welcome-modal").classList.add("open");
+      }
+      document.getElementById("welcome-start")?.addEventListener("click", () => {
+        document.getElementById("welcome-modal").classList.remove("open");
+        openQuickSetup();
+      });
+      document.getElementById("welcome-skip")?.addEventListener("click", () => {
+        document.getElementById("welcome-modal").classList.remove("open");
+      });
 
       // Session expiry shouldn't feel like the app broke: tell her what
       // happened, then take her back through sign-in.
@@ -5126,12 +5385,23 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       async function runLeadAction(action, leadId, btn) {
         if (btn) { btn.disabled = true; btn.classList.add("loading"); }
+        // Every action answers two questions out loud: "did it work?" and
+        // "what do I do next?" — silence after a tap reads as failure.
+        const who = leadById(leadId)?.clientName || "the client";
         try {
-          if (action === "yes") await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
-          else if (action === "no") await postJson(`/api/leads/${leadId}/decision`, { decision: "NO" });
+          if (action === "yes") {
+            await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
+            toast(`Price approved — ${who}'s date is on hold. Next: send them the quote.`, "success",
+              { label: "Send quote now →", onClick: () => runLeadAction("send-quote", leadId, null) });
+          }
+          else if (action === "no") {
+            await postJson(`/api/leads/${leadId}/decision`, { decision: "NO" });
+            toast(`Marked as didn't book. You can still find ${who} in the Clients tab.`, "info");
+          }
           else if (action === "edit") {
             const i = document.querySelector(`[data-drawer-edit-price]`) || document.querySelector(`[data-edit-input="${leadId}"]`);
             await postJson(`/api/leads/${leadId}/decision`, { decision: "EDIT", approvedPrice: i ? i.value : "" });
+            toast(`Price updated and ${who}'s date is on hold.`, "success");
           }
           else if (action === "confirm") {
             const wasFirstBooking = (sessionState?.dashboard?.bookings || []).length === 0;
@@ -5139,8 +5409,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             if (wasFirstBooking) celebrateFirstBooking();
             else toast("Booking confirmed and on your calendar. 🎉", "success");
           }
-          else if (action === "advance") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Advance Paid" });
-          else if (action === "full") await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
+          else if (action === "advance") {
+            await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Advance Paid" });
+            toast(`Advance recorded for ${who} 💰`, "success");
+          }
+          else if (action === "full") {
+            await postJson(`/api/leads/${leadId}/payment`, { paymentStatus: "Paid in Full" });
+            toast(`${who} is fully paid 🎉`, "success");
+          }
           else if (action === "reply") {
             const i = document.querySelector(`[data-drawer-reply]`) || document.querySelector(`[data-reply-input="${leadId}"]`);
             const pendingImageUrl = document.getElementById("drawer-image-preview")?.dataset?.imageUrl || "";
@@ -5149,9 +5425,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             await postJson(`/api/leads/${leadId}/reply`, body);
             const preview = document.getElementById("drawer-image-preview");
             if (preview) { preview.dataset.imageUrl = ""; preview.innerHTML = ""; preview.style.display = "none"; }
+            if (i) i.value = "";
+            toast(`Message sent to ${who}.`, "success");
           }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
-          else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast("Quote sent to client.", "success"); }
+          else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast(`Quote sent to ${who}.`, "success"); }
           else toast("Lead updated.", "success");
           await refreshSession();
           // Re-render the drawer with updated lead data if it's open for this lead.
@@ -5323,6 +5601,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           <div class="drawer-section">
             <div class="drawer-section-title">Quote &amp; status</div>
             <div style="margin-bottom:10px;">${priceStr}</div>
+            ${!lead.finalApprovedPrice && lead.initialAiPrice && priceExplanation(lead) ? `<p class="muted" style="margin:-4px 0 10px;font-size:12.5px;line-height:1.5;">💡 ${escapeHtml(priceExplanation(lead))}</p>` : ""}
             <div class="drawer-row"><span class="drawer-row-label">Status</span><span class="drawer-row-value">${escapeHtml(statusLabel(lead.status))}</span></div>
             ${lead.status === "Awaiting Client" && lead.holdExpiresAt ? `<div class="drawer-row"><span class="drawer-row-label">Hold expires</span><span class="drawer-row-value" style="color:${new Date(lead.holdExpiresAt) < new Date() ? "var(--danger)" : "var(--warning)"};">${escapeHtml(formatDate(lead.holdExpiresAt))}${new Date(lead.holdExpiresAt) < new Date() ? " — lapsed" : ""}</span></div>` : ""}
             ${lead.profileTier ? `<div class="drawer-row"><span class="drawer-row-label">Client type</span><span class="drawer-row-value">${lead.profileTier === "High" ? "VIP / celebrity" : lead.profileTier === "Mid" ? "Premium" : "Regular"}</span></div>` : ""}
@@ -5561,6 +5840,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         };
         const action = map[target];
         if (!action) { toast(`Can't move directly to "${target}".`, "error"); renderLeads(); return; }
+        // Mis-drops happen, especially on touch — confirm before writing
+        // someone off as "didn't book".
+        if (action === "no") {
+          const ok = await showConfirm(
+            `Mark ${lead.clientName} as didn't book?`,
+            "They'll move out of your pipeline but stay in your Clients list — you can always book them later.",
+            "Yes, didn't book",
+          );
+          if (!ok) { renderLeads(); return; }
+        }
         await runLeadAction(action, id, null);
       });
 
@@ -6111,6 +6400,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         try {
           const data = Object.fromEntries(new FormData(quickBookingForm).entries());
           data.advancePaid = document.getElementById("qb-advance-paid").checked;
+          // Blank optional fields → sensible defaults so "block the date now,
+          // sort details later" works in one tap.
+          if (!String(data.price || "").trim()) data.price = 0;
+          if (!String(data.locationText || "").trim()) data.locationText = "To be decided";
           const wasFirstBooking = (sessionState?.dashboard?.bookings || []).length === 0;
           const r = await postJson("/api/bookings/quick", data);
           closeQuickBooking();
