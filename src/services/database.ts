@@ -216,6 +216,16 @@ async function ensurePostgres() {
         CREATE INDEX IF NOT EXISTS idx_campaign_broadcasts_email
         ON campaign_broadcasts (email)
       `);
+      // Single-use login tokens for the native app's OAuth handoff (system
+      // browser → deep link → session). Stored hashed; rows expire in minutes.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS mobile_login_tokens (
+          token_hash TEXT PRIMARY KEY,
+          email TEXT NOT NULL,
+          expires_at TIMESTAMPTZ NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
     } finally {
       client.release();
     }
@@ -692,4 +702,55 @@ export async function markInterruptedCampaigns(): Promise<number> {
      WHERE status = 'running'`,
   );
   return res.rowCount ?? 0;
+}
+
+// ── Mobile login tokens ──────────────────────────────────────────────────────
+// Single-use, short-lived tokens bridging the native app's system-browser OAuth
+// back into a webview session. Postgres-backed so the OAuth callback and the
+// exchange request may land on different instances. In-memory in file mode.
+
+const mobileLoginTokensMem = new Map<string, { email: string; expiresAtMs: number }>();
+
+export async function storeMobileLoginToken(
+  tokenHash: string,
+  email: string,
+  expiresAt: Date,
+): Promise<void> {
+  if (!hasPostgres()) {
+    // Opportunistic cleanup keeps the dev map bounded.
+    const now = Date.now();
+    for (const [hash, entry] of mobileLoginTokensMem) {
+      if (entry.expiresAtMs <= now) mobileLoginTokensMem.delete(hash);
+    }
+    mobileLoginTokensMem.set(tokenHash, {
+      email: normalizeEmail(email),
+      expiresAtMs: expiresAt.getTime(),
+    });
+    return;
+  }
+  await ensurePostgres();
+  await getPool().query(`DELETE FROM mobile_login_tokens WHERE expires_at < NOW()`);
+  await getPool().query(
+    `INSERT INTO mobile_login_tokens (token_hash, email, expires_at)
+     VALUES ($1, $2, $3)`,
+    [tokenHash, normalizeEmail(email), expiresAt],
+  );
+}
+
+// Atomically consumes the token: deletes the row and returns the email only if
+// it existed and hadn't expired. A second call with the same token gets null.
+export async function consumeMobileLoginToken(tokenHash: string): Promise<string | null> {
+  if (!hasPostgres()) {
+    const entry = mobileLoginTokensMem.get(tokenHash);
+    mobileLoginTokensMem.delete(tokenHash);
+    return entry && entry.expiresAtMs > Date.now() ? entry.email : null;
+  }
+  await ensurePostgres();
+  const res = await getPool().query<{ email: string }>(
+    `DELETE FROM mobile_login_tokens
+     WHERE token_hash = $1 AND expires_at > NOW()
+     RETURNING email`,
+    [tokenHash],
+  );
+  return res.rows[0]?.email ?? null;
 }

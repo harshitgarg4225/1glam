@@ -51,6 +51,10 @@ const envSchema = z.object({
   // Web push (PWA notifications). Generate once with: npx web-push generate-vapid-keys
   VAPID_PUBLIC_KEY: z.string().optional().default(""),
   VAPID_PRIVATE_KEY: z.string().optional().default(""),
+  // Native push (iOS/Android app via FCM). Paste the Firebase service-account
+  // JSON (raw or base64) from Project Settings → Service accounts. Optional —
+  // without it the app silently skips native push and web push still works.
+  FCM_SERVICE_ACCOUNT_JSON: z.string().optional().default(""),
   GOOGLE_OAUTH_SCOPES: z
     .string()
     .default(
@@ -120,6 +124,7 @@ export const appConfig = {
   googleScopes: parsed.GOOGLE_OAUTH_SCOPES.split(",").map((scope) => scope.trim()).filter(Boolean),
   vapidPublicKey: parsed.VAPID_PUBLIC_KEY,
   vapidPrivateKey: parsed.VAPID_PRIVATE_KEY,
+  fcmServiceAccountJson: parsed.FCM_SERVICE_ACCOUNT_JSON,
   workspaceDbPath: path.join(process.cwd(), "data", "workspaces.json"),
 };
 

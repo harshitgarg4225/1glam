@@ -11,7 +11,7 @@ export function createOAuthClient() {
   );
 }
 
-export function getAuthUrl(extraScopes: string[] = []) {
+export function getAuthUrl(extraScopes: string[] = [], state?: string) {
   const client = createOAuthClient();
   const scope = [...new Set([...appConfig.googleScopes, ...extraScopes])];
   return client.generateAuthUrl({
@@ -21,6 +21,9 @@ export function getAuthUrl(extraScopes: string[] = []) {
     // Keep previously granted scopes when asking for new ones, so adding
     // Business Profile access never drops Sheets/Calendar permissions.
     include_granted_scopes: true,
+    // Round-trips through Google so the callback knows the flow's origin
+    // (e.g. "mobile" → finish with a deep link instead of a redirect to /).
+    ...(state ? { state } : {}),
   });
 }
 

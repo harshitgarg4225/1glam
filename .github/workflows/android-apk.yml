@@ -1,0 +1,65 @@
+name: Android APK
+
+# Builds an installable debug APK of the BusyDays mobile shell and uploads it
+# as a workflow artifact (Actions run page → Artifacts → busydays-apk).
+# Debug-signed: fine for sideloading/testing; use a release keystore + Play
+# signing when distributing more widely (see mobile/README.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "Web app URL the shell loads"
+        required: false
+        default: "https://1glam-production.up.railway.app"
+  push:
+    branches: [main]
+    paths: ["mobile/**"]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    env:
+      # Optional repo secret; when present the build can receive FCM push.
+      GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install Capacitor dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Sync Capacitor config into the native project
+        working-directory: mobile
+        run: npx cap sync android
+        env:
+          CAP_SERVER_URL: ${{ github.event.inputs.server_url || 'https://1glam-production.up.railway.app' }}
+
+      # Optional push support: when the FCM Android config is stored as a
+      # secret, bake it in so the debug build can receive notifications.
+      - name: Add google-services.json (if configured)
+        if: ${{ env.GOOGLE_SERVICES_JSON != '' }}
+        working-directory: mobile/android/app
+        run: echo "$GOOGLE_SERVICES_JSON" > google-services.json
+
+      - name: Build debug APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: busydays-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

@@ -71,7 +71,9 @@ import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import { loadClientNotes, saveClientNotes } from "./services/client-notes.js";
-import { addPushSubscription, pushConfigured, removePushSubscription } from "./services/push.js";
+import { addDeviceToken, addPushSubscription, pushConfigured, removeDeviceToken, removePushSubscription } from "./services/push.js";
+import { fcmConfigured } from "./services/fcm.js";
+import { createMobileLoginToken, redeemMobileLoginToken } from "./services/mobile-auth.js";
 import {
   createWhatsAppTemplate,
   exchangeForLongLivedToken,
@@ -359,7 +361,7 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // /api/session is intentionally public: it reports authenticated:false for
 // logged-out visitors so the landing page can render without bouncing them (and
 // Google's OAuth-verification crawler) to a login screen.
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout"]);
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange"]);
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
@@ -738,12 +740,14 @@ app.post(
   },
 );
 
-app.get("/auth/google", (_req, res) => {
+app.get("/auth/google", (req, res) => {
   if (!appConfig.googleClientId || !appConfig.googleClientSecret) {
     return res.status(500).send("Google OAuth is not configured. Add env vars first.");
   }
 
-  res.redirect(getAuthUrl());
+  // ?mobile=1 — the native app runs OAuth in the system browser (Google blocks
+  // webview sign-in); "mobile" state makes the callback finish with a deep link.
+  res.redirect(getAuthUrl([], req.query.mobile === "1" ? "mobile" : undefined));
 });
 
 // Incremental consent: re-runs Google sign-in asking additionally for Business
@@ -792,7 +796,62 @@ app.get("/auth/google/callback", async (req, res, next) => {
 
     await provisionWorkspace(profile, tokens);
     await persistWorkspaceTokens(profile.email, tokens);
+
+    if (req.query.state === "mobile") {
+      // Native-app flow: this page is open in the system browser, not the app's
+      // webview. Mint a single-use token and deep-link back into the app, which
+      // exchanges it for a session (POST /api/auth/mobile/exchange). The page
+      // body is a fallback for browsers that block automatic scheme redirects.
+      const ott = await createMobileLoginToken(profile.email);
+      const deepLink = `busydays://auth?ott=${encodeURIComponent(ott)}`;
+      res
+        .status(200)
+        .type("html")
+        .send(
+          `<!doctype html><html><head><meta charset="utf-8"><title>Signed in</title>` +
+            `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+            `<style>body{font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:90vh;gap:16px;text-align:center;padding:24px}a{background:#111;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:600}</style>` +
+            `</head><body>` +
+            `<h2>✅ Signed in</h2><p>Returning you to the BusyDays app…</p>` +
+            `<a href="${deepLink}">Open BusyDays</a>` +
+            `<script>window.location.href=${JSON.stringify(deepLink)};</script>` +
+            `</body></html>`,
+        );
+      return;
+    }
+
     res.redirect("/");
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Native-app login completion: the webview posts the one-time token from the
+// deep link and receives a real session cookie. Public by necessity (it's how a
+// session is obtained); the token itself is the credential — 256-bit, hashed at
+// rest, 5-minute TTL, single use — and the endpoint is rate-limited.
+app.post("/api/auth/mobile/exchange", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const ott = String(req.body?.ott ?? "");
+    const email = await redeemMobileLoginToken(ott);
+    if (!email) return res.status(401).json({ error: "Login link expired — please sign in again." });
+
+    const workspace = await getWorkspaceByEmail(email);
+    if (!workspace) return res.status(401).json({ error: "Workspace not found — please sign in again." });
+
+    await new Promise<void>((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve())),
+    );
+    req.session.profile = { email: workspace.email, name: workspace.name };
+    try {
+      req.session.googleTokens = await getWorkspaceCredentials(email);
+    } catch {
+      // Tokens restore lazily via the session-heal middleware on the next request.
+    }
+    await new Promise<void>((resolve, reject) =>
+      req.session.save((err) => (err ? reject(err) : resolve())),
+    );
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -2115,10 +2174,10 @@ app.post("/api/bookings/:bookingId/payments", async (req, res, next) => {
   }
 });
 
-// ---- Web push notifications (PWA) ----
+// ---- Push notifications (web push for PWA, FCM for the native app) ----
 app.get("/api/push/config", (req, res) => {
   if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
-  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey });
+  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured() });
 });
 
 app.post("/api/push/subscribe", async (req, res, next) => {
@@ -2142,6 +2201,32 @@ app.post("/api/push/unsubscribe", async (req, res, next) => {
   try {
     if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
     await removePushSubscription(req.session.profile.email, String(req.body?.endpoint ?? ""));
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// FCM device tokens from the native app. The app re-registers on every launch
+// (tokens rotate), which addDeviceToken treats as an upsert.
+app.post("/api/push/register-device", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const token = String(req.body?.token ?? "").trim();
+    const platform = String(req.body?.platform ?? "");
+    if (!token || token.length > 4096) return res.status(400).json({ error: "Invalid device token" });
+    if (platform !== "ios" && platform !== "android") return res.status(400).json({ error: "platform must be ios or android" });
+    await addDeviceToken(req.session.profile.email, token, platform);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/push/unregister-device", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    await removeDeviceToken(req.session.profile.email, String(req.body?.token ?? ""));
     res.json({ ok: true });
   } catch (error) {
     next(error);
