@@ -443,6 +443,8 @@ async function seedSpreadsheet(
     ["logo_url", config.logoUrl, "Logo shown on your quotes, invoices & contracts (PNG/JPG URL)"],
     ["gst_number", config.gstNumber, "Your GSTIN — shown on documents if you're GST registered"],
     ["gst_percentage", config.gstPercentage, "GST rate to itemise on documents (e.g. 18). 0 = no GST line"],
+    ["cancellation_window_days", config.cancellationWindowDays, "Days before event within which cancellation prompts a fee notice (default 7)"],
+    ["cancellation_fee_percent", config.cancellationFeePercent, "Percentage of booking price suggested as cancellation fee (default 50)"],
   ];
 
   const artistsRows = [[
@@ -712,6 +714,8 @@ async function loadConfigFromSpreadsheet(
       logoUrl: String(values.logo_url ?? base.logoUrl),
       gstNumber: String(values.gst_number ?? base.gstNumber),
       gstPercentage: Number(values.gst_percentage ?? base.gstPercentage) || 0,
+      cancellationWindowDays: Number(values.cancellation_window_days ?? base.cancellationWindowDays) || 7,
+      cancellationFeePercent: Number(values.cancellation_fee_percent ?? base.cancellationFeePercent) || 50,
     });
 
     return parsed.success ? parsed.data : base;

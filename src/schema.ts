@@ -117,6 +117,8 @@ export const workspaceConfigSchema = z.object({
   logoUrl: z.string().optional().default(""),
   gstNumber: z.string().optional().default(""),
   gstPercentage: z.coerce.number().min(0).max(28).optional().default(0),
+  cancellationWindowDays: z.coerce.number().min(0).max(365).optional().default(7),
+  cancellationFeePercent: z.coerce.number().min(0).max(100).optional().default(50),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

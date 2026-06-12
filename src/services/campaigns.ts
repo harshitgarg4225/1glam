@@ -6,12 +6,17 @@ import { bookingHeaders, leadHeaders, sheetNames } from "./sheet-definitions.js"
 import { fetchWithTimeout } from "./http.js";
 import { appConfig } from "../config.js";
 import { buildAppSecretProof } from "./meta.js";
+import { loadClientNotes } from "./client-notes.js";
 
 export type CampaignSegment =
   | "past-clients"         // all completed bookings (deduplicated by phone)
   | "confirmed-this-year"  // bookings confirmed/ongoing this calendar year
   | "pending-leads"        // leads with New / Hold / Awaiting Client status
-  | "all-past-leads";      // every lead that ever arrived (deduplicated)
+  | "all-past-leads"       // every lead that ever arrived (deduplicated)
+  | "slipping-away"        // last completed booking was 90+ days ago
+  | "birthday-this-month"  // client has birthday stored in notes in current month
+  | "vip-clients"          // 3+ completed bookings
+  | "new-clients";         // first booking within last 60 days
 
 type Contact = { name: string; phone: string };
 
@@ -68,13 +73,73 @@ async function listCampaignContacts(
     range: `${sheetNames.bookings}!A2:${toCol(bookingHeaders.length)}`,
   });
   const rows = res.data.values ?? [];
-  const seen = new Set<string>();
-  const contacts: Contact[] = [];
   const iStatus = bookingHeaders.indexOf("Status");
   const iDate = bookingHeaders.indexOf("Event Date");
+  const iBookedAt = bookingHeaders.indexOf("Booked At");
   const iPhone = bookingHeaders.indexOf("Client WhatsApp");
   const iName = bookingHeaders.indexOf("Client Name");
 
+  // Build per-phone aggregates for smart segments
+  const phoneMap = new Map<string, { name: string; completedCount: number; lastCompletedDate: Date | null; firstBookingDate: Date | null }>();
+  for (const row of rows) {
+    if (!row[0]) continue;
+    const status = String(row[iStatus] ?? "");
+    if (status === "Cancelled") continue;
+    const phone = String(row[iPhone] ?? "").replace(/\D/g, "");
+    const name = String(row[iName] ?? "Unknown");
+    if (!phone || phone.length < 8) continue;
+    const eventDate = row[iDate] ? new Date(String(row[iDate])) : null;
+    const bookedAt = row[iBookedAt] ? new Date(String(row[iBookedAt])) : null;
+    const existing = phoneMap.get(phone);
+    if (!existing) {
+      phoneMap.set(phone, {
+        name,
+        completedCount: status === "Completed" ? 1 : 0,
+        lastCompletedDate: status === "Completed" && eventDate && !isNaN(eventDate.getTime()) ? eventDate : null,
+        firstBookingDate: bookedAt && !isNaN(bookedAt.getTime()) ? bookedAt : null,
+      });
+    } else {
+      if (status === "Completed") {
+        existing.completedCount++;
+        if (eventDate && !isNaN(eventDate.getTime())) {
+          if (!existing.lastCompletedDate || eventDate > existing.lastCompletedDate) {
+            existing.lastCompletedDate = eventDate;
+          }
+        }
+      }
+      if (bookedAt && !isNaN(bookedAt.getTime())) {
+        if (!existing.firstBookingDate || bookedAt < existing.firstBookingDate) {
+          existing.firstBookingDate = bookedAt;
+        }
+      }
+    }
+  }
+
+  if (segment === "birthday-this-month") {
+    const currentMonth = now.getMonth() + 1; // 1-12
+    const phones = Array.from(phoneMap.keys());
+    const notesEntries = await Promise.all(
+      phones.map(async (phone) => {
+        const notes = await loadClientNotes(workspace.workspaceId, phone);
+        return { phone, notes };
+      }),
+    );
+    const contacts: Contact[] = [];
+    for (const { phone, notes } of notesEntries) {
+      if (!notes.birthday) continue;
+      const [, mm] = notes.birthday.split("-");
+      if (parseInt(mm, 10) !== currentMonth) continue;
+      const entry = phoneMap.get(phone);
+      contacts.push({ name: entry?.name ?? "Client", phone });
+    }
+    return contacts;
+  }
+
+  const cutoff90 = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const cutoff60 = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+  const seen = new Set<string>();
+  const contacts: Contact[] = [];
   for (const row of rows) {
     if (!row[0]) continue;
     const status = String(row[iStatus] ?? "");
@@ -87,7 +152,24 @@ async function listCampaignContacts(
     if (segment === "past-clients" && status !== "Completed") continue;
     if (segment === "confirmed-this-year" && !eventDate.startsWith(thisYear)) continue;
 
-    if (!seen.has(phone)) { seen.add(phone); contacts.push({ name, phone }); }
+    if (!seen.has(phone)) {
+      if (segment === "slipping-away") {
+        const agg = phoneMap.get(phone);
+        if (!agg || agg.completedCount === 0) continue;
+        if (agg.lastCompletedDate && agg.lastCompletedDate > cutoff90) continue;
+      }
+      if (segment === "vip-clients") {
+        const agg = phoneMap.get(phone);
+        if (!agg || agg.completedCount < 3) continue;
+      }
+      if (segment === "new-clients") {
+        const agg = phoneMap.get(phone);
+        if (!agg || !agg.firstBookingDate || agg.firstBookingDate < cutoff60) continue;
+        if (agg.completedCount < 1) continue;
+      }
+      seen.add(phone);
+      contacts.push({ name, phone });
+    }
   }
   return contacts;
 }

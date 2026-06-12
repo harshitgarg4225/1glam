@@ -2326,6 +2326,114 @@ app.post("/api/campaigns/broadcast", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+// ── Birthday prompts ─────────────────────────────────────────────────────────
+// Returns clients whose stored birthday falls in the next `days` days (default 7),
+// so the dashboard can show a proactive "wish [Name] happy birthday" nudge.
+app.get("/api/clients/birthdays-soon", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const daysAhead = Math.min(Math.max(Number(req.query.days) || 7, 1), 30);
+
+    // Collect unique phones from leads.
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const leadRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.leads}!A2:E`,
+    });
+    const leadRows = leadRes.data.values ?? [];
+    const phoneNameMap = new Map<string, string>();
+    for (const row of leadRows) {
+      const name = String(row[3] ?? "").trim();
+      const phone = String(row[4] ?? "").replace(/\D/g, "");
+      if (phone.length >= 8 && name) phoneNameMap.set(phone, name);
+    }
+
+    const phones = Array.from(phoneNameMap.keys()).slice(0, 300);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const results: { name: string; phone: string; birthday: string; daysUntil: number }[] = [];
+
+    await Promise.all(
+      phones.map(async (phone) => {
+        const notes = await loadClientNotes(workspace.workspaceId, phone);
+        if (!notes.birthday) return;
+        const [, mm, dd] = notes.birthday.split("-").map(Number);
+        if (!mm || !dd) return;
+        const next = new Date(today.getFullYear(), mm - 1, dd);
+        if (next < today) next.setFullYear(today.getFullYear() + 1);
+        const daysUntil = Math.round((next.getTime() - today.getTime()) / 86400000);
+        if (daysUntil <= daysAhead) {
+          results.push({ name: phoneNameMap.get(phone) ?? "Client", phone, birthday: notes.birthday, daysUntil });
+        }
+      }),
+    );
+    results.sort((a, b) => a.daysUntil - b.daysUntil);
+    res.json({ ok: true, upcoming: results });
+  } catch (error) { next(error); }
+});
+
+// ── GST / tax summary (JSON) ──────────────────────────────────────────────────
+// Returns a structured summary of bookings with GST breakdown for the Analytics
+// tab. The CSV version (/api/export/accountant) is for accountants; this is
+// for the in-app tax overview widget.
+app.get("/api/reports/gst", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const now = new Date();
+    const fyStartYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const defaultFrom = `${fyStartYear}-04-01`;
+    const defaultTo = `${fyStartYear + 1}-03-31`;
+    const from = typeof req.query.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : defaultFrom;
+    const to = typeof req.query.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.to) ? req.query.to : defaultTo;
+
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const gstPct = Number(workspace.config.gstPercentage) || 0;
+    const gstNumber = workspace.config.gstNumber || "";
+
+    const rows: {
+      invoiceNumber: string; invoiceDate: string; clientName: string;
+      eventType: string; eventDate: string; total: number; taxable: number;
+      gstAmount: number; received: number; paymentStatus: string; bookingStatus: string;
+    }[] = [];
+
+    for (const booking of bookings) {
+      const invoiceDate = (booking.invoiceGeneratedAt || booking.bookedAt || "").slice(0, 10);
+      if (!invoiceDate || invoiceDate < from || invoiceDate > to) continue;
+      const log = parsePaymentsLog(booking.paymentsLog);
+      const received = log.filter((p: { kind?: string }) => p.kind !== "refund").reduce((s: number, p: { amount?: number }) => s + (p.amount || 0), 0);
+      const total = Math.round(Number(booking.finalPrice) || 0);
+      const taxable = gstPct > 0 ? Math.round(total / (1 + gstPct / 100)) : total;
+      const gstAmount = total - taxable;
+      rows.push({
+        invoiceNumber: booking.invoiceNumber || `INV-${booking.bookingId}`,
+        invoiceDate,
+        clientName: booking.clientName,
+        eventType: booking.eventType,
+        eventDate: booking.eventDate,
+        total,
+        taxable,
+        gstAmount,
+        received,
+        paymentStatus: booking.paymentStatus,
+        bookingStatus: booking.status,
+      });
+    }
+    rows.sort((a, b) => a.invoiceDate.localeCompare(b.invoiceDate));
+
+    const totalGross = rows.reduce((s, r) => s + r.total, 0);
+    const totalTaxable = rows.reduce((s, r) => s + r.taxable, 0);
+    const totalGst = rows.reduce((s, r) => s + r.gstAmount, 0);
+    const totalReceived = rows.reduce((s, r) => s + r.received, 0);
+
+    res.json({ ok: true, from, to, gstPct, gstNumber, rows, totals: { gross: totalGross, taxable: totalTaxable, gst: totalGst, received: totalReceived } });
+  } catch (error) { next(error); }
+});
+
 // ── Monthly business recap ───────────────────────────────────────────────────
 
 app.get("/api/recap/monthly", async (req, res, next) => {

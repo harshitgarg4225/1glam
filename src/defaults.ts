@@ -117,5 +117,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     logoUrl: "",
     gstNumber: "",
     gstPercentage: 0,
+    cancellationWindowDays: 7,
+    cancellationFeePercent: 50,
   };
 }
