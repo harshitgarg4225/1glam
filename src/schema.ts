@@ -36,6 +36,10 @@ export const workspaceConfigSchema = z.object({
   travelNearbyCity: numberFromForm,
   travelOutstation: numberFromForm,
   travelOutstationThresholdKm: numberFromForm,
+  // Distance (km) where "within city" ends and the nearby-city fee starts.
+  travelNearbyThresholdKm: numberFromForm.optional().default(25),
+  // Optional ₹/km mode: when > 0 it replaces the three flat tiers entirely.
+  travelPerKmRate: numberFromForm.optional().default(0),
   profileLowMultiplier: numberFromForm,
   profileMidMultiplier: numberFromForm,
   profileHighMultiplier: numberFromForm,
@@ -73,6 +77,10 @@ export const workspaceConfigSchema = z.object({
   reminderTemplateLang: z.string().optional().default("en"),
   reminderDaysBefore: z.string().optional().default("7,1"),
   autoPaymentReminders: z.string().optional().default("Yes"),
+  // Morning push digest: today's jobs + what needs her attention.
+  dailyDigest: z.string().optional().default("Yes"),
+  waitlistOfferTemplate: z.string().optional().default(""),
+  waitlistOfferTemplateLang: z.string().optional().default("en"),
   ownerAlertTemplate: z.string().optional().default(""),
   ownerAlertTemplateLang: z.string().optional().default("en"),
   razorpayKeyId: z.string().optional().default(""),

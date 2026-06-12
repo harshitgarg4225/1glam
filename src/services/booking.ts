@@ -945,6 +945,23 @@ export async function countActiveLeadsForDate(
   return getDemandCountForDate(workspace, tokens, eventDate);
 }
 
+// Active (not lost/completed, not waitlisted) leads on a date — the jobs that
+// actually occupy her timeline. Used for duration-aware slot availability.
+export async function listActiveLeadsForDate(
+  email: string,
+  tokens: Credentials,
+  eventDate: string,
+): Promise<LeadRecord[]> {
+  const workspace = await getRequiredWorkspace(email);
+  const leads = await listLeadRows(workspace, tokens);
+  return leads.filter(
+    (lead) =>
+      lead.eventDate === eventDate &&
+      !["Lost", "Completed"].includes(lead.status) &&
+      lead.source !== "Waitlist",
+  );
+}
+
 export async function getDashboardData(email: string, tokens: Credentials): Promise<DashboardData> {
   const workspace = await getRequiredWorkspace(email);
   const leads = await listLeadRows(workspace, tokens);
@@ -1175,12 +1192,7 @@ function calculatePricing(
         ? workspace.config.profileLowMultiplier
         : workspace.config.profileMidMultiplier;
 
-  const travelCost =
-    travel.distanceKm >= workspace.config.travelOutstationThresholdKm
-      ? workspace.config.travelOutstation
-      : travel.distanceKm > 25
-        ? workspace.config.travelNearbyCity
-        : workspace.config.travelWithinCity;
+  const travelCost = travelCostForDistance(workspace.config, travel.distanceKm);
 
   const rawPrice = basePrice * seasonMultiplier * demandMultiplier * profileMultiplier + travelCost;
   const finalPrice = roundToPremiumNumber(rawPrice);
@@ -1201,6 +1213,34 @@ function calculatePricing(
     scarcityTag,
     travelSource: travel.source,
   };
+}
+
+// Travel fee for a job `distanceKm` away. Two modes:
+//   - Per-km (travelPerKmRate > 0): distance × rate, rounded to ₹50.
+//   - Tiered (default): within city / nearby city / outstation flat fees, with
+//     both tier boundaries configurable (no hardcoded km values).
+// Tolerates older workspace records that predate the threshold fields.
+export function travelCostForDistance(
+  config: Pick<
+    WorkspaceRecord["config"],
+    | "travelWithinCity"
+    | "travelNearbyCity"
+    | "travelOutstation"
+    | "travelOutstationThresholdKm"
+    | "travelNearbyThresholdKm"
+    | "travelPerKmRate"
+  >,
+  distanceKm: number,
+): number {
+  const perKm = Number(config.travelPerKmRate) || 0;
+  if (perKm > 0) {
+    return Math.round((distanceKm * perKm) / 50) * 50;
+  }
+  const nearbyFrom = Number(config.travelNearbyThresholdKm) > 0 ? Number(config.travelNearbyThresholdKm) : 25;
+  const outstationFrom = Number(config.travelOutstationThresholdKm) > 0 ? Number(config.travelOutstationThresholdKm) : 100;
+  if (distanceKm >= outstationFrom) return Number(config.travelOutstation) || 0;
+  if (distanceKm > nearbyFrom) return Number(config.travelNearbyCity) || 0;
+  return Number(config.travelWithinCity) || 0;
 }
 
 export function roundToPremiumNumber(value: number) {
@@ -1520,6 +1560,44 @@ export function durationHoursForEvent(raw: string | undefined, eventType: string
     }
   }
   return fallback;
+}
+
+// ---- Duration-aware slot availability ----
+// A 4-hour bridal at 09:00 occupies 09:00–13:00, so the 11:00 slot must show
+// as taken. Jobs without a time can't be placed on the timeline; they count
+// against the day capacity (bookingMaxPerDay) but not against specific slots.
+
+export type SlotAvailability = { time: string; available: boolean };
+
+function minutesOfDay(time: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(time || "").trim());
+  if (!match) return null;
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  return minutes >= 0 && minutes < 24 * 60 ? minutes : null;
+}
+
+export function computeSlotAvailability(input: {
+  timeSlots: string[];
+  serviceDurations: string;
+  requestedEventType: string;
+  busy: { eventTime: string; eventType: string }[];
+}): SlotAvailability[] {
+  const requestedMinutes = durationHoursForEvent(input.serviceDurations, input.requestedEventType) * 60;
+  const busyWindows = input.busy
+    .map((job) => {
+      const start = minutesOfDay(job.eventTime);
+      if (start === null) return null;
+      return { start, end: start + durationHoursForEvent(input.serviceDurations, job.eventType) * 60 };
+    })
+    .filter((w): w is { start: number; end: number } => w !== null);
+
+  return input.timeSlots.map((time) => {
+    const start = minutesOfDay(time);
+    if (start === null) return { time, available: false };
+    const end = start + requestedMinutes;
+    const clash = busyWindows.some((w) => start < w.end && w.start < end);
+    return { time, available: !clash };
+  });
 }
 
 function buildEventWindow(eventDate: string, eventTime: string | undefined, durationHours: number) {

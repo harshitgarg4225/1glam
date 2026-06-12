@@ -1,15 +1,18 @@
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { listActiveBookings, markBookingReminderSent, recordReviewRequest } from "./booking.js";
+import { getDashboardData, listActiveBookings, markBookingReminderSent, recordReviewRequest } from "./booking.js";
 import { listWorkspaces, withDistributedLock } from "./database.js";
+import { buildDigestSummary } from "./insights.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { logger, captureException } from "./logger.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
+import { sendPushToWorkspace } from "./push.js";
 import { appConfig } from "../config.js";
 
 // Stable advisory-lock keys so only one instance runs each daily job.
 const REMINDER_LOCK_KEY = 918_273_001;
 const REVIEW_LOCK_KEY = 918_273_002;
 const PAYMENT_LOCK_KEY = 918_273_003;
+const DIGEST_LOCK_KEY = 918_273_004;
 
 // Spread per-workspace Sheets reads across time so a large fleet doesn't
 // burst the Google Sheets API all at once at 8 UTC. 200 ms × 500 workspaces
@@ -45,6 +48,51 @@ export function startReminderScheduler() {
 
   setTimeout(tick, msUntilFirst);
   logger.info("[reminders] scheduler started", { firstRun: nextRun.toISOString() });
+
+  // Morning digest runs on its own clock: 02:30 UTC = 08:00 IST, the start of
+  // her day, not the 13:30 IST slot the maintenance jobs use.
+  const digestNext = new Date(now);
+  digestNext.setUTCHours(2, 30, 0, 0);
+  if (digestNext <= now) digestNext.setUTCDate(digestNext.getUTCDate() + 1);
+
+  const digestTick = () => {
+    withDistributedLock(DIGEST_LOCK_KEY, runMorningDigestJob)
+      .then((r) => { if (!r.ran) logger.info("[digest] skipped — another instance holds the lock"); })
+      .catch((err) => captureException(err, { job: "digest" }));
+    setTimeout(digestTick, 24 * 60 * 60 * 1000);
+  };
+  setTimeout(digestTick, digestNext.getTime() - now.getTime());
+  logger.info("[digest] scheduler started", { firstRun: digestNext.toISOString() });
+}
+
+// Morning digest: one push per workspace at 8 AM IST with today's jobs and the
+// action items the insights engine found (stale quotes, pending advances, open
+// waitlist slots). Skips workspaces with nothing to say or digests turned off;
+// sendPushToWorkspace already no-ops when no device/subscription is registered.
+async function runMorningDigestJob() {
+  logger.info("[digest] running morning digest job");
+  const workspaces = await listWorkspaces();
+
+  for (let i = 0; i < workspaces.length; i++) {
+    await stagger(i);
+    const workspace = workspaces[i];
+    if (String(workspace.config.dailyDigest || "Yes").toLowerCase() === "no") continue;
+    const hasDevices =
+      (workspace.pushSubscriptions?.length ?? 0) > 0 || (workspace.deviceTokens?.length ?? 0) > 0;
+    if (!hasDevices) continue;
+
+    try {
+      const tokens = await getWorkspaceCredentials(workspace.email);
+      const { leads, bookings } = await getDashboardData(workspace.email, tokens);
+      const digest = buildDigestSummary({ config: workspace.config, leads, bookings });
+      if (!digest) continue;
+      await sendPushToWorkspace(workspace, { title: digest.title, body: digest.body, url: "/" });
+    } catch (err) {
+      captureException(err, { workspace: workspace.email, job: "digest" });
+    }
+  }
+
+  logger.info("[digest] morning digest job complete");
 }
 
 async function runReminderJob() {

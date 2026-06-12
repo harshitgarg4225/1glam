@@ -36,6 +36,10 @@ export type WorkspaceConfig = PricingRuleConfig & {
   travelNearbyCity: number;
   travelOutstation: number;
   travelOutstationThresholdKm: number;
+  // Where "within city" ends and the nearby-city fee starts (km).
+  travelNearbyThresholdKm: number;
+  // Optional ₹/km pricing; when > 0 it replaces the flat tiers.
+  travelPerKmRate: number;
   profileLowMultiplier: number;
   profileMidMultiplier: number;
   profileHighMultiplier: number;
@@ -72,6 +76,10 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reminderTemplateLang: string;
   reminderDaysBefore: string;
   autoPaymentReminders: string;
+  // Morning push digest: today's jobs + what needs her attention.
+  dailyDigest: string;
+  waitlistOfferTemplate: string;
+  waitlistOfferTemplateLang: string;
   ownerAlertTemplate: string;
   ownerAlertTemplateLang: string;
   razorpayKeyId: string;

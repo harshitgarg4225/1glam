@@ -65,14 +65,15 @@ import {
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
-import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
+import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot } from "./services/public-booking.js";
+import { buildServicesContext, computeInsights } from "./services/insights.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
 import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply } from "./services/gmb.js";
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import { loadClientNotes, saveClientNotes } from "./services/client-notes.js";
-import { addDeviceToken, addPushSubscription, pushConfigured, removeDeviceToken, removePushSubscription } from "./services/push.js";
+import { addDeviceToken, addPushSubscription, pushConfigured, removeDeviceToken, removePushSubscription, sendPushToWorkspace } from "./services/push.js";
 import { fcmConfigured } from "./services/fcm.js";
 import { createMobileLoginToken, redeemMobileLoginToken } from "./services/mobile-auth.js";
 import {
@@ -105,6 +106,7 @@ import {
   generateContractPdfBytes,
   nextDocumentNumber,
   parseDocumentAdjustments,
+  parseQuotePackages,
 } from "./services/documents.js";
 import { buildPublicDocumentUrl, buildRescheduleUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken } from "./services/document-links.js";
 import { estimateCampaignReach, getCampaignJob, rehydrateInterruptedCampaigns, startCampaignBroadcast, type CampaignSegment } from "./services/campaigns.js";
@@ -475,6 +477,22 @@ app.get("/api/public/:workspaceId/profile", async (req, res, next) => {
       return res.status(404).json({ error: "Booking page not found" });
     }
     res.json({ ok: true, profile });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Live time-slot availability for a date: each configured slot, marked taken
+// when an existing job (with its configured service duration) overlaps it.
+app.get("/api/public/:workspaceId/slots", async (req, res, next) => {
+  try {
+    const result = await getPublicSlotsForDate(
+      String(req.params.workspaceId),
+      String(req.query.date ?? ""),
+      String(req.query.eventType ?? ""),
+    );
+    if (!result) return res.status(404).json({ error: "Booking page not found" });
+    res.json({ ok: true, ...result });
   } catch (error) {
     next(error);
   }
@@ -1507,7 +1525,7 @@ app.post("/api/ai/preview-tone", async (req, res, next) => {
       language: workspace.config.aiLanguage,
       signOff: workspace.config.aiSignOff,
       toneProfile: workspace.config.aiToneProfile,
-      servicesContext: workspace.config.aiServicesContext,
+      servicesContext: buildServicesContext(workspace.config),
       personaName: workspace.config.aiPersonaName,
     });
 
@@ -2081,7 +2099,38 @@ app.post("/api/bookings/:bookingId/cancel", async (req, res, next) => {
       req.session.googleTokens,
       req.params.bookingId,
     );
-    res.json({ ok: true, booking });
+
+    // A cancellation frees the date — if anyone is waitlisted for it, surface
+    // them immediately (in the response for the UI, and as a push so she sees
+    // it even if she cancelled from elsewhere). Best-effort: a hiccup here
+    // never undoes the cancellation.
+    let waitlistCandidates: { leadId: string; clientName: string; eventType: string }[] = [];
+    try {
+      const workspace = await getWorkspaceByEmail(req.session.profile.email);
+      if (workspace && booking.eventDate) {
+        const { leads } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+        waitlistCandidates = leads
+          .filter(
+            (lead) =>
+              lead.source === "Waitlist" &&
+              lead.eventDate === booking.eventDate &&
+              !["Lost", "Completed"].includes(lead.status),
+          )
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          .map((lead) => ({ leadId: lead.leadId, clientName: lead.clientName, eventType: lead.eventType }));
+        if (waitlistCandidates.length) {
+          await sendPushToWorkspace(workspace, {
+            title: `A slot opened on ${booking.eventDate}`,
+            body: `${waitlistCandidates[0].clientName || "A client"} is waiting for this date${waitlistCandidates.length > 1 ? ` (+${waitlistCandidates.length - 1} more)` : ""}. Offer them the slot?`,
+            url: "/",
+          });
+        }
+      }
+    } catch {
+      // Waitlist surfacing is best-effort.
+    }
+
+    res.json({ ok: true, booking, waitlistCandidates });
   } catch (error) {
     next(error);
   }
@@ -2151,7 +2200,7 @@ app.post("/api/leads/:leadId/draft-followup", async (req, res, next) => {
       language: workspace.config.aiLanguage,
       signOff: workspace.config.aiSignOff,
       toneProfile: workspace.config.aiToneProfile,
-      servicesContext: workspace.config.aiServicesContext,
+      servicesContext: buildServicesContext(workspace.config),
       personaName: workspace.config.aiPersonaName,
     });
 
@@ -2286,6 +2335,7 @@ const WHATSAPP_TEMPLATE_PACK: Array<{ configKey: keyof WorkspaceConfig; langKey:
   { configKey: "collectionTemplate", langKey: "collectionTemplateLang", name: "busydays_payment_reminder", body: "Hi {{1}}, a gentle reminder: your {{2}} payment of Rs {{3}} for the booking on {{4}} is pending. Thank you!", examples: ["Priya", "advance", "5000", "2026-11-21"] },
   { configKey: "reviewTemplate", langKey: "reviewTemplateLang", name: "busydays_review_request", body: "Hi {{1}}, thank you for choosing {{2}}! If you loved your look, it would mean the world if you left us a quick review: {{3}}", examples: ["Priya", "Glow by Aisha", "https://g.page/review"] },
   { configKey: "ownerAlertTemplate", langKey: "ownerAlertTemplateLang", name: "busydays_owner_alert", body: "BusyDays update: {{1}} — {{2}} on {{3}}.", examples: ["New request from Priya", "Bridal Makeup", "2026-11-21"] },
+  { configKey: "waitlistOfferTemplate", langKey: "waitlistOfferTemplateLang", name: "busydays_waitlist_offer", body: "Hi {{1}}, good news — a slot just opened up on {{2}} for {{3}}! Reply here to claim it before it's gone.", examples: ["Priya", "2026-11-21", "Bridal Makeup"] },
 ];
 
 app.post("/api/channels/whatsapp/templates/setup", async (req, res, next) => {
@@ -3162,6 +3212,8 @@ function sanitizeAdjustmentsInput(body: unknown): string {
     lineItems?: unknown;
     note?: unknown;
     discountPercent?: unknown;
+    priceRangeLow?: unknown;
+    priceRangeHigh?: unknown;
   };
   const lineItems = Array.isArray(input.lineItems)
     ? input.lineItems
@@ -3174,6 +3226,10 @@ function sanitizeAdjustmentsInput(body: unknown): string {
     : [];
   const amountOverrideRaw = Number(input.amountOverride);
   const discountRaw = Number(input.discountPercent);
+  const rangeLowRaw = Number(input.priceRangeLow);
+  const rangeHighRaw = Number(input.priceRangeHigh);
+  const hasRange =
+    Number.isFinite(rangeLowRaw) && Number.isFinite(rangeHighRaw) && rangeLowRaw > 0 && rangeHighRaw > rangeLowRaw;
   const adjustments = {
     amountOverride: Number.isFinite(amountOverrideRaw) && amountOverrideRaw > 0 ? amountOverrideRaw : undefined,
     lineItems: lineItems.length ? lineItems : undefined,
@@ -3182,9 +3238,18 @@ function sanitizeAdjustmentsInput(body: unknown): string {
       Number.isFinite(discountRaw) && discountRaw > 0 && discountRaw < 100
         ? Math.round(discountRaw * 100) / 100
         : undefined,
+    // Range estimate ("Rs 12,000 – 15,000"); only stored as a valid pair.
+    priceRangeLow: hasRange ? Math.round(rangeLowRaw) : undefined,
+    priceRangeHigh: hasRange ? Math.round(rangeHighRaw) : undefined,
   };
   // Empty edit clears the adjustments entirely.
-  if (!adjustments.amountOverride && !adjustments.lineItems && !adjustments.note && !adjustments.discountPercent) return "";
+  if (
+    !adjustments.amountOverride &&
+    !adjustments.lineItems &&
+    !adjustments.note &&
+    !adjustments.discountPercent &&
+    !adjustments.priceRangeLow
+  ) return "";
   return JSON.stringify(adjustments);
 }
 
@@ -3570,6 +3635,12 @@ app.get("/q/:workspaceId/:leadId", async (req, res, next) => {
     const accepted = Boolean(lead.quoteAcceptedAt);
     const voided = Boolean(lead.quoteVoidedAt);
     const amount = lead.finalApprovedPrice || lead.initialAiPrice;
+    // Range-mode quotes show the estimate band, not a single number.
+    const quoteAdj = parseDocumentAdjustments(lead.quoteAdjustments);
+    const amountLabel =
+      quoteAdj.priceRangeLow && quoteAdj.priceRangeHigh
+        ? `₹${Math.round(quoteAdj.priceRangeLow).toLocaleString("en-IN")} – ₹${Math.round(quoteAdj.priceRangeHigh).toLocaleString("en-IN")}`
+        : `₹${Math.round(quoteAdj.amountOverride || amount).toLocaleString("en-IN")}`;
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(renderQuotePage({
@@ -3578,7 +3649,7 @@ app.get("/q/:workspaceId/:leadId", async (req, res, next) => {
       clientName: lead.clientName,
       eventType: lead.eventType,
       eventDate: lead.eventDate,
-      amount,
+      amountLabel,
       pdfUrl,
       accepted,
       voided,
@@ -3657,7 +3728,7 @@ function renderQuotePage(input: {
   clientName: string;
   eventType: string;
   eventDate: string;
-  amount: number;
+  amountLabel: string;
   pdfUrl: string;
   accepted: boolean;
   voided: boolean;
@@ -3666,7 +3737,7 @@ function renderQuotePage(input: {
 }): string {
   const esc = (v: string) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
   const title = `Quote from ${esc(input.brand)}`;
-  const desc = `${esc(input.eventType)} on ${esc(input.eventDate)} — ₹${Math.round(input.amount).toLocaleString("en-IN")}`;
+  const desc = `${esc(input.eventType)} on ${esc(input.eventDate)} — ${esc(input.amountLabel)}`;
   const acceptedBlock = `<div class="accepted">💚 You've accepted this quote. ${esc(input.brand)} will be in touch to confirm your booking!</div>`;
   const voidedBlock = `<div class="voided">This quote has been updated — please ask ${esc(input.brand)} for the latest version.</div>`;
   const actionBlock = input.voided
@@ -3720,7 +3791,7 @@ function renderQuotePage(input: {
   <div class="summary">
     <div class="row"><span>Occasion</span><b>${esc(input.eventType)}</b></div>
     <div class="row"><span>Date</span><b>${esc(input.eventDate)}</b></div>
-    <div class="row"><span>Quoted amount</span><b class="amount">₹${Math.round(input.amount).toLocaleString("en-IN")}</b></div>
+    <div class="row"><span>Quoted amount</span><b class="amount">${esc(input.amountLabel)}</b></div>
   </div>
   <iframe src="${esc(input.pdfUrl)}" title="Quote PDF"></iframe>
   <div id="action-area">${actionBlock}</div>
@@ -4172,6 +4243,154 @@ app.get("/api/analytics", async (req, res, next) => {
       bySource: Object.entries(sourceCount).sort((a, b) => b[1] - a[1]).map(([source, count]) => ({ source, count })),
       byEventType: Object.entries(eventTypeRevenue).sort((a, b) => b[1] - a[1]).map(([type, revenue]) => ({ type, revenue })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Proactive intelligence for the dashboard: open waitlist slots, quotes gone
+// quiet, overdue advances, demand the pricing hasn't caught up with. Pure
+// computation over data the workspace already has.
+app.get("/api/insights", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { leads, bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    res.json({ ok: true, insights: computeInsights({ config: workspace.config, leads, bookings }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Waitlist queue, grouped by date: who's waiting, since when, and how full the
+// date currently is — so a freed slot can be offered to the first in line.
+app.get("/api/waitlist", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { leads } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const activeByDate = new Map<string, number>();
+    const waitingByDate = new Map<string, typeof leads>();
+    for (const lead of leads) {
+      if (!lead.eventDate || lead.eventDate < today) continue;
+      if (["Lost", "Completed"].includes(lead.status)) continue;
+      if (lead.source === "Waitlist") {
+        waitingByDate.set(lead.eventDate, [...(waitingByDate.get(lead.eventDate) ?? []), lead]);
+      } else {
+        activeByDate.set(lead.eventDate, (activeByDate.get(lead.eventDate) ?? 0) + 1);
+      }
+    }
+
+    const maxPerDay = Number(workspace.config.bookingMaxPerDay) || 0;
+    const dates = [...waitingByDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, waiting]) => ({
+      date,
+      booked: activeByDate.get(date) ?? 0,
+      maxPerDay,
+      slotOpen: maxPerDay > 0 ? (activeByDate.get(date) ?? 0) < maxPerDay : false,
+      waiting: waiting
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((lead, i) => ({
+          leadId: lead.leadId,
+          position: i + 1,
+          clientName: lead.clientName,
+          clientWhatsApp: lead.clientWhatsApp,
+          eventType: lead.eventType,
+          eventTime: lead.eventTime,
+          joinedAt: lead.createdAt,
+        })),
+    }));
+    res.json({ ok: true, dates });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One-tap waitlist offer: WhatsApp the waiting client that the date opened up.
+// Business-initiated message → needs the approved waitlist template (falls
+// back to the generic booking-approved template if that's all she has).
+app.post("/api/waitlist/:leadId/offer", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const lead = await getLeadRecord(req.session.profile.email, req.session.googleTokens, req.params.leadId);
+    if (!workspace || !lead) return res.status(404).json({ error: "Lead not found" });
+    if (!lead.clientWhatsApp) return res.status(400).json({ error: "This client has no WhatsApp number." });
+
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    const connectionCanSend = whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    if (!connectionCanSend && !envCanSend) {
+      return res.status(400).json({ error: "Connect WhatsApp first (Channels tab) to send offers." });
+    }
+
+    const templateName = String(workspace.config.waitlistOfferTemplate || "").trim()
+      || String(workspace.config.approvalTemplate || "").trim();
+    if (!templateName) {
+      return res.status(400).json({ error: "Set up WhatsApp templates first (Channels tab → Create templates)." });
+    }
+    const templateLang = String(workspace.config.waitlistOfferTemplate || "").trim()
+      ? String(workspace.config.waitlistOfferTemplateLang || "en")
+      : String(workspace.config.approvalTemplateLang || "en");
+    const usingWaitlistTemplate = Boolean(String(workspace.config.waitlistOfferTemplate || "").trim());
+
+    await sendWhatsAppTemplate(
+      { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+      lead.clientWhatsApp.replace(/[^\d]/g, ""),
+      templateName,
+      templateLang,
+      usingWaitlistTemplate
+        ? [lead.clientName || "there", lead.eventDate, lead.eventType]
+        : [lead.clientName || "there", lead.eventDate, String(lead.finalApprovedPrice || lead.initialAiPrice || "")],
+    );
+
+    // Promote the lead out of the waitlist so the slot math counts them and the
+    // normal request flow (quote → confirm) takes over.
+    const updated = await updateLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      lead.leadId,
+      (current) => ({
+        ...current,
+        source: "Booking Page",
+        ownerNotes: [current.ownerNotes, `Waitlist slot offered on ${new Date().toISOString().slice(0, 10)}`]
+          .filter(Boolean).join(" | "),
+        lastContactedAt: new Date().toISOString(),
+      }),
+    );
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: "WhatsApp",
+      actor: lead.clientWhatsApp.replace(/[^\d]/g, ""),
+      message: `Waitlist offer template "${templateName}" sent — the date opened up`,
+      aiSummary: "Waitlist slot offered to client",
+    });
+
+    res.json({ ok: true, lead: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Saved quote packages, parsed from the quotePackages config — one-tap line
+// items when building a quote.
+app.get("/api/quote-packages", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    res.json({ ok: true, packages: parseQuotePackages(workspace.config.quotePackages) });
   } catch (error) {
     next(error);
   }
@@ -4787,7 +5006,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             language: workspace.config.aiLanguage,
             signOff: workspace.config.aiSignOff,
             toneProfile: workspace.config.aiToneProfile,
-            servicesContext: workspace.config.aiServicesContext,
+            servicesContext: buildServicesContext(workspace.config),
             personaName: workspace.config.aiPersonaName,
           });
 

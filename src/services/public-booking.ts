@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, updateLeadRecord, updateBookingRecord, roundToPremiumNumber } from "./booking.js";
+import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, listActiveLeadsForDate, updateLeadRecord, updateBookingRecord, roundToPremiumNumber } from "./booking.js";
 import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -296,6 +296,30 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
 
   const tokens = await getWorkspaceCredentials(workspace.email);
 
+  // Duration-aware slot conflict: a 4-hour bridal at 09:00 occupies 09:00-13:00,
+  // so an 11:00 request must be refused (or waitlisted) even when the day-level
+  // capacity isn't reached yet. Fails open on a Sheets hiccup — the artist can
+  // still resolve a rare double-request manually, but a flaky read should never
+  // block a client from booking.
+  let slotConflict = false;
+  if (timeSlots.length > 0 && input.eventTime) {
+    const busy = await listActiveLeadsForDate(workspace.email, tokens, input.eventDate).catch(() => []);
+    const slots = computeSlotAvailability({
+      timeSlots,
+      serviceDurations: workspace.config.serviceDurations,
+      requestedEventType: input.eventType,
+      busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+    });
+    const requested = slots.find((slot) => slot.time === input.eventTime);
+    if (requested && !requested.available) {
+      const waitlistEnabled = String(workspace.config.bookingWaitlistEnabled || "No").toLowerCase() === "yes";
+      if (!waitlistEnabled) {
+        throw new Error("That time slot was just taken. Please pick another time.");
+      }
+      slotConflict = true;
+    }
+  }
+
   // Personal-calendar guard: an all-day event on her confirmed Google Calendar
   // ("OUT OF TOWN", a family wedding) blocks the date even if she forgot to
   // block it in the app. Timed events don't block — a 1-hour errand shouldn't
@@ -313,7 +337,7 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
   // the max-per-day cap. The lock is a no-op in single-instance/file mode.
   const lockKey = lockKeyFromString(`book:${workspace.workspaceId}:${input.eventDate}`);
   const { waitlisted, result } = await withSerializedLock(lockKey, async () => {
-    let waitlisted = false;
+    let waitlisted = slotConflict;
     if (maxPerDay > 0) {
       const activeCount = await countActiveLeadsForDate(workspace.email, tokens, input.eventDate);
       if (activeCount >= maxPerDay) {
@@ -532,6 +556,33 @@ export async function submitPaymentScreenshot(
   }
 
   return { ok: true, fileUrl };
+}
+
+// Time slots for a date with real availability: each configured slot, greyed
+// out when an existing job (with its service duration) overlaps it. Powers the
+// public booking page so two 4-hour bridals can't be booked into each other.
+export async function getPublicSlotsForDate(
+  workspaceId: string,
+  eventDate: string,
+  eventType: string,
+): Promise<{ slots: { time: string; available: boolean }[] } | null> {
+  const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+  if (!workspace) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return { slots: [] };
+
+  const timeSlots = parseTimeSlots(workspace.config.bookingTimeSlots);
+  if (!timeSlots.length) return { slots: [] };
+
+  const tokens = await getWorkspaceCredentials(workspace.email);
+  const busy = await listActiveLeadsForDate(workspace.email, tokens, eventDate).catch(() => []);
+  return {
+    slots: computeSlotAvailability({
+      timeSlots,
+      serviceDurations: workspace.config.serviceDurations,
+      requestedEventType: eventType || "Other",
+      busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+    }),
+  };
 }
 
 function buildInboundMessage(input: PublicBookingInput) {
