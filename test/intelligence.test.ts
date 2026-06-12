@@ -8,6 +8,7 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-
 const { computeSlotAvailability, travelCostForDistance } = await import("../src/services/booking.ts");
 const { parseQuotePackages, parseDocumentAdjustments } = await import("../src/services/documents.ts");
 const { computeInsights, buildDigestSummary, buildServicesContext } = await import("../src/services/insights.ts");
+const { matchSelectedAddons } = await import("../src/services/public-booking.ts");
 const { buildDefaultConfig } = await import("../src/defaults.ts");
 
 const baseConfig = () =>
@@ -109,6 +110,19 @@ test("parseQuotePackages drops junk lines and junk items", () => {
   const packages = parseQuotePackages("no colon here\nOk: Good=100, Bad=, =5, Neg=-3");
   assert.equal(packages.length, 1);
   assert.deepEqual(packages[0].items, [{ label: "Good", amount: 100 }]);
+});
+
+// --- Booking-page add-ons price into the quote ------------------------------------
+
+test("selected add-ons resolve to priced quote line items", () => {
+  const config = { ...baseConfig(), serviceBridalAddons: "Airbrush:2000, Saree Draping:800, Free Touch-up:0" };
+  const lines = matchSelectedAddons(config, "Bridal", "airbrush, Saree Draping, Unknown Thing, Free Touch-up");
+  assert.deepEqual(lines, [
+    { label: "Airbrush (add-on)", amount: 2000 },
+    { label: "Saree Draping (add-on)", amount: 800 },
+  ]);
+  assert.deepEqual(matchSelectedAddons(config, "Bridal", ""), []);
+  assert.deepEqual(matchSelectedAddons(config, "Party", "Airbrush"), []);
 });
 
 // --- Range estimates -------------------------------------------------------------

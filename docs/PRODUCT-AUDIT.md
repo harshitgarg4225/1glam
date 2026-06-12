@@ -1,5 +1,17 @@
 # BusyDays — Product Audit & Build List
 
+> **Status (June 2026): built.** All four waves below have been implemented:
+> T0-1…T0-6 (preview & look-picker at point of send, My AI tab, travel card,
+> mobile nav, settings search, expanded checklist), T1-1…T1-4 (working
+> waitlist with one-tap offers, duration-aware slot availability, estimate
+> modes incl. ranges + saved packages, add-ons priced into quotes), T2-1/T2-2
+> (morning digest, demand & waitlist insights on the dashboard), T2-4 (AI
+> services context auto-composed from live config). The two code-level fixes
+> in §4 are done. Headline/tagline on the booking page turned out to render
+> correctly (audit flag was a false alarm). Remaining for later: T2-3 deeper
+> follow-up automation (insights + the existing AI draft-followup cover the
+> core), T2-5/T2-6, and Tier 3 depth items.
+
 *Written from the perspective of a first-time, non-technical, busy makeup artist.
 Grounded in a code audit of `public/index.html`, `public/book.html`, `src/index.ts`,
 and `src/services/*` — every finding below is marked **exists**, **half-built**, or **missing**.*

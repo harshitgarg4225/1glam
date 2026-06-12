@@ -363,6 +363,22 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     return { waitlisted, result };
   });
 
+  // Selected add-ons price themselves into the quote: matched against the
+  // service's configured "Name:Price" list and stored as quote line items, so
+  // the PDF shows "Airbrush (add-on)  +Rs 2,000" on top of the base price
+  // instead of the add-ons silently vanishing into the notes. Best-effort.
+  try {
+    const addonLines = matchSelectedAddons(workspace.config, input.eventType, input.addons);
+    if (addonLines.length) {
+      await updateLeadRecord(workspace.email, tokens, result.lead.leadId, (lead) => ({
+        ...lead,
+        quoteAdjustments: JSON.stringify({ lineItems: addonLines }),
+      }));
+    }
+  } catch {
+    // The add-on names are still in the inbound message for manual handling.
+  }
+
   await logInteractionForWorkspace(workspace.email, tokens, {
     leadId: result.lead.leadId,
     direction: "Inbound",
@@ -556,6 +572,36 @@ export async function submitPaymentScreenshot(
   }
 
   return { ok: true, fileUrl };
+}
+
+// Resolves the client's selected add-on names (comma-joined from the booking
+// form) to priced line items using the service's configured add-on list.
+// Unknown names and zero-priced add-ons are skipped.
+export function matchSelectedAddons(
+  config: WorkspaceConfig,
+  eventType: string,
+  selectedRaw: string | undefined,
+): { label: string; amount: number }[] {
+  if (!selectedRaw) return [];
+  const addonsKey = (
+    {
+      Bridal: "serviceBridalAddons",
+      Engagement: "serviceEngagementAddons",
+      Reception: "serviceReceptionAddons",
+      Party: "servicePartyAddons",
+      Shoot: "serviceShootAddons",
+      Other: "serviceOtherAddons",
+    } as const
+  )[eventType];
+  if (!addonsKey) return [];
+  const configured = parseAddons(String(config[addonsKey] || ""));
+  const selected = String(selectedRaw)
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return configured
+    .filter((addon) => addon.price > 0 && selected.includes(addon.name.toLowerCase()))
+    .map((addon) => ({ label: `${addon.name} (add-on)`, amount: addon.price }));
 }
 
 // Time slots for a date with real availability: each configured slot, greyed
