@@ -25,7 +25,9 @@ import {
   getBookingRecord,
   getLeadRecord,
   getDashboardData,
+  getMonthlyRecap,
   importClients,
+  listActiveBookings,
   parsePaymentsLog,
   recordBookingPayment,
   rescheduleBooking,
@@ -52,6 +54,8 @@ import {
 import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford } from "./services/wallet.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
+  buildImageMarker,
+  extractInboundMediaFromMetaWebhook,
   extractInboundTextFromMetaWebhook,
   extractMetaMessageId,
   ingestNormalizedLead,
@@ -76,6 +80,7 @@ import {
   fetchInstagramLoginConnectionProfile,
   fetchMetaConnectionProfile,
   fetchWhatsAppCloudConnectionProfile,
+  buildAppSecretProof,
   getMetaConnectUrl,
   parseMetaState,
   subscribePageToWebhooks,
@@ -88,6 +93,7 @@ import { generateConversationReply, deriveToneProfile } from "./services/grok.js
 import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
+import { fetchWithTimeout } from "./services/http.js";
 import { encryptionEnabled } from "./services/crypto.js";
 import {
   generateInvoiceDocument,
@@ -98,7 +104,8 @@ import {
   nextDocumentNumber,
   parseDocumentAdjustments,
 } from "./services/documents.js";
-import { buildPublicDocumentUrl, isDocumentType, signDocumentToken, verifyDocumentToken } from "./services/document-links.js";
+import { buildPublicDocumentUrl, buildRescheduleUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken } from "./services/document-links.js";
+import { broadcastCampaign, estimateCampaignReach, type CampaignSegment } from "./services/campaigns.js";
 import {
   checkLeegalityDocumentDetails,
   createLeegalityContract,
@@ -116,6 +123,7 @@ import {
   recoverSheet,
   setSheetProtection,
   uploadLogoImage,
+  uploadPublicImage,
   upsertMetaConnection,
   updateWorkspaceConfig,
 } from "./services/workspace.js";
@@ -901,6 +909,25 @@ app.post("/api/workspace/config", async (req, res, next) => {
       const existing = await getWorkspaceByEmail(req.session.profile.email);
       parsed.razorpayKeySecret = existing?.config.razorpayKeySecret || "";
     }
+    // Pretty booking slug: normalized, validated, and unique across all
+    // workspaces — it becomes a top-level public URL.
+    if (parsed.bookingSlug) {
+      const slug = normalizeSlug(parsed.bookingSlug);
+      if (!slug) {
+        return res.status(400).json({ error: "Booking link names use 3-40 letters, numbers or dashes (e.g. glow-by-aisha)." });
+      }
+      if (RESERVED_SLUGS.has(slug)) {
+        return res.status(400).json({ error: `"${slug}" is reserved — pick another booking link name.` });
+      }
+      const all = await listWorkspaces();
+      const taken = all.some(
+        (w) => w.email !== req.session.profile!.email && normalizeSlug(w.config?.bookingSlug || "") === slug,
+      );
+      if (taken) {
+        return res.status(409).json({ error: `"${slug}" is already taken — try another name.` });
+      }
+      parsed.bookingSlug = slug;
+    }
     const workspace = await updateWorkspaceConfig(
       req.session.profile.email,
       parsed,
@@ -908,6 +935,69 @@ app.post("/api/workspace/config", async (req, res, next) => {
     );
 
     res.json({ ok: true, workspace: scrubWorkspaceTokens(workspace) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Chat image upload: returns a public URL to attach to a client reply.
+app.post(
+  "/api/uploads/chat-image",
+  (req, res, next) => {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
+  async (req, res, next) => {
+    try {
+      if (!req.session.profile || !req.session.googleTokens) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      const result = await uploadPublicImage(req.session.profile.email, req.session.googleTokens, {
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// WhatsApp media proxy: client-sent photos arrive as media ids that need the
+// WABA token to fetch (Meta's lookaside URLs are short-lived). The owner's
+// session streams them through here so the inbox can render them.
+app.get("/api/media/whatsapp/:mediaId", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const accessToken = workspace?.metaConnections?.whatsapp?.accessToken || appConfig.waAccessToken;
+    if (!workspace || !accessToken) return res.status(404).json({ error: "Media not available" });
+    const mediaId = String(req.params.mediaId ?? "").replace(/[^\w.-]/g, "");
+    if (!mediaId) return res.status(400).json({ error: "Bad media id" });
+
+    const metaRes = await fetchWithTimeout(`https://graph.facebook.com/v23.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!metaRes.ok) return res.status(404).json({ error: "Media not available" });
+    const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+    if (!meta.url) return res.status(404).json({ error: "Media not available" });
+
+    const fileRes = await fetchWithTimeout(meta.url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!fileRes.ok) return res.status(404).json({ error: "Media not available" });
+    res.setHeader("Content-Type", meta.mime_type || "image/jpeg");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(Buffer.from(await fileRes.arrayBuffer()));
   } catch (error) {
     next(error);
   }
@@ -2191,6 +2281,192 @@ app.get("/api/export/accountant", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// ── Re-engagement campaigns ─────────────────────────────────────────────────
+
+app.get("/api/campaigns/reach", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const segment = (req.query.segment as CampaignSegment) || "past-clients";
+    const count = await estimateCampaignReach(req.session.profile.email, req.session.googleTokens, segment);
+    res.json({ ok: true, count });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/campaigns/broadcast", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const { segment, message, imageUrl } = req.body as { segment: CampaignSegment; message: string; imageUrl?: string };
+    if (!segment || !message?.trim()) return res.status(400).json({ error: "segment and message are required" });
+    const result = await broadcastCampaign(req.session.profile.email, req.session.googleTokens, { segment, message: message.trim(), imageUrl });
+    res.json({ ok: true, ...result });
+  } catch (error) { next(error); }
+});
+
+// ── Monthly business recap ───────────────────────────────────────────────────
+
+app.get("/api/recap/monthly", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const now = new Date();
+    // Default: previous month so the month is complete.
+    const year = req.query.year ? Number(req.query.year) : (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear());
+    const month = req.query.month !== undefined ? Number(req.query.month) : (now.getMonth() === 0 ? 11 : now.getMonth() - 1);
+    const recap = await getMonthlyRecap(req.session.profile.email, req.session.googleTokens, year, month);
+    res.json({ ok: true, recap });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/recap/send-whatsapp", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const now = new Date();
+    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const month = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+    const recap = await getMonthlyRecap(req.session.profile.email, req.session.googleTokens, year, month);
+
+    const ownerPhone = String(workspace.config.ownerWhatsApp || "").replace(/\D/g, "");
+    if (!ownerPhone || ownerPhone.length < 8) return res.status(400).json({ error: "Set your WhatsApp number in Settings first." });
+
+    const msg = [
+      `📊 *${recap.month} Business Recap — ${workspace.config.businessName || "BusyDays"}*`,
+      ``,
+      `💌 New enquiries: *${recap.newLeads}*`,
+      `📅 Bookings confirmed: *${recap.confirmedBookings}*`,
+      recap.newClients > 0 ? `🆕 New clients: *${recap.newClients}*` : null,
+      ``,
+      `💰 Revenue booked: *₹${recap.totalRevenue.toLocaleString("en-IN")}*`,
+      `✅ Collected: *₹${recap.collected.toLocaleString("en-IN")}*`,
+      recap.avgBookingValue > 0 ? `📈 Avg booking: *₹${recap.avgBookingValue.toLocaleString("en-IN")}*` : null,
+      recap.topEventType && recap.topEventType !== "—" ? `🏆 Top occasion: *${recap.topEventType}*` : null,
+    ].filter(Boolean).join("\n");
+
+    const connection = workspace.metaConnections?.whatsapp;
+    const accessToken = connection?.accessToken || appConfig.waAccessToken;
+    const phoneNumberId = connection?.phoneNumberId || appConfig.waPhoneNumberId;
+    if (!accessToken || !phoneNumberId) {
+      return res.status(400).json({ error: "Connect WhatsApp first to send this recap." });
+    }
+
+    const waUrl = new URL(`https://graph.facebook.com/v23.0/${phoneNumberId}/messages`);
+    const proof = buildAppSecretProof(accessToken);
+    if (proof) waUrl.searchParams.set("appsecret_proof", proof);
+    const waResp = await fetch(waUrl.toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ messaging_product: "whatsapp", to: ownerPhone, type: "text", text: { body: msg } }),
+    });
+    if (!waResp.ok) {
+      const errText = await waResp.text();
+      return res.status(502).json({ ok: false, error: `WhatsApp delivery failed: ${errText}` });
+    }
+    res.json({ ok: true, month: recap.month });
+  } catch (error) { next(error); }
+});
+
+// ── Client self-service reschedule links ─────────────────────────────────────
+
+app.post("/api/bookings/:bookingId/reschedule-link", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const booking = await getBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    const url = buildRescheduleUrl(workspace.workspaceId, req.params.bookingId);
+
+    if (req.body?.send && booking.clientWhatsApp) {
+      const phone = String(booking.clientWhatsApp).replace(/\D/g, "");
+      const connection = workspace.metaConnections?.whatsapp;
+      const accessToken = connection?.accessToken || appConfig.waAccessToken;
+      const phoneNumberId = connection?.phoneNumberId || appConfig.waPhoneNumberId;
+      if (accessToken && phoneNumberId) {
+        const msg = `Hi ${booking.clientName} 🙏\n\nNeed to change the date for your ${booking.eventType} booking? Use this link to pick a new date that works for you:\n${url}\n\n— ${workspace.config.businessName || workspace.config.ownerName}`;
+        const waUrl = `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`;
+        await fetch(waUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: msg } }),
+        }).catch(() => null);
+      }
+    }
+    res.json({ ok: true, url });
+  } catch (error) { next(error); }
+});
+
+// Public reschedule page.
+app.get("/reschedule/:workspaceId/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyRescheduleToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).send("<html><body style='font-family:sans-serif;padding:40px;max-width:480px;margin:auto'><h2>Link expired</h2><p>This reschedule link has expired or is invalid. Ask the studio to send you a new one.</p></body></html>");
+    }
+    // Serve the reschedule page — workspace and booking details fetched client-side.
+    const path = await import("node:path");
+    res.sendFile(path.join(process.cwd(), "public", "reschedule.html"));
+  } catch (error) { next(error); }
+});
+
+// API endpoint the reschedule page calls to load workspace + booking details.
+app.get("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyRescheduleToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).json({ error: "Link expired" });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
+
+    const booking = await getBookingRecord(workspace.email, tokens, bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+    res.json({
+      ok: true,
+      businessName: workspace.config.businessName || workspace.config.ownerName,
+      brandColor: workspace.config.brandColor || "#C26B45",
+      booking: {
+        bookingId: booking.bookingId,
+        clientName: booking.clientName,
+        eventType: booking.eventType,
+        eventDate: booking.eventDate,
+        eventTime: booking.eventTime,
+        venue: booking.venue,
+      },
+    });
+  } catch (error) { next(error); }
+});
+
+// Client submits their chosen new date on the reschedule page.
+app.post("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyRescheduleToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).json({ error: "Link expired" });
+    }
+    const { eventDate, eventTime } = req.body as { eventDate?: string; eventTime?: string };
+    if (!eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+      return res.status(400).json({ error: "A valid date is required (YYYY-MM-DD)." });
+    }
+
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
+
+    await rescheduleBooking(workspace.email, tokens, bookingId, { eventDate, eventTime });
+    res.json({ ok: true });
+  } catch (error) { next(error); }
 });
 
 // Assigns the next sequential quote number (Q-2026-0007) the first time a
@@ -3675,11 +3951,19 @@ app.post("/api/leads/:leadId/reply", async (req, res, next) => {
       return res.status(400).json({ error: `${channel} is not connected` });
     }
 
+    // Optional image attachment (e.g. a look reference back to the client).
+    // Must be a public https URL — produced by our own chat-image upload.
+    const imageUrl =
+      typeof req.body?.imageUrl === "string" && /^https:\/\/\S+$/.test(req.body.imageUrl)
+        ? req.body.imageUrl.slice(0, 600)
+        : "";
     const message =
       typeof req.body?.message === "string" && req.body.message.trim().length > 0
         ? req.body.message.trim()
-        : lead.suggestedReply;
-    if (!message) {
+        : imageUrl
+          ? ""
+          : lead.suggestedReply;
+    if (!message && !imageUrl) {
       return res.status(400).json({ error: "Reply message is empty" });
     }
 
@@ -3694,6 +3978,7 @@ app.post("/api/leads/:leadId/reply", async (req, res, next) => {
       channel,
       actorId,
       message,
+      imageUrl: imageUrl || undefined,
     });
 
     const updatedLead = await updateLeadRecord(
@@ -3702,7 +3987,7 @@ app.post("/api/leads/:leadId/reply", async (req, res, next) => {
       req.params.leadId,
       (current) => ({
         ...current,
-        suggestedReply: message,
+        suggestedReply: message || current.suggestedReply,
         lastContactedAt: new Date().toISOString(),
       }),
     );
@@ -3725,7 +4010,7 @@ app.post("/api/leads/:leadId/reply", async (req, res, next) => {
       direction: "Outbound",
       channel,
       actor: actorId,
-      message,
+      message: imageUrl ? `[img:url:${imageUrl}]${message ? ` ${message}` : ""}` : message,
       aiSummary: "Reply sent from dashboard",
     });
 
@@ -4036,7 +4321,15 @@ app.post("/webhooks/meta", async (req, res, next) => {
       }
 
       const tokens = await getWorkspaceCredentials(workspace.email);
-      const inboundText = extractInboundTextFromMetaWebhook(body);
+      // Reference photos are first-class: a photo-only message still creates/
+      // updates the lead and lands in the inbox with the image attached.
+      const rawInboundText = extractInboundTextFromMetaWebhook(body);
+      const inboundMedia = extractInboundMediaFromMetaWebhook(body);
+      const inboundText =
+        rawInboundText || (inboundMedia ? inboundMedia.caption || "📷 (Client sent a photo)" : "");
+      const inboundLogMessage = inboundMedia
+        ? buildImageMarker({ ref: inboundMedia.ref, caption: rawInboundText || inboundMedia.caption })
+        : inboundText;
       let leadCreated = false;
       let resolvedLeadId = "";
 
@@ -4068,7 +4361,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             direction: "Inbound",
             channel,
             actor: actorId || "instagram-user",
-            message: inboundText,
+            message: inboundLogMessage,
             aiSummary: "Existing Instagram lead updated",
           });
         } else {
@@ -4084,6 +4377,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             locationText: parsedLead.locationText,
             clientTags: parsedLead.clientTags,
             inboundMessage: inboundText,
+            interactionMessage: inboundLogMessage,
             actorId: actorId || "instagram-user",
           });
           resolvedLeadId = result.lead.leadId;
@@ -4129,7 +4423,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             direction: "Inbound",
             channel,
             actor: actorId || "whatsapp-user",
-            message: inboundText,
+            message: inboundLogMessage,
             aiSummary: "Existing WhatsApp lead updated",
           });
         } else {
@@ -4144,6 +4438,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             locationText: parsedLead.locationText,
             clientTags: parsedLead.clientTags,
             inboundMessage: inboundText,
+            interactionMessage: inboundLogMessage,
             actorId: actorId || "whatsapp-user",
           });
           resolvedLeadId = result.lead.leadId;
@@ -4247,7 +4542,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
           direction: "Inbound",
           channel,
           actor: actorId || "meta-user",
-          message: inboundText || JSON.stringify(body).slice(0, 500),
+          message: inboundLogMessage || JSON.stringify(body).slice(0, 500),
           aiSummary: "Direct Meta webhook received",
         });
       }
@@ -4482,6 +4777,35 @@ app.get("/legal/data-deletion", (_req, res) => {
 </ul>`,
     ),
   );
+});
+
+// ---- Pretty booking links: /glowbyaisha → her booking page ----
+// Registered last so it can never shadow a real route; the reserved list
+// protects future top-level paths too. The pretty link is what goes in her
+// Instagram bio; it resolves to the canonical /book/:workspaceId page.
+function normalizeSlug(raw: string): string {
+  const slug = String(raw || "").trim().toLowerCase().replace(/\s+/g, "-");
+  return /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(slug) ? slug : "";
+}
+
+const RESERVED_SLUGS = new Set([
+  "api", "auth", "book", "pay", "sign", "dev", "webhooks", "compliance", "legal",
+  "d", "q", "b", "app", "admin", "login", "logout", "static", "assets", "public",
+  "healthz", "health", "status", "privacy", "terms", "about", "help", "support",
+  "settings", "dashboard", "index", "manifest.json", "sw.js", "favicon.ico", "robots.txt",
+]);
+
+app.get("/:slug", async (req, res, next) => {
+  try {
+    const slug = normalizeSlug(String(req.params.slug ?? ""));
+    if (!slug || RESERVED_SLUGS.has(slug)) return next();
+    const all = await listWorkspaces();
+    const match = all.find((w) => normalizeSlug(w.config?.bookingSlug || "") === slug);
+    if (!match) return next();
+    res.redirect(302, `/book/${encodeURIComponent(match.workspaceId)}`);
+  } catch {
+    next();
+  }
 });
 
 app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {

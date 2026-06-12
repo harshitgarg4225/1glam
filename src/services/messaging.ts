@@ -11,11 +11,12 @@ async function dispatchChannelMessage(input: {
   channel: "Instagram" | "WhatsApp";
   actorId: string;
   message: string;
+  imageUrl?: string;
 }) {
   if (input.channel === "Instagram") {
-    return sendInstagramMessage(input.connection, input.actorId, input.message);
+    return sendInstagramMessage(input.connection, input.actorId, input.message, input.imageUrl);
   }
-  return sendWhatsAppMessage(input.connection, input.actorId, input.message);
+  return sendWhatsAppMessage(input.connection, input.actorId, input.message, input.imageUrl);
 }
 
 export async function sendChannelMessage(input: {
@@ -24,6 +25,7 @@ export async function sendChannelMessage(input: {
   channel: "Instagram" | "WhatsApp";
   actorId: string;
   message: string;
+  imageUrl?: string;
 }) {
   const result = await dispatchChannelMessage(input);
   await meterUsage(
@@ -77,7 +79,19 @@ async function sendInstagramMessage(
   connection: MetaChannelConnection,
   recipientId: string,
   message: string,
+  imageUrl?: string,
 ) {
+  // Instagram messages carry either text or an attachment, not both — when an
+  // image is included it goes first, followed by the caption as its own message.
+  const payloads: Array<Record<string, unknown>> = [];
+  if (imageUrl) {
+    payloads.push({ attachment: { type: "image", payload: { url: imageUrl } } });
+  }
+  if (message) {
+    payloads.push({ text: message });
+  }
+  if (!payloads.length) throw new Error("Nothing to send");
+
   // Business Login (Facebook) connections send through the Graph API using the
   // page token; direct Instagram Login connections use the Instagram Graph host.
   if (connection.pageAccessToken && connection.instagramBusinessAccountId) {
@@ -90,42 +104,41 @@ async function sendInstagramMessage(
       url.searchParams.set("appsecret_proof", proof);
     }
 
-    const response = await fetchWithTimeout(url.toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        recipient: { id: recipientId },
-        message: { text: message },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Instagram send failed: ${await response.text()}`);
+    let last: unknown;
+    for (const msg of payloads) {
+      const response = await fetchWithTimeout(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient: { id: recipientId }, message: msg }),
+      });
+      if (!response.ok) {
+        throw new Error(`Instagram send failed: ${await response.text()}`);
+      }
+      last = await response.json();
     }
-    return response.json();
+    return last;
   }
 
   if (!connection.accessToken) {
     throw new Error("Instagram access token is missing");
   }
 
-  const response = await fetchWithTimeout("https://graph.instagram.com/v25.0/me/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${connection.accessToken}`,
-    },
-    body: JSON.stringify({
-      recipient: { id: recipientId },
-      message: { text: message },
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Instagram send failed: ${await response.text()}`);
+  let last: unknown;
+  for (const msg of payloads) {
+    const response = await fetchWithTimeout("https://graph.instagram.com/v25.0/me/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${connection.accessToken}`,
+      },
+      body: JSON.stringify({ recipient: { id: recipientId }, message: msg }),
+    });
+    if (!response.ok) {
+      throw new Error(`Instagram send failed: ${await response.text()}`);
+    }
+    last = await response.json();
   }
-
-  return response.json();
+  return last;
 }
 
 export async function sendWhatsAppTemplate(
@@ -180,6 +193,7 @@ async function sendWhatsAppMessage(
   connection: MetaChannelConnection,
   recipientPhone: string,
   message: string,
+  imageUrl?: string,
 ) {
   const accessToken = connection.accessToken || appConfig.waAccessToken;
   const phoneNumberId = connection.phoneNumberId || appConfig.waPhoneNumberId;
@@ -193,18 +207,28 @@ async function sendWhatsAppMessage(
     url.searchParams.set("appsecret_proof", proof);
   }
 
+  // WhatsApp supports an image with its caption in a single message.
+  const body = imageUrl
+    ? {
+        messaging_product: "whatsapp",
+        to: recipientPhone,
+        type: "image",
+        image: { link: imageUrl, ...(message ? { caption: message } : {}) },
+      }
+    : {
+        messaging_product: "whatsapp",
+        to: recipientPhone,
+        type: "text",
+        text: { body: message },
+      };
+
   const response = await fetchWithTimeout(url.toString(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: recipientPhone,
-      type: "text",
-      text: { body: message },
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {

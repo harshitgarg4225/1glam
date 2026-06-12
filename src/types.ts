@@ -110,6 +110,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   googleReviewCount: string;
   // Reusable quote packages, one per line: "Name: Item=Price, Item=Price".
   quotePackages: string;
+  // Pretty booking-page slug, e.g. "glowbyaisha" → /glowbyaisha. Unique app-wide.
+  bookingSlug: string;
   brandColor: string;
   coverImageUrl: string;
   headline: string;

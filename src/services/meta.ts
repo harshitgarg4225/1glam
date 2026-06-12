@@ -46,6 +46,17 @@ export function getMetaConnectUrl(input: { workspaceEmail: string; channel: Meta
     url.searchParams.set("scope", getMetaScopes(input.channel).join(","));
   }
 
+  // WhatsApp uses Meta's Embedded Signup: inside this same dialog the artist
+  // can create a brand-new WhatsApp Business account and register a number —
+  // no separate Meta Business Manager trip. sessionInfoVersion 3 returns the
+  // created WABA/phone ids in the auth response.
+  if (input.channel === "whatsapp") {
+    url.searchParams.set(
+      "extras",
+      JSON.stringify({ feature: "whatsapp_embedded_signup", sessionInfoVersion: 3 }),
+    );
+  }
+
   return url.toString();
 }
 

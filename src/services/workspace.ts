@@ -201,6 +201,35 @@ function parsePortfolioList(raw: string): string[] {
     .filter(Boolean);
 }
 
+// Generic image upload to the artist's own Drive, shared read-only. Used for
+// chat attachments (sending a look reference to a client) — returns the public
+// render URL without touching any config.
+export async function uploadPublicImage(
+  email: string,
+  tokens: Credentials,
+  file: { buffer: Buffer; mimeType: string; originalName: string },
+  prefix = "chat",
+): Promise<{ imageUrl: string }> {
+  const workspace = await findWorkspaceByEmail(email);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const { drive } = createGoogleClients(tokens);
+  const ext = (file.originalName.split(".").pop() || "jpg").toLowerCase();
+  const response = await drive.files.create({
+    requestBody: {
+      name: `${prefix}-${nanoid(8)}.${ext}`,
+      mimeType: file.mimeType,
+      description: `Shared image for ${workspace.config.businessName || workspace.name}`,
+    },
+    media: { mimeType: file.mimeType, body: Readable.from(file.buffer) },
+    fields: "id",
+  });
+  const fileId = response.data.id;
+  if (!fileId) throw new Error("Image upload failed");
+  await drive.permissions.create({ fileId, requestBody: { role: "reader", type: "anyone" } });
+  return { imageUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200` };
+}
+
 // Uploads the artist's logo from her phone/computer — no "host an image and
 // paste a URL" hoop. Stored in her own Drive, shared read-only, and saved
 // straight into config.logoUrl so PDFs and pages pick it up immediately.
@@ -405,6 +434,7 @@ async function seedSpreadsheet(
     ["google_rating", config.googleRating, "Google rating snapshot shown on your booking page"],
     ["google_review_count", config.googleReviewCount, "Google review count snapshot shown on your booking page"],
     ["quote_packages", config.quotePackages, "Reusable quote packages, one per line: Name: Item=Price, Item=Price"],
+    ["booking_slug", config.bookingSlug, "Pretty booking link name, e.g. glowbyaisha"],
     ["brand_color", config.brandColor, "Accent colour for your booking page (hex, e.g. #C26B45)"],
     ["cover_image_url", config.coverImageUrl, "Cover photo shown at the top of your booking page (URL)"],
     ["headline", config.headline, "Headline shown on your booking page"],
@@ -672,6 +702,7 @@ async function loadConfigFromSpreadsheet(
       googleRating: String(values.google_rating ?? base.googleRating),
       googleReviewCount: String(values.google_review_count ?? base.googleReviewCount),
       quotePackages: String(values.quote_packages ?? base.quotePackages),
+      bookingSlug: String(values.booking_slug ?? base.bookingSlug),
       brandColor: String(values.brand_color ?? base.brandColor),
       coverImageUrl: String(values.cover_image_url ?? base.coverImageUrl),
       headline: String(values.headline ?? base.headline),
