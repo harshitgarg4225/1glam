@@ -65,6 +65,7 @@
       .slot { padding: 9px 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
       .slot:hover { border-color: var(--accent); background: var(--accent-soft); }
       .slot.selected { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; color: var(--accent); }
+      .slot:disabled { opacity: 0.4; cursor: not-allowed; text-decoration: line-through; background: var(--card); border-color: var(--line); }
       label { display: block; margin: 16px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 600; }
       input, textarea {
         width: 100%; padding: 12px 14px; font: inherit; font-size: 15px; color: var(--text);
@@ -336,6 +337,8 @@
             document.querySelectorAll(".service").forEach((s) => s.classList.remove("selected"));
             card.classList.add("selected");
             renderServiceDetail(type);
+            // Slot availability is duration-aware, so it depends on the service.
+            refreshSlotAvailability();
           });
           container.appendChild(card);
         });
@@ -464,7 +467,36 @@
         el("selected-date").classList.remove("muted");
         el("status").textContent = "";
         renderCal();
+        refreshSlotAvailability();
       });
+
+      // Grey out time slots that an existing job already occupies on the chosen
+      // date — a 4-hour bridal at 9 AM takes the 11 AM slot with it. Fails open:
+      // if the check can't run, all slots stay tappable and the server decides.
+      async function refreshSlotAvailability() {
+        const date = el("eventDate").value;
+        const buttons = document.querySelectorAll("#time-slots .slot");
+        if (!buttons.length || !date) return;
+        let slots = null;
+        try {
+          const res = await fetch(
+            "/api/public/" + encodeURIComponent(workspaceId) + "/slots?date=" + encodeURIComponent(date) +
+            "&eventType=" + encodeURIComponent(selectedEventType || ""),
+          );
+          if (res.ok) slots = (await res.json()).slots || null;
+        } catch { /* fail open */ }
+        if (!slots) { buttons.forEach((b) => { b.disabled = false; }); return; }
+        const availableByTime = {};
+        slots.forEach((s) => { availableByTime[s.time] = s.available; });
+        buttons.forEach((b) => {
+          const ok = availableByTime[b.dataset.value] !== false;
+          b.disabled = !ok;
+          if (!ok && b.classList.contains("selected")) {
+            b.classList.remove("selected");
+            el("eventTime").value = "";
+          }
+        });
+      }
 
       function renderServiceDetail(type) {
         const detail = el("service-detail");
@@ -578,8 +610,8 @@
             el("success-title").textContent = "Added to waitlist";
             el("success-icon").textContent = "⏳";
             el("success-text").textContent =
-              "Thank you, " + payload.clientName + ". That date is fully booked, but we've added you to the waitlist for " +
-              data.eventDate + ". We'll reach out if a slot opens up.";
+              "Thank you, " + payload.clientName + ". That date is fully booked, but you're on the waitlist for " +
+              data.eventDate + " — first come, first served. If a slot opens up you'll get a WhatsApp message right away.";
             el("success-subtext").classList.add("hidden");
           } else {
             el("success-text").textContent =

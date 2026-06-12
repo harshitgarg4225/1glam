@@ -925,6 +925,7 @@
         <button class="tab-button" type="button" data-tab="conversations">Messages<span class="tab-badge" id="badge-messages" style="display:none;"></span></button>
         <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
         <button class="tab-button" type="button" data-tab="mypage">My Page</button>
+        <button class="tab-button" type="button" data-tab="myai">My AI</button>
         <div class="tab-more-wrap">
           <button class="tab-button tab-more-trigger" type="button" id="tab-more-trigger">More ▾</button>
           <div class="tab-more-menu" id="tab-more-menu">
@@ -1218,6 +1219,14 @@
             </table>
           </div>
           <div class="status" id="document-status" style="margin-top:12px;"></div>
+        </div>
+
+        <!-- Waitlist: who's waiting for full dates, and one-tap offers when a slot frees up -->
+        <div class="panel section" id="waitlist-section" style="display:none;margin-top:20px;">
+          <div class="kicker">⏳ Waitlist</div>
+          <h2>Clients waiting for a date</h2>
+          <p class="muted" style="margin:0 0 12px;font-size:13.5px;">When a booking is cancelled, the date opens up — offer the slot to whoever's first in line with one tap. They get a WhatsApp message and move into your Requests.</p>
+          <div id="waitlist-groups"></div>
         </div>
       </section>
 
@@ -1805,7 +1814,8 @@
         <form id="config-form" class="panel section">
           <div class="kicker">Manage your workspace</div>
           <h2>Settings</h2>
-          <p class="muted" style="margin:-4px 0 18px;font-size:14px;">Just fill in the first three sections to start taking bookings. The rest is optional and already set up with sensible defaults.</p>
+          <p class="muted" style="margin:-4px 0 12px;font-size:14px;">Just fill in the first three sections to start taking bookings. The rest is optional and already set up with sensible defaults.</p>
+          <input type="search" id="settings-search" placeholder="🔍 Find a setting… (e.g. travel, GST, colour)" style="width:100%;box-sizing:border-box;margin:0 0 16px;" autocomplete="off" />
 
           <details class="collapse" open>
             <summary>Your business</summary>
@@ -1830,10 +1840,24 @@
                 <div><label for="basePriceEngagement">Engagement (₹)</label><input id="basePriceEngagement" name="basePriceEngagement" type="number" required /></div>
                 <div><label for="basePriceReception">Reception (₹)</label><input id="basePriceReception" name="basePriceReception" type="number" required /></div>
                 <div><label for="basePriceParty">Party (₹)</label><input id="basePriceParty" name="basePriceParty" type="number" required /></div>
-                <div><label for="travelWithinCity">Travel charge — within city (₹)</label><input id="travelWithinCity" name="travelWithinCity" type="number" required /></div>
-                <div><label for="travelOutstation">Travel charge — outstation (₹)</label><input id="travelOutstation" name="travelOutstation" type="number" required /></div>
                 <div><label for="advancePercentage">Advance to lock a date (%)</label><input id="advancePercentage" name="advancePercentage" type="number" required /></div>
                 <div><label for="upiId">Your UPI ID (for advances)</label><input id="upiId" name="upiId" placeholder="yourname@bank" /></div>
+                <div class="wide">
+                  <label>🚗 Travel charges</label>
+                  <p class="muted" style="margin:0 0 8px;font-size:12.5px;">
+                    Added on top of the makeup price based on how far the venue is from your city.
+                    Three zones: <strong>within city</strong>, <strong>nearby</strong>, and <strong>outstation</strong> — you set both the fees and where each zone starts.
+                    When Google Maps is connected, the distance is worked out automatically from the venue.
+                  </p>
+                  <div class="section-grid">
+                    <div><label for="travelWithinCity">Within your city (₹)</label><input id="travelWithinCity" name="travelWithinCity" type="number" required placeholder="0 = free" /></div>
+                    <div><label for="travelNearbyCity">Nearby city (₹)</label><input id="travelNearbyCity" name="travelNearbyCity" type="number" placeholder="2000" /></div>
+                    <div><label for="travelNearbyThresholdKm">Nearby starts at (km)</label><input id="travelNearbyThresholdKm" name="travelNearbyThresholdKm" type="number" min="1" placeholder="25" /></div>
+                    <div><label for="travelOutstation">Outstation (₹)</label><input id="travelOutstation" name="travelOutstation" type="number" required placeholder="5000" /></div>
+                    <div><label for="travelOutstationThresholdKm">Outstation starts at (km)</label><input id="travelOutstationThresholdKm" name="travelOutstationThresholdKm" type="number" min="1" placeholder="100" /></div>
+                    <div><label for="travelPerKmRate">Or charge per km (₹/km)</label><input id="travelPerKmRate" name="travelPerKmRate" type="number" min="0" placeholder="0 = use zones" /><p class="muted" style="margin:3px 0 0;font-size:11.5px;">When set, this replaces the three zones entirely.</p></div>
+                  </div>
+                </div>
                 <div class="wide">
                   <label>How long each booking takes (hours)</label>
                   <p class="muted" style="margin:0 0 8px;font-size:12.5px;">Used to block the right window on your calendar — a bridal look needs more time than a party look.</p>
@@ -1891,90 +1915,24 @@
                   <select id="autoPaymentReminders" name="autoPaymentReminders"><option>Yes</option><option>No</option></select>
                   <p class="muted" style="margin:4px 0 0;font-size:12px;">Gentle nudges for unpaid advances (2, 5, 8 days after booking) and the balance (2 days before the event). Needs your payment-reminder WhatsApp template.</p>
                 </div>
-              </div>
-            </div>
-          </details>
-
-          <details class="collapse" open>
-            <summary>🤖 AI assistant &amp; auto-reply</summary>
-            <div class="collapse-body">
-              <div class="section-grid">
-
-                <div class="wide">
-                  <label for="autoReplyEnabled">Let AI reply to client messages automatically</label>
-                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">
-                    When on, your AI assistant replies to inbound WhatsApp &amp; Instagram messages in your voice — answering questions, gathering event details, and keeping clients warm. <strong>Guardrail:</strong> it will never quote a price or confirm a booking on its own; anything involving money is held for you to approve and send. Each AI reply uses credits from your wallet.
-                  </p>
-                  <select id="autoReplyEnabled" name="autoReplyEnabled">
-                    <option value="No">Off — AI drafts replies, I send them myself</option>
-                    <option value="Yes">On — AI replies automatically (within guardrails)</option>
-                  </select>
+                <div>
+                  <label for="dailyDigest">Morning digest on your phone?</label>
+                  <select id="dailyDigest" name="dailyDigest"><option>Yes</option><option>No</option></select>
+                  <p class="muted" style="margin:4px 0 0;font-size:12px;">One notification at 8 AM with today's jobs and anything that needs you — quiet quotes, pending advances, waitlist openings. Needs notifications turned on.</p>
                 </div>
-
-                <div style="margin-top:18px;border-top:1px solid var(--line,#eee);padding-top:16px;">
-                  <label for="aiPersonaName">AI signs off as</label>
-                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">The name the AI uses at the end of messages. Leave blank to use your first name from your profile. Example: <em>Riya ✨</em></p>
-                  <input id="aiPersonaName" name="aiPersonaName" placeholder="e.g. Riya ✨  or  Team Glow by Aisha" />
-                </div>
-
-                <div style="margin-top:0;">
-                  <label for="aiSignOff">Sign-off phrase</label>
-                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">The phrase before the name, e.g. <em>With love,</em> or <em>Warmly,</em></p>
-                  <input id="aiSignOff" name="aiSignOff" placeholder="With love," />
-                </div>
-
-                <div style="margin-top:0;">
-                  <label for="aiLanguage">Reply language</label>
-                  <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">How the AI should write. Examples: <em>English</em>, <em>Hinglish</em>, <em>Hindi</em>, <em>Mix of English and Hindi</em></p>
-                  <input id="aiLanguage" name="aiLanguage" placeholder="English" />
-                </div>
-
-                <div class="wide" style="margin-top:18px;border-top:1px solid var(--line,#eee);padding-top:16px;">
-                  <label for="aiServicesContext">What the AI should know about your services</label>
-                  <p class="muted" style="margin:2px 0 8px;font-size:12.5px;">
-                    Tell the AI what you offer and roughly what it costs, so it can answer client questions like "what do you charge for bridal?" without making things up. Plain English is fine — write it like you'd explain it to a friend.
-                  </p>
-                  <textarea id="aiServicesContext" name="aiServicesContext" rows="4" placeholder="e.g. I do bridal makeup (₹10,000–₹18,000 depending on location), engagement/reception (₹7,000–₹12,000), and party/event looks (₹4,000–₹6,000). I also do photoshoot makeup (₹5,000). I don't do hair separately. I travel within Hyderabad for free; outstation adds a travel fee. Advance of 30% confirms the booking."></textarea>
-                </div>
-
-                <div class="wide" style="margin-top:18px;border-top:1px solid var(--line,#eee);padding-top:16px;">
-                  <label for="aiToneSamples">Teach the AI your voice</label>
-                  <p class="muted" style="margin:2px 0 8px;font-size:12.5px;">
-                    Paste a few of your own past replies to clients — at least 3, ideally 8–10 — and the AI learns how <em>you</em> write: your warmth, language mix (English/Hindi/Hinglish), emojis, and sign-off. Separate messages with a blank line.
-                    <br><span id="tone-source-hint" style="opacity:.8;">Tip: once WhatsApp/Instagram are connected, you'll be able to pick past conversations here instead of pasting.</span>
-                  </p>
-                  <textarea id="aiToneSamples" name="aiToneSamples" rows="6" placeholder="Hi Priya! So glad you reached out 💕 Could you share your wedding date and venue?
-
-Thank you so much love, that date is open! I'll keep it tentatively held for you."></textarea>
-                  <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
-                    <button type="button" id="train-tone-btn" class="button secondary">✨ Learn my tone</button>
-                    <span id="train-tone-status" class="muted" style="font-size:12.5px;"></span>
-                  </div>
-                  <div id="tone-profile-wrap" style="display:none;margin-top:12px;">
-                    <label for="aiToneProfile">Your AI voice profile (editable)</label>
-                    <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">This is how the AI now understands your style. Tweak it freely — it's used on every reply.</p>
-                    <textarea id="aiToneProfile" name="aiToneProfile" rows="3"></textarea>
-                    <div style="margin-top:14px;border-top:1px dashed var(--line,#eee);padding-top:12px;">
-                      <label style="font-size:13px;">Preview your voice</label>
-                      <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Type a test message as if you're a new client, and see exactly how the AI replies in your tone.</p>
-                      <textarea id="preview-tone-input" rows="2" placeholder="Hi! I saw your work on Instagram, can you do bridal makeup for Feb 2025?" style="width:100%;box-sizing:border-box;"></textarea>
-                      <div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;">
-                        <button type="button" id="preview-tone-btn" class="button secondary" style="font-size:13px;">👁 Preview reply</button>
-                        <span id="preview-tone-status" class="muted" style="font-size:12.5px;"></span>
-                      </div>
-                      <div id="preview-tone-result" style="display:none;margin-top:10px;background:var(--surface,#f9f9f9);border:1px solid var(--line,#e5e5e5);border-radius:8px;padding:12px 14px;">
-                        <div style="font-size:11px;color:#aaa;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">AI reply preview</div>
-                        <div id="preview-tone-text" style="white-space:pre-wrap;font-size:14px;line-height:1.6;"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
               </div>
             </div>
           </details>
 
           <details class="collapse">
+            <summary>🤖 AI assistant &amp; auto-reply</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin:0 0 10px;font-size:13.5px;">Your AI assistant has its own home now — teach it your voice, test how it replies, and switch auto-reply on or off from the <strong>My AI</strong> tab.</p>
+              <button class="button secondary" type="button" data-go-tab="myai">Open My AI →</button>
+            </div>
+          </details>
+
+          <details class="collapse" id="doc-design-section">
             <summary>What goes inside your quotes, invoices &amp; contracts</summary>
             <div class="collapse-body">
               <div class="wide">
@@ -2063,6 +2021,8 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
                 <div><label for="reminderTemplateLang">Language</label><input id="reminderTemplateLang" name="reminderTemplateLang" placeholder="en" /></div>
                 <div><label for="reviewTemplate">Review request template</label><input id="reviewTemplate" name="reviewTemplate" placeholder="review_request" /></div>
                 <div><label for="reviewTemplateLang">Language</label><input id="reviewTemplateLang" name="reviewTemplateLang" placeholder="en" /></div>
+                <div><label for="waitlistOfferTemplate">Waitlist offer template</label><input id="waitlistOfferTemplate" name="waitlistOfferTemplate" placeholder="waitlist_offer" /></div>
+                <div><label for="waitlistOfferTemplateLang">Language</label><input id="waitlistOfferTemplateLang" name="waitlistOfferTemplateLang" placeholder="en" /></div>
               </div>
               <p class="muted" style="margin-top:12px;font-size:12.5px;">
                 Template variables — Booking request: {{1}} client, {{2}} occasion, {{3}} date · Approval: {{1}} client, {{2}} date, {{3}} price · Team alert: {{1}} specialist, {{2}} occasion, {{3}} date, {{4}} venue · Quote/Invoice/Contract: {{1}} client, {{2}} occasion, {{3}} date, {{4}} link · Payment reminder: {{1}} client, {{2}} advance/balance, {{3}} amount, {{4}} date · Pre-event reminder: {{1}} client, {{2}} date, {{3}} time · Review: {{1}} client, {{2}} business, {{3}} review link.
@@ -2138,8 +2098,6 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
           <input type="hidden" name="multiplierOct" value="1.2" />
           <input type="hidden" name="multiplierNov" value="1.5" />
           <input type="hidden" name="multiplierDec" value="1.5" />
-          <input type="hidden" name="travelNearbyCity" value="2000" />
-          <input type="hidden" name="travelOutstationThresholdKm" value="100" />
           <input type="hidden" name="profileLowMultiplier" value="1" />
           <input type="hidden" name="profileMidMultiplier" value="1.1" />
           <input type="hidden" name="profileHighMultiplier" value="1.25" />
@@ -2150,6 +2108,89 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
           <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save settings</button></div>
           <div class="status" id="form-status"></div>
         </form>
+      </section>
+
+      <!-- My AI: how the assistant talks, tested and tuned in one place -->
+      <section class="tab-panel" data-panel="myai">
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">🤖 Your AI assistant</div>
+          <h2>Try it — type like a client</h2>
+          <p class="muted" style="margin:0 0 12px;font-size:14px;">This is exactly how your AI answers client DMs. It already knows your services, prices, durations and travel fees from your settings — nothing to copy across.</p>
+          <textarea id="preview-tone-input" rows="2" placeholder="Hi! I saw your work on Instagram, can you do bridal makeup for 21 Nov?" style="width:100%;box-sizing:border-box;"></textarea>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <button type="button" id="preview-tone-btn" class="button">👁 See the AI's reply</button>
+            <span id="preview-tone-status" class="muted" style="font-size:12.5px;"></span>
+          </div>
+          <div id="preview-tone-result" style="display:none;margin-top:10px;background:var(--surface,#f9f9f9);border:1px solid var(--line,#e5e5e5);border-radius:8px;padding:12px 14px;">
+            <div style="font-size:11px;color:#aaa;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">AI reply preview</div>
+            <div id="preview-tone-text" style="white-space:pre-wrap;font-size:14px;line-height:1.6;"></div>
+          </div>
+        </div>
+
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">Your voice</div>
+          <h2>Teach the AI to write like you</h2>
+          <p class="muted" style="margin:0 0 8px;font-size:13.5px;">
+            Paste a few of your own past replies to clients — at least 3, ideally 8–10 — and the AI learns how <em>you</em> write: your warmth, language mix (English/Hindi/Hinglish), emojis, and sign-off. Separate messages with a blank line.
+            <br><span id="tone-source-hint" style="opacity:.8;">Tip: once WhatsApp/Instagram are connected, you'll be able to pick past conversations here instead of pasting.</span>
+          </p>
+          <textarea id="aiToneSamples" name="aiToneSamples" form="config-form" rows="6" placeholder="Hi Priya! So glad you reached out 💕 Could you share your wedding date and venue?
+
+Thank you so much love, that date is open! I'll keep it tentatively held for you."></textarea>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <button type="button" id="train-tone-btn" class="button secondary">✨ Learn my tone</button>
+            <span id="train-tone-status" class="muted" style="font-size:12.5px;"></span>
+          </div>
+          <div id="tone-profile-wrap" style="display:none;margin-top:12px;">
+            <label for="aiToneProfile">Your AI voice profile (editable)</label>
+            <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">This is how the AI now understands your style. Tweak it freely — it's used on every reply.</p>
+            <textarea id="aiToneProfile" name="aiToneProfile" form="config-form" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="panel section" style="margin-bottom:20px;">
+          <div class="kicker">Personality</div>
+          <h2>Name, sign-off &amp; language</h2>
+          <div class="section-grid" style="margin-top:10px;">
+            <div>
+              <label for="aiPersonaName">AI signs off as</label>
+              <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">Leave blank to use your first name. Example: <em>Riya ✨</em></p>
+              <input id="aiPersonaName" name="aiPersonaName" form="config-form" placeholder="e.g. Riya ✨  or  Team Glow by Aisha" />
+            </div>
+            <div>
+              <label for="aiSignOff">Sign-off phrase</label>
+              <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">The phrase before the name, e.g. <em>With love,</em></p>
+              <input id="aiSignOff" name="aiSignOff" form="config-form" placeholder="With love," />
+            </div>
+            <div>
+              <label for="aiLanguage">Reply language</label>
+              <p class="muted" style="margin:2px 0 6px;font-size:12.5px;"><em>English</em>, <em>Hinglish</em>, <em>Hindi</em>, or a mix.</p>
+              <input id="aiLanguage" name="aiLanguage" form="config-form" placeholder="English" />
+            </div>
+            <div class="wide">
+              <label for="aiServicesContext">Anything extra the AI should know</label>
+              <p class="muted" style="margin:2px 0 8px;font-size:12.5px;">
+                Your prices, durations, add-ons and travel fees are shared with the AI automatically from your settings. Use this only for the things settings can't say — e.g. "I don't do hair separately" or "I take only one bridal per day."
+              </p>
+              <textarea id="aiServicesContext" name="aiServicesContext" form="config-form" rows="3" placeholder="e.g. I don't do hair separately. For South Indian bridal looks I bring an assistant. I take only one bridal booking per day."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel section">
+          <div class="kicker">Autopilot</div>
+          <h2>Let the AI reply on its own?</h2>
+          <p class="muted" style="margin:0 0 8px;font-size:13.5px;">
+            When on, your AI assistant replies to inbound WhatsApp &amp; Instagram messages in your voice — answering questions, gathering event details, and keeping clients warm. <strong>Guardrail:</strong> it will never quote a price or confirm a booking on its own; anything involving money is held for you to approve and send. Each AI reply uses credits from your wallet.
+          </p>
+          <select id="autoReplyEnabled" name="autoReplyEnabled" form="config-form" style="max-width:420px;">
+            <option value="No">Off — AI drafts replies, I send them myself</option>
+            <option value="Yes">On — AI replies automatically (within guardrails)</option>
+          </select>
+          <div class="action-row" style="margin-top:16px;">
+            <button class="button" type="submit" form="config-form">Save AI settings</button>
+          </div>
+        </div>
       </section>
 
       <!-- Documents: unified list of every quote, invoice & contract -->
@@ -2166,6 +2207,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             <div class="action-row" style="gap:8px;flex-wrap:wrap;">
               <button class="button" type="button" id="doc-new-quote">➕ New quote</button>
               <button class="button secondary" type="button" id="doc-new-invoice">➕ New invoice</button>
+              <button class="button secondary" type="button" data-open-doc-design title="Pick the design, colours and logo of your documents">🎨 Change the look</button>
               <a class="button secondary" href="/api/export/accountant" title="All invoices + payments for this financial year, as a CSV your accountant can open in Excel">📊 Export for accountant</a>
             </div>
           </div>
@@ -2212,6 +2254,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
       <button class="bnav-item active" type="button" data-tab="dashboard"><span class="bnav-icon">🏠</span><span>Today</span></button>
       <button class="bnav-item" type="button" data-tab="leads"><span class="bnav-icon">📩</span><span>Requests</span><span class="bnav-badge" id="bnav-badge-leads" style="display:none;"></span></button>
       <button class="bnav-item" type="button" data-tab="bookings"><span class="bnav-icon">📅</span><span>Bookings</span></button>
+      <button class="bnav-item" type="button" data-tab="documents"><span class="bnav-icon">📄</span><span>Docs</span></button>
       <button class="bnav-item" type="button" data-tab="conversations"><span class="bnav-icon">💬</span><span>Messages</span><span class="bnav-badge" id="bnav-badge-messages" style="display:none;"></span></button>
       <button class="bnav-item" type="button" id="bnav-more"><span class="bnav-icon">☰</span><span>More</span></button>
     </nav>
@@ -2222,9 +2265,9 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
         <div class="bnav-sheet-grab"></div>
         <div class="bnav-sheet-grid">
           <button class="bnav-sheet-item" type="button" data-tab="clients"><span>👥</span>Clients</button>
-          <button class="bnav-sheet-item" type="button" data-tab="documents"><span>📄</span>Documents</button>
           <button class="bnav-sheet-item" type="button" data-tab="calendar"><span>🗓️</span>Calendar</button>
           <button class="bnav-sheet-item" type="button" data-tab="mypage"><span>✨</span>My Page</button>
+          <button class="bnav-sheet-item" type="button" data-tab="myai"><span>🤖</span>My AI</button>
           <button class="bnav-sheet-item" type="button" data-tab="reviews"><span>⭐</span>Reviews</button>
           <button class="bnav-sheet-item" type="button" data-tab="analytics"><span>📊</span>Insights</button>
           <button class="bnav-sheet-item" type="button" data-tab="team"><span>🧑‍🤝‍🧑</span>Team</button>
@@ -2596,6 +2639,24 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               <input type="number" id="doc-edit-discount" min="0" max="99" step="0.5" placeholder="e.g. 10" />
             </div>
           </div>
+          <div id="doc-edit-quote-extras" style="display:none;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+              <div>
+                <label for="doc-edit-range-low">Estimate range — from (₹)</label>
+                <input type="number" id="doc-edit-range-low" min="0" step="1" placeholder="e.g. 12000" />
+              </div>
+              <div>
+                <label for="doc-edit-range-high">to (₹)</label>
+                <input type="number" id="doc-edit-range-high" min="0" step="1" placeholder="e.g. 15000" />
+              </div>
+            </div>
+            <p class="muted" style="font-size:12px;margin:-6px 0 12px;">Fill both to send a <strong>range estimate</strong> ("₹12,000 – ₹15,000, final amount after consultation") instead of one fixed number.</p>
+            <div id="doc-edit-package-row" style="display:none;margin-bottom:12px;">
+              <label for="doc-edit-package">Apply a saved package</label>
+              <select id="doc-edit-package" style="width:100%;"><option value="">— choose a package —</option></select>
+              <p class="muted" style="font-size:12px;margin:4px 0 0;">Fills the line items below from your saved bundles (Settings → quotes &amp; invoices → Saved quote packages).</p>
+            </div>
+          </div>
           <label>Extra line items</label>
           <div id="doc-edit-lineitems" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
           <button type="button" class="button tiny secondary" id="doc-edit-additem">+ Add line item</button>
@@ -2752,13 +2813,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         // Keep the bottom mobile nav in sync; tabs not on the bar light up "More".
         const bnav = document.getElementById("bottom-nav");
         if (bnav) {
-          const bnavTabs = ["dashboard", "leads", "bookings", "conversations"];
+          const bnavTabs = ["dashboard", "leads", "bookings", "documents", "conversations"];
           bnav.querySelectorAll(".bnav-item[data-tab]").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
           document.getElementById("bnav-more")?.classList.toggle("active", !bnavTabs.includes(name));
         }
         document.getElementById("bnav-sheet")?.classList.remove("open");
         window.scrollTo({ top: 0 });
         if (name === "documents") loadDocuments();
+        if (name === "bookings") loadWaitlist();
         if (name === "clients") renderClients();
         if (name === "calendar") { renderCalendar(); renderBlockedDates(); }
         if (name === "conversations") loadConversations();
@@ -3220,8 +3282,40 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("doc-edit-discount").value = "";
         document.getElementById("doc-edit-note").value = "";
         document.getElementById("doc-edit-lineitems").innerHTML = "";
+        document.getElementById("doc-edit-range-low").value = "";
+        document.getElementById("doc-edit-range-high").value = "";
+        // Estimate modes (range, saved packages) only make sense on quotes.
+        document.getElementById("doc-edit-quote-extras").style.display = kind === "quote" ? "" : "none";
+        if (kind === "quote") loadQuotePackagesPicker();
         docEditModal.classList.add("open");
       }
+
+      // Saved quote packages → one-tap line items in the quote editor.
+      let quotePackagesCache = null;
+      async function loadQuotePackagesPicker() {
+        const row = document.getElementById("doc-edit-package-row");
+        const select = document.getElementById("doc-edit-package");
+        if (quotePackagesCache === null) {
+          try {
+            const payload = await getJson("/api/quote-packages");
+            quotePackagesCache = payload?.packages || [];
+          } catch { quotePackagesCache = []; }
+        }
+        if (!quotePackagesCache.length) { row.style.display = "none"; return; }
+        select.innerHTML = '<option value="">— choose a package —</option>' +
+          quotePackagesCache.map((p, i) =>
+            `<option value="${i}">${escapeHtml(p.name)} — ${formatMoney(p.total)}</option>`).join("");
+        row.style.display = "";
+      }
+      document.getElementById("doc-edit-package").addEventListener("change", (e) => {
+        const pkg = quotePackagesCache?.[Number(e.target.value)];
+        if (!pkg) return;
+        document.getElementById("doc-edit-lineitems").innerHTML = "";
+        pkg.items.forEach((item) => addLineItemRow(item.label, item.amount));
+        // The package IS the price: clear the auto amount so items define the total.
+        document.getElementById("doc-edit-amount").value = "";
+        toast(`"${pkg.name}" applied — ${pkg.items.length} line items.`, "success");
+      });
       function closeDocEdit() { docEditModal.classList.remove("open"); }
       document.getElementById("doc-edit-close").addEventListener("click", closeDocEdit);
       docEditModal.addEventListener("click", (e) => { if (e.target === docEditModal) closeDocEdit(); });
@@ -3245,11 +3339,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           amount: Number(row.querySelector("[data-li-amount]").value) || 0,
         })).filter((it) => it.label && it.amount);
         const discountRaw = document.getElementById("doc-edit-discount").value;
+        const rangeLowRaw = document.getElementById("doc-edit-range-low").value;
+        const rangeHighRaw = document.getElementById("doc-edit-range-high").value;
         const payload = {
           amountOverride: amountRaw ? Number(amountRaw) : undefined,
           lineItems,
           note: document.getElementById("doc-edit-note").value.trim() || undefined,
           discountPercent: discountRaw ? Number(discountRaw) : undefined,
+          priceRangeLow: rangeLowRaw ? Number(rangeLowRaw) : undefined,
+          priceRangeHigh: rangeHighRaw ? Number(rangeHighRaw) : undefined,
         };
         const saveBtn = document.getElementById("doc-edit-save");
         setLoading(saveBtn, "Saving…");
@@ -3262,6 +3360,116 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (!isoString) return null;
         return Math.floor((Date.now() - new Date(isoString).getTime()) / 86400000);
       }
+
+      // ─── Waitlist (Bookings tab) ───
+      // Who's waiting for full dates, freshest data straight from the server,
+      // with a one-tap WhatsApp offer when a date has space again.
+      async function loadWaitlist() {
+        const section = document.getElementById("waitlist-section");
+        const box = document.getElementById("waitlist-groups");
+        if (!section || !box) return;
+        let dates = [];
+        try {
+          const payload = await getJson("/api/waitlist");
+          dates = payload?.dates || [];
+        } catch { /* leave hidden on failure */ }
+        if (!dates.length) { section.style.display = "none"; return; }
+        section.style.display = "";
+        box.innerHTML = dates.map((group) => `
+          <div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+              <strong>${escapeHtml(formatDay(group.date))}</strong>
+              <span class="${group.slotOpen ? "pill success" : "pill warning"}">${group.slotOpen ? "✅ A slot is open!" : `Full — ${group.booked}${group.maxPerDay ? "/" + group.maxPerDay : ""} booked`}</span>
+            </div>
+            ${group.waiting.map((w) => `
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0;border-top:1px dashed var(--line);">
+                <div>
+                  <strong style="font-size:14px;">#${w.position} ${escapeHtml(w.clientName || "Client")}</strong>
+                  <span class="muted" style="font-size:12.5px;"> · ${escapeHtml(w.eventType)}${w.eventTime ? " at " + escapeHtml(w.eventTime) : ""} · waiting ${daysSince(w.joinedAt) ?? 0}d</span>
+                </div>
+                <button class="button small ${group.slotOpen ? "" : "secondary"}" type="button" data-waitlist-offer="${escapeHtml(w.leadId)}" data-waitlist-name="${escapeHtml(w.clientName || "the client")}">📲 Offer the slot</button>
+              </div>`).join("")}
+          </div>`).join("");
+      }
+      document.getElementById("waitlist-groups")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-waitlist-offer]");
+        if (!btn) return;
+        const leadId = btn.getAttribute("data-waitlist-offer");
+        const name = btn.getAttribute("data-waitlist-name");
+        if (!(await showConfirm(`Offer this slot to ${name}?`, "They'll get a WhatsApp message that the date opened up, and move into your Requests so you can take it from there.", "Send the offer"))) return;
+        setLoading(btn, "Sending…");
+        try {
+          await postJson(`/api/waitlist/${encodeURIComponent(leadId)}/offer`, {});
+          toast(`Offer sent to ${name} — they're in your Requests now.`, "success");
+          await refreshSession();
+          await loadWaitlist();
+        } catch (err) {
+          toast(err.message || "Couldn't send the offer.", "error");
+          clearLoading(btn, "📲 Offer the slot");
+        }
+      });
+
+      // ─── Proactive insights (server-computed) ───
+      // Merged into the "Needs your attention" card: open waitlist slots, hot
+      // months priced flat, below-base pricing — things the data knows and the
+      // dashboard should say out loud.
+      let insightsCache = [];
+      const INSIGHT_PRESENTATION = {
+        slot_open_waitlist: { icon: "🎉", tab: "bookings" },
+        waitlist_pressure: { icon: "🔥", tab: "bookings" },
+        stale_quote: { icon: "📨", tab: "leads" },
+        advance_overdue: { icon: "💸", tab: "bookings" },
+        demand_month: { icon: "📈", tab: "setup" },
+        below_base: { icon: "🏷️", tab: "setup" },
+      };
+      async function loadInsights() {
+        try {
+          const payload = await getJson("/api/insights");
+          insightsCache = payload?.insights || [];
+        } catch { insightsCache = []; }
+        const d = sessionState?.dashboard;
+        if (d) renderAttentionItems(d.leads || [], d.bookings || []);
+      }
+
+      // ─── Settings search: find a field without knowing which section it's in ───
+      document.getElementById("settings-search")?.addEventListener("input", debounce((e) => {
+        const q = String(e.target.value || "").trim().toLowerCase();
+        const sections = document.querySelectorAll("#config-form details.collapse");
+        sections.forEach((d) => {
+          if (!q) { d.style.display = ""; return; }
+          const matches = d.textContent.toLowerCase().includes(q);
+          d.style.display = matches ? "" : "none";
+          if (matches) d.open = true;
+        });
+      }, 150));
+
+      // Pointer buttons that jump to another tab (e.g. Settings → My AI).
+      document.addEventListener("click", (e) => {
+        const go = e.target.closest("[data-go-tab]");
+        if (go) activateTab(go.getAttribute("data-go-tab"));
+      });
+
+      // Jump straight to the document-design section in Settings — used by the
+      // "Change the look" buttons next to every preview.
+      function openDocDesign() {
+        activateTab("setup");
+        const section = document.getElementById("doc-design-section");
+        if (section) {
+          section.open = true;
+          setTimeout(() => section.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+        }
+      }
+      document.addEventListener("click", (e) => {
+        if (e.target.closest("[data-open-doc-design]")) openDocDesign();
+        // Seeing a sample document completes the "see what your quote looks
+        // like" setup step.
+        if (e.target.closest('a[href^="/api/documents/sample/"]')) {
+          localStorage.setItem("bd-doc-previewed", "1");
+        }
+        if (e.target.closest('a[href*="/quote/preview"]')) {
+          localStorage.setItem("bd-doc-previewed", "1");
+        }
+      });
 
       // How much money has actually landed for a booking: the payments ledger
       // when it exists, otherwise inferred from the coarse payment status.
@@ -3365,6 +3573,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
         const items = [];
         const today = new Date(); today.setHours(0, 0, 0, 0);
+
+        // Server-computed insights first: waitlist openings, demand pressure,
+        // pricing opportunities — the proactive stuff the raw lists can't show.
+        for (const insight of insightsCache) {
+          const pres = INSIGHT_PRESENTATION[insight.kind] || { icon: "💡", tab: "dashboard" };
+          items.push({
+            icon: pres.icon,
+            title: insight.title,
+            sub: insight.body,
+            tab: pres.tab,
+            danger: insight.severity === "action" && insight.kind !== "slot_open_waitlist",
+          });
+        }
 
         // Clients who tapped Accept on their quote — hot, confirm them now.
         const acceptedQuotes = leads.filter((l) => l.quoteAcceptedAt && !["Confirmed", "Payment Received", "Completed", "Lost"].includes(l.status));
@@ -3927,6 +4148,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         renderCalendarGrid();
         renderSetupChecklist();
         renderAutomationPanel();
+        loadInsights();
       }
 
       // The app chrome carries HER brand, not ours: business name in the
@@ -4009,6 +4231,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           { done: !!(cfg.upiId && cfg.upiId.trim()), title: "Set up payments (UPI ID)", desc: "Lets clients pay the advance to lock their date.", wizard: true },
           { done: portfolioCount >= 1, title: "Upload portfolio photos", desc: "Show your work — pages with photos book far more.", tab: "mypage" },
           { done: !!(cfg.aboutText && cfg.aboutText.trim()), title: "Write a short intro", desc: "A warm line about your style and experience.", tab: "mypage" },
+          { done: !!(cfg.brandColor && cfg.brandColor.trim()), title: "Pick your brand colour", desc: "Your booking page, quotes and invoices all wear it.", tab: "mypage" },
+          { done: localStorage.getItem("bd-doc-previewed") === "1", title: "See what your quote looks like", desc: "Preview the exact PDF clients receive — and pick its design.", tab: "setup" },
+          { done: !!(cfg.aiToneProfile && cfg.aiToneProfile.trim()), title: "Teach the AI your voice", desc: "2 minutes — paste a few past replies, then test how it talks.", tab: "myai" },
         ];
         const doneCount = steps.filter((s) => s.done).length;
         if (doneCount === steps.length) { box.style.display = "none"; return; }
@@ -4028,7 +4253,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const wiz = e.target.closest("[data-setup-wizard]");
         if (wiz) { openQuickSetup(); return; }
         const btn = e.target.closest("[data-setup-go]");
-        if (btn) activateTab(btn.getAttribute("data-setup-go"));
+        if (btn) {
+          const tab = btn.getAttribute("data-setup-go");
+          // The document-design step lands her on the exact section, not just Settings.
+          if (tab === "setup") { openDocDesign(); return; }
+          activateTab(tab);
+        }
       });
 
       // ---- Calendar ----
@@ -5459,6 +5689,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         try {
           await postJson("/api/workspace/config", Object.fromEntries(new FormData(configForm).entries()));
           toast("Settings saved.", "success");
+          quotePackagesCache = null; // saved packages may have changed
           await refreshSession();
         } catch (error) {
           toast(error.message, "error");
@@ -5767,6 +5998,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${primary ? `<button class="button" style="flex:1;" data-drawer-action="${primary.action}" data-drawer-lead-id="${lead.leadId}">${primary.label}</button>` : ""}
             ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer" class="button secondary">Open quote</a>` : ""}
             <a href="/api/leads/${lead.leadId}/quote/preview" target="_blank" rel="noreferrer" class="button secondary">👁 Preview quote</a>
+            <button class="button secondary" type="button" data-open-doc-design title="Pick the design, colours and logo of your documents">🎨 Change the look</button>
           </div>
           <div class="drawer-actions-row">
             <button class="button secondary small" data-drawer-edit-details="${lead.leadId}">✏️ Edit details</button>
@@ -6899,7 +7131,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           if (!(await showConfirm(`Cancel ${b ? b.clientName + "'s" : "this"} booking?`, "The date frees up on your calendar. Payments already received stay on record.", "Cancel booking"))) return;
           setLoading(cx, "Cancelling…");
           try {
-            await postJson(`/api/bookings/${bookingId}/cancel`, {});
+            const cancelResult = await postJson(`/api/bookings/${bookingId}/cancel`, {});
+            // The freed date may have a waitlist — surface the first in line
+            // immediately so the slot never goes quietly to waste.
+            const waiting = cancelResult?.waitlistCandidates || [];
+            if (waiting.length) {
+              const first = waiting[0];
+              toast(
+                `${first.clientName || "A client"} is waiting for this date${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}.`,
+                "info",
+                { label: "Offer them the slot →", onClick: () => { activateTab("bookings"); loadWaitlist(); } },
+              );
+            }
             // Check if within late-cancellation window to prompt for fee
             if (b?.eventDate) {
               const cfg = sessionState?.workspace?.config || {};
@@ -7201,13 +7444,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           clearLoading(btn);
         }
       });
-      document.getElementById("ai-train-btn")?.addEventListener("click", () => {
-        activateTab("setup");
-        setTimeout(() => {
-          const aiSection = [...document.querySelectorAll("#setup-form details summary, details summary")].find((s) => s.textContent.includes("AI assistant"));
-          if (aiSection) { aiSection.closest("details").open = true; aiSection.scrollIntoView({ behavior: "smooth", block: "start" }); }
-        }, 100);
-      });
+      document.getElementById("ai-train-btn")?.addEventListener("click", () => activateTab("myai"));
 
       // ─── Quick setup wizard: the essentials without opening full Settings ───
       const quickSetupModal = document.getElementById("quick-setup-modal");
