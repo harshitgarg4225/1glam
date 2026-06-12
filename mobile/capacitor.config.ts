@@ -2,8 +2,9 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 // The shell loads the deployed web app directly — one codebase for web and
 // mobile, and every server deploy updates the app instantly with no store
-// review. Point CAP_SERVER_URL at a staging URL for test builds.
-const SERVER_URL = process.env.CAP_SERVER_URL || "https://busydays.in";
+// review. Point CAP_SERVER_URL at a staging URL for test builds, or update
+// the default when the app moves to a custom domain.
+const SERVER_URL = process.env.CAP_SERVER_URL || "https://1glam-production.up.railway.app";
 
 const config: CapacitorConfig = {
   appId: "in.busydays.app",
