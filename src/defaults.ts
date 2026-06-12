@@ -109,6 +109,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     googleReviewCount: "",
     quotePackages: "",
     bookingSlug: "",
+    serviceDurations: "Bridal=4, Engagement=3, Reception=3, Party=2, Shoot=3, Other=2",
     brandColor: "",
     coverImageUrl: "",
     headline: "",

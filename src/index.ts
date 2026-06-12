@@ -66,7 +66,7 @@ import {
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
-import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance } from "./services/places.js";
+import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
 import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply } from "./services/gmb.js";
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
@@ -1558,6 +1558,19 @@ app.get("/api/maps/distance", async (req, res, next) => {
   }
 });
 
+// Venue autocomplete while typing. Quietly returns [] without a Maps key so
+// the location fields degrade to plain inputs.
+app.get("/api/maps/places", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const suggestions = await suggestPlaces(q).catch(() => []);
+    res.json({ ok: true, suggestions });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Lists the available document design themes for the picker.
 app.get("/api/document-templates", (_req, res) => {
   res.json({ ok: true, templates: DOCUMENT_THEME_LIST });
@@ -1799,7 +1812,16 @@ app.post("/api/bookings/quick", async (req, res, next) => {
     const result = await confirmLeadBooking(email, tokens, lead.leadId);
 
     if (parsed.advancePaid) {
-      await updatePaymentStatus(email, tokens, lead.leadId, "Advance Paid");
+      if (parsed.advanceAmount > 0 && result.booking?.bookingId) {
+        // Record the actual rupees in the ledger so "collected" is right from day one.
+        await recordBookingPayment(email, tokens, result.booking.bookingId, {
+          amount: parsed.advanceAmount,
+          method: "UPI",
+          note: "Advance (recorded at booking)",
+        });
+      } else {
+        await updatePaymentStatus(email, tokens, lead.leadId, "Advance Paid");
+      }
     }
 
     res.json({ ok: true, booking: result.booking, leadId: lead.leadId });

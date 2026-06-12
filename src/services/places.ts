@@ -82,6 +82,33 @@ export async function estimateDistance(
   };
 }
 
+// Venue/location suggestions while typing — Places Autocomplete, biased to
+// India. Returns [] when the key isn't configured so the field stays a plain
+// text input with no error noise.
+export async function suggestPlaces(query: string): Promise<string[]> {
+  if (!appConfig.googleMapsApiKey) return [];
+  const trimmed = query.trim();
+  if (trimmed.length < 3) return [];
+
+  const url = new URL("https://maps.googleapis.com/maps/api/place/autocomplete/json");
+  url.searchParams.set("input", trimmed);
+  url.searchParams.set("components", "country:in");
+  url.searchParams.set("key", appConfig.googleMapsApiKey);
+
+  const response = await fetchWithTimeout(url.toString());
+  if (!response.ok) return [];
+
+  const payload = (await response.json()) as {
+    status: string;
+    predictions?: Array<{ description?: string }>;
+  };
+  if (payload.status !== "OK") return [];
+  return (payload.predictions ?? [])
+    .map((p) => p.description || "")
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
 // Finds Google Business Profiles matching a free-text query (business name +
 // city) using the Places Text Search API. Reuses the existing Maps API key.
 export async function findBusinessCandidates(query: string): Promise<BusinessCandidate[]> {

@@ -213,6 +213,22 @@ test("quickBookingSchema rejects bad phone and bad date, allows decide-later pri
   assert.equal(noExtras.locationText, "To be decided");
 });
 
+// --- Per-occasion calendar durations (durationHoursForEvent) -------------------
+
+const { durationHoursForEvent } = await import("../src/services/booking.ts");
+
+test("durationHoursForEvent reads config, falls back per occasion, ignores junk", () => {
+  const cfg = "Bridal=5, Party=1.5, Shoot=abc, Reception=0";
+  assert.equal(durationHoursForEvent(cfg, "Bridal"), 5);          // configured
+  assert.equal(durationHoursForEvent(cfg, "bridal"), 5);          // case-insensitive
+  assert.equal(durationHoursForEvent(cfg, "Party"), 1.5);         // decimals fine
+  assert.equal(durationHoursForEvent(cfg, "Shoot"), 3);           // junk value → default
+  assert.equal(durationHoursForEvent(cfg, "Reception"), 3);       // zero → default
+  assert.equal(durationHoursForEvent(cfg, "Engagement"), 3);      // unconfigured → default
+  assert.equal(durationHoursForEvent("", "Bridal"), 4);           // empty config → defaults
+  assert.equal(durationHoursForEvent(undefined, "Mystery"), 3);   // unknown occasion → 3h
+});
+
 // --- Automatic payment reminders (dueAdvanceMarker / balanceReminderDue) -------
 
 const { dueAdvanceMarker, balanceReminderDue } = await import("../src/services/reminders.ts");

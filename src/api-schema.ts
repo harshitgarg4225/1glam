@@ -42,6 +42,8 @@ export const quickBookingSchema = z.object({
   locationText: z.string().max(200).optional().default("To be decided"),
   price: z.coerce.number().min(0).max(100000000).optional().default(0),
   advancePaid: z.coerce.boolean().optional().default(false),
+  // How much was actually received — recorded as the first ledger entry.
+  advanceAmount: z.coerce.number().min(0).max(100000000).optional().default(0),
 });
 
 // Day-to-day corrections: venue changed, typo in the number, new time. All

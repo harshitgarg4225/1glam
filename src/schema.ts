@@ -109,6 +109,7 @@ export const workspaceConfigSchema = z.object({
   googleReviewCount: z.string().optional().default(""),
   quotePackages: z.string().optional().default(""),
   bookingSlug: z.string().optional().default(""),
+  serviceDurations: z.string().optional().default(""),
   brandColor: z.string().optional().default(""),
   coverImageUrl: z.string().optional().default(""),
   headline: z.string().optional().default(""),
