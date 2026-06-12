@@ -193,6 +193,8 @@ export type WorkspaceRecord = {
   wallet?: Wallet;
   // Web-push subscriptions for the owner's devices (PWA notifications).
   pushSubscriptions?: Array<{ endpoint: string; keys: { p256dh: string; auth: string } }>;
+  // FCM device tokens for the owner's phones (native iOS/Android app).
+  deviceTokens?: Array<{ token: string; platform: "ios" | "android"; updatedAt: string }>;
   config: WorkspaceConfig;
 };
 

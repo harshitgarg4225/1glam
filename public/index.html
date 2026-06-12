@@ -15,6 +15,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="BusyDays" />
+    <!-- Native-app shell integration: no-op in browsers, activates in the
+         Capacitor iOS/Android app (system-browser OAuth, FCM push). -->
+    <script src="/mobile-bridge.js" defer></script>
     <style>
       :root {
         --bg: #FAF8F5;
