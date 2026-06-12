@@ -5248,7 +5248,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           <p class="muted" style="margin-top:14px;">Connecting Instagram and WhatsApp lets new enquiries flow in automatically and lets you reply right from here. Only you can see your own account — your data stays private to you.</p>`;
       }
 
-      async function refreshSession() {
+      // Coalesced: actions often fire refreshSession in quick succession
+      // (action handler + tab activation + focus). Concurrent callers share
+      // one in-flight request instead of stampeding the server.
+      let refreshSessionInflight = null;
+      function refreshSession() {
+        if (refreshSessionInflight) return refreshSessionInflight;
+        refreshSessionInflight = doRefreshSession().finally(() => { refreshSessionInflight = null; });
+        return refreshSessionInflight;
+      }
+
+      async function doRefreshSession() {
         const response = await fetch("/api/session");
         // A logged-out visitor must stay on the public landing page — never
         // auto-redirect to Google sign-in (that makes the homepage look "behind
@@ -5369,13 +5379,28 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         return serverMessage || "That didn't work. Please try again.";
       }
 
-      async function postJson(url, body) {
-        let response;
+      // All API calls time out after 45s so a dead connection shows a clear
+      // message instead of a spinner that never ends. (Long jobs like campaign
+      // broadcasts run server-side in the background and are polled, so no
+      // request legitimately needs longer than this.)
+      const FETCH_TIMEOUT_MS = 45000;
+      async function fetchWithTimeout(url, init) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         try {
-          response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        } catch {
+          return await fetch(url, { ...(init || {}), signal: controller.signal });
+        } catch (err) {
+          if (err && err.name === "AbortError") {
+            throw new Error("That took too long — the server may be busy. Please try again.");
+          }
           throw new Error("You seem to be offline — check your connection and try again.");
+        } finally {
+          clearTimeout(timer);
         }
+      }
+
+      async function postJson(url, body) {
+        const response = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         if (response.status === 401) {
           handleSessionExpired();
           return;
@@ -5386,12 +5411,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       async function getJson(url) {
-        let response;
-        try {
-          response = await fetch(url);
-        } catch {
-          throw new Error("You seem to be offline — check your connection and try again.");
-        }
+        const response = await fetchWithTimeout(url);
         if (response.status === 401) {
           handleSessionExpired();
           return null;
@@ -6959,19 +6979,33 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         setLoading(btn, "Sending…");
         statusEl.textContent = "";
         resultsEl.style.display = "none";
+        // The server runs the broadcast in the background (1 msg/sec, up to
+        // ~3 min for a big list); we poll for live progress so she can watch
+        // it go out — and safely close the tab without stopping the send.
+        const renderResults = (r) => {
+          if (!r.contacts?.length) return;
+          resultsEl.style.display = "block";
+          resultsBody.innerHTML = r.contacts.map((c) =>
+            `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line);">
+              <span>${escapeHtml(c.name)} <span class="muted" style="font-size:11px;">${escapeHtml(c.phone)}</span></span>
+              <span style="color:${c.status === "sent" ? "#16a34a" : "#dc2626"};font-size:12px;font-weight:600;">${c.status === "sent" ? "✓ Sent" : "✗ Failed"}</span>
+            </div>`
+          ).join("");
+        };
         try {
-          const r = await postJson("/api/campaigns/broadcast", { segment, message });
-          const line = `Sent to ${r.sent} · Failed: ${r.failed}${r.skipped > 0 ? ` · Skipped (capped): ${r.skipped}` : ""}`;
-          statusEl.textContent = line;
-          if (r.contacts?.length) {
-            resultsEl.style.display = "block";
-            resultsBody.innerHTML = r.contacts.map((c) =>
-              `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line);">
-                <span>${escapeHtml(c.name)} <span class="muted" style="font-size:11px;">${escapeHtml(c.phone)}</span></span>
-                <span style="color:${c.status === "sent" ? "#16a34a" : "#dc2626"};font-size:12px;font-weight:600;">${c.status === "sent" ? "✓ Sent" : "✗ Failed"}</span>
-              </div>`
-            ).join("");
+          const start = await postJson("/api/campaigns/broadcast", { segment, message });
+          let r;
+          for (;;) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            r = await getJson(`/api/campaigns/jobs/${encodeURIComponent(start.jobId)}`);
+            if (!r) return; // session expired mid-poll
+            statusEl.textContent = `Sending… ${r.sent + r.failed} of ${Math.min(r.total, 200) || "?"} done`;
+            renderResults(r);
+            if (r.status !== "running") break;
           }
+          if (r.status === "failed") throw new Error(r.error || "Broadcast failed.");
+          statusEl.textContent = `Sent to ${r.sent} · Failed: ${r.failed}${r.skipped > 0 ? ` · Skipped (capped): ${r.skipped}` : ""}`;
+          renderResults(r);
           toast(`Campaign sent to ${r.sent} clients.`, "success");
         } catch (err) {
           statusEl.textContent = err.message;

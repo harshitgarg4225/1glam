@@ -3,7 +3,26 @@ import path from "node:path";
 import { Pool } from "pg";
 import { appConfig } from "../config.js";
 import { decryptWorkspaceSecrets, encryptWorkspaceSecrets } from "./crypto.js";
+import { TtlCache } from "./cache.js";
+import { logger } from "./logger.js";
 import type { MetaChannel, WorkspaceRecord } from "../types.js";
+
+// Workspace records are read on virtually every API request (auth guard →
+// getWorkspaceByEmail) but written rarely (config saves, token refreshes).
+// A short TTL plus invalidation-on-write keeps DB round-trips off the hot
+// path without risking stale reads after a save.
+const WORKSPACE_CACHE_TTL_MS = 30_000;
+const workspaceByEmailCache = new TtlCache<WorkspaceRecord | null>(WORKSPACE_CACHE_TTL_MS);
+const workspaceByIdCache = new TtlCache<WorkspaceRecord | null>(WORKSPACE_CACHE_TTL_MS);
+
+function invalidateWorkspaceCache(record?: { email?: string; workspaceId?: string }) {
+  if (record?.email) workspaceByEmailCache.delete(normalizeEmail(record.email));
+  if (record?.workspaceId) workspaceByIdCache.delete(record.workspaceId);
+  if (!record) {
+    workspaceByEmailCache.clear();
+    workspaceByIdCache.clear();
+  }
+}
 
 // Persistence boundary helpers: records are encrypted on the way to storage and
 // decrypted on the way back, so the rest of the app only ever sees plaintext
@@ -35,6 +54,20 @@ function getPool() {
     pool = new Pool({
       connectionString: appConfig.databaseUrl,
       ssl: appConfig.databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+      // Bounded pool: workspaces are small JSONB rows, so 10 connections per
+      // instance is plenty — and it keeps N instances from breaching the
+      // Postgres max_connections ceiling.
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+      // Kill any query stuck longer than 30s so a wedged connection can't
+      // hold an advisory lock or pool slot forever.
+      statement_timeout: 30_000,
+    });
+    // Idle clients can error (server restart, network blip). Without a
+    // listener that's an uncaught exception that kills the process.
+    pool.on("error", (err) => {
+      logger.error("pg_pool_idle_client_error", { message: err.message });
     });
   }
 
@@ -336,6 +369,7 @@ export async function readWorkspaceDb(): Promise<WorkspaceDb> {
 }
 
 export async function writeWorkspaceDb(db: WorkspaceDb) {
+  invalidateWorkspaceCache(); // bulk overwrite — drop everything cached
   if (hasPostgres()) {
     await ensurePostgres();
     const client = await getPool().connect();
@@ -374,15 +408,18 @@ export async function listWorkspaces() {
 }
 
 export async function findWorkspaceByEmail(email: string) {
-  if (hasPostgres()) {
-    return findWorkspaceByEmailFromPostgres(email);
-  }
-
-  const db = await readWorkspaceDbFromFile();
-  return db.workspaces.find((workspace) => normalizeEmail(workspace.email) === normalizeEmail(email)) ?? null;
+  const key = normalizeEmail(email);
+  return workspaceByEmailCache.getOrLoad(key, async () => {
+    if (hasPostgres()) {
+      return findWorkspaceByEmailFromPostgres(email);
+    }
+    const db = await readWorkspaceDbFromFile();
+    return db.workspaces.find((workspace) => normalizeEmail(workspace.email) === key) ?? null;
+  });
 }
 
 export async function saveWorkspace(record: WorkspaceRecord) {
+  invalidateWorkspaceCache(record);
   if (hasPostgres()) {
     await saveWorkspaceToPostgres(record);
     return;
@@ -404,31 +441,38 @@ export async function updateWorkspaceByEmail(
   email: string,
   updater: (workspace: WorkspaceRecord) => WorkspaceRecord,
 ) {
+  // Invalidate before AND after: before so a concurrent read mid-update can't
+  // re-prime the cache with the old value for a full TTL, after so the next
+  // read sees the committed record.
+  invalidateWorkspaceCache({ email });
+  let updated: WorkspaceRecord | null;
   if (hasPostgres()) {
-    return updateWorkspaceByEmailInPostgres(email, updater);
+    updated = await updateWorkspaceByEmailInPostgres(email, updater);
+  } else {
+    const db = await readWorkspaceDbFromFile();
+    const index = db.workspaces.findIndex((workspace) => normalizeEmail(workspace.email) === normalizeEmail(email));
+    if (index === -1) return null;
+    db.workspaces[index] = updater(db.workspaces[index]);
+    await writeWorkspaceDbToFile(db);
+    updated = db.workspaces[index];
   }
-
-  const db = await readWorkspaceDbFromFile();
-  const index = db.workspaces.findIndex((workspace) => normalizeEmail(workspace.email) === normalizeEmail(email));
-  if (index === -1) return null;
-
-  db.workspaces[index] = updater(db.workspaces[index]);
-  await writeWorkspaceDbToFile(db);
-  return db.workspaces[index];
+  if (updated) invalidateWorkspaceCache(updated);
+  return updated;
 }
 
 export async function findWorkspaceByWorkspaceId(workspaceId: string) {
-  if (hasPostgres()) {
-    await ensurePostgres();
-    const result = await getPool().query<{ data: WorkspaceRecord }>(
-      `SELECT data FROM workspace_records WHERE workspace_id = $1 LIMIT 1`,
-      [workspaceId],
-    );
-    return result.rows[0]?.data ? fromStored(result.rows[0].data) : null;
-  }
-
-  const db = await readWorkspaceDbFromFile();
-  return db.workspaces.find((workspace) => workspace.workspaceId === workspaceId) ?? null;
+  return workspaceByIdCache.getOrLoad(workspaceId, async () => {
+    if (hasPostgres()) {
+      await ensurePostgres();
+      const result = await getPool().query<{ data: WorkspaceRecord }>(
+        `SELECT data FROM workspace_records WHERE workspace_id = $1 LIMIT 1`,
+        [workspaceId],
+      );
+      return result.rows[0]?.data ? fromStored(result.rows[0].data) : null;
+    }
+    const db = await readWorkspaceDbFromFile();
+    return db.workspaces.find((workspace) => workspace.workspaceId === workspaceId) ?? null;
+  });
 }
 
 export async function findWorkspaceByMetaAsset(input: {

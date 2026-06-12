@@ -205,6 +205,7 @@ export async function broadcastCampaign(
   email: string,
   tokens: Credentials,
   input: { segment: CampaignSegment; message: string; imageUrl?: string },
+  onProgress?: (partial: BroadcastResult) => void,
 ): Promise<BroadcastResult> {
   const workspace = await getWorkspaceByEmail(email);
   if (!workspace) throw new Error("Workspace not found");
@@ -228,9 +229,82 @@ export async function broadcastCampaign(
       results.push({ name: c.name, phone: c.phone, status: "failed", error: String(err) });
       failed++;
     }
+    onProgress?.({ total: contacts.length, sent, failed, skipped: contacts.length - capped.length, contacts: results });
   }
 
   return { total: contacts.length, sent, failed, skipped: contacts.length - capped.length, contacts: results };
+}
+
+// ── Background broadcast jobs ────────────────────────────────────────────────
+// A 200-contact broadcast takes ~200s (1 msg/s throttle) — far too long to hold
+// an HTTP request open. The route starts a job, returns the id immediately, and
+// the UI polls for progress. Jobs are in-process: if the instance restarts
+// mid-broadcast the job is lost, but every message already sent has been sent —
+// the status endpoint reporting "job not found" tells the UI to say exactly that.
+
+export type CampaignJob = {
+  id: string;
+  email: string; // owner — status reads are scoped to the requesting account
+  status: "running" | "done" | "failed";
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  result: BroadcastResult;
+};
+
+const campaignJobs = new Map<string, CampaignJob>();
+const MAX_FINISHED_JOBS = 50;
+
+function pruneFinishedJobs() {
+  const finished = [...campaignJobs.values()].filter((j) => j.status !== "running");
+  if (finished.length <= MAX_FINISHED_JOBS) return;
+  finished
+    .sort((a, b) => (a.finishedAt ?? "").localeCompare(b.finishedAt ?? ""))
+    .slice(0, finished.length - MAX_FINISHED_JOBS)
+    .forEach((j) => campaignJobs.delete(j.id));
+}
+
+export function startCampaignBroadcast(
+  email: string,
+  tokens: Credentials,
+  input: { segment: CampaignSegment; message: string; imageUrl?: string },
+): CampaignJob {
+  // One broadcast at a time per account — double-tapping "Send" must not
+  // double-message every client.
+  const running = [...campaignJobs.values()].find((j) => j.email === email && j.status === "running");
+  if (running) throw new Error("A broadcast is already in progress. Wait for it to finish.");
+
+  const job: CampaignJob = {
+    id: `CMP_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+    email,
+    status: "running",
+    startedAt: new Date().toISOString(),
+    result: { total: 0, sent: 0, failed: 0, skipped: 0, contacts: [] },
+  };
+  campaignJobs.set(job.id, job);
+
+  void broadcastCampaign(email, tokens, input, (partial) => {
+    job.result = partial;
+  })
+    .then((result) => {
+      job.result = result;
+      job.status = "done";
+      job.finishedAt = new Date().toISOString();
+    })
+    .catch((err) => {
+      job.status = "failed";
+      job.error = err instanceof Error ? err.message : String(err);
+      job.finishedAt = new Date().toISOString();
+    })
+    .finally(pruneFinishedJobs);
+
+  return job;
+}
+
+export function getCampaignJob(email: string, jobId: string): CampaignJob | null {
+  const job = campaignJobs.get(jobId);
+  if (!job || job.email !== email) return null;
+  return job;
 }
 
 export async function estimateCampaignReach(

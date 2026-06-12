@@ -214,8 +214,10 @@ export function verifyLeegalityWebhookRequest(
     }
   }
 
+  // Shared-secret fallback uses a constant-time compare so response timing
+  // can't be used as an oracle to recover the secret byte by byte.
   return providedValues.some(
-    (value) => typeof value === "string" && value.trim() === appConfig.leegalityWebhookSecret,
+    (value) => typeof value === "string" && safeCompare(appConfig.leegalityWebhookSecret, value.trim()),
   );
 }
 
