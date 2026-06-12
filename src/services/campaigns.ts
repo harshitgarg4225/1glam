@@ -7,6 +7,8 @@ import { fetchWithTimeout } from "./http.js";
 import { appConfig } from "../config.js";
 import { buildAppSecretProof } from "./meta.js";
 import { loadClientNotes } from "./client-notes.js";
+import { loadCampaignBroadcast, markInterruptedCampaigns, saveCampaignBroadcast } from "./database.js";
+import { captureException, logger } from "./logger.js";
 
 export type CampaignSegment =
   | "past-clients"         // all completed bookings (deduplicated by phone)
@@ -245,7 +247,7 @@ export async function broadcastCampaign(
 export type CampaignJob = {
   id: string;
   email: string; // owner — status reads are scoped to the requesting account
-  status: "running" | "done" | "failed";
+  status: "running" | "done" | "failed" | "interrupted";
   startedAt: string;
   finishedAt?: string;
   error?: string;
@@ -283,28 +285,66 @@ export function startCampaignBroadcast(
   };
   campaignJobs.set(job.id, job);
 
+  // Persist immediately so the job is visible if the instance restarts.
+  void saveCampaignBroadcast(job).catch((err) => captureException(err, { jobId: job.id }));
+
+  let lastDbSave = Date.now();
+  const DB_SAVE_INTERVAL_MS = 5_000;
+
   void broadcastCampaign(email, tokens, input, (partial) => {
     job.result = partial;
+    // Checkpoint to Postgres every 5 s so progress survives a restart.
+    const now = Date.now();
+    if (now - lastDbSave >= DB_SAVE_INTERVAL_MS) {
+      lastDbSave = now;
+      void saveCampaignBroadcast(job).catch((err) => captureException(err, { jobId: job.id }));
+    }
   })
     .then((result) => {
       job.result = result;
       job.status = "done";
       job.finishedAt = new Date().toISOString();
+      void saveCampaignBroadcast(job).catch((err) => captureException(err, { jobId: job.id }));
     })
     .catch((err) => {
       job.status = "failed";
       job.error = err instanceof Error ? err.message : String(err);
       job.finishedAt = new Date().toISOString();
+      void saveCampaignBroadcast(job).catch((e) => captureException(e, { jobId: job.id }));
     })
     .finally(pruneFinishedJobs);
 
   return job;
 }
 
-export function getCampaignJob(email: string, jobId: string): CampaignJob | null {
+export async function getCampaignJob(email: string, jobId: string): Promise<CampaignJob | null> {
   const job = campaignJobs.get(jobId);
-  if (!job || job.email !== email) return null;
-  return job;
+  if (job) {
+    if (job.email !== email) return null;
+    return job;
+  }
+  // Fall back to Postgres — the job may be from a previous instance.
+  const persisted = await loadCampaignBroadcast(jobId, email);
+  if (!persisted) return null;
+  return {
+    id: persisted.id,
+    email: persisted.email,
+    status: persisted.status as CampaignJob["status"],
+    startedAt: persisted.startedAt,
+    finishedAt: persisted.finishedAt,
+    error: persisted.error,
+    result: persisted.result as BroadcastResult,
+  };
+}
+
+// Called once at startup. Any broadcast still "running" in the DB is an
+// interrupted job from the previous instance — surface it as "interrupted"
+// so the UI can inform the user rather than reporting "job not found".
+export async function rehydrateInterruptedCampaigns(): Promise<void> {
+  const count = await markInterruptedCampaigns();
+  if (count > 0) {
+    logger.warn("[campaigns] interrupted_on_restart", { count });
+  }
 }
 
 export async function estimateCampaignReach(

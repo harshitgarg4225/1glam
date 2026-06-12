@@ -104,7 +104,7 @@ import {
   parseDocumentAdjustments,
 } from "./services/documents.js";
 import { buildPublicDocumentUrl, buildRescheduleUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken } from "./services/document-links.js";
-import { estimateCampaignReach, getCampaignJob, startCampaignBroadcast, type CampaignSegment } from "./services/campaigns.js";
+import { estimateCampaignReach, getCampaignJob, rehydrateInterruptedCampaigns, startCampaignBroadcast, type CampaignSegment } from "./services/campaigns.js";
 import {
   checkLeegalityDocumentDetails,
   createLeegalityContract,
@@ -325,11 +325,12 @@ app.use(
     secret: appConfig.sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true, // reset the 7-day window on each active request
     cookie: {
       httpOnly: true,
       sameSite: "lax",
       secure: appConfig.baseUrl.startsWith("https://"),
-      maxAge: 1000 * 60 * 60 * 24 * 30,
+      maxAge: 1000 * 60 * 60 * 24 * 7,
       path: "/",
     },
   }),
@@ -2370,11 +2371,13 @@ app.post("/api/campaigns/broadcast", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.get("/api/campaigns/jobs/:jobId", (req, res) => {
-  if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
-  const job = getCampaignJob(req.session.profile.email, req.params.jobId);
-  if (!job) return res.status(404).json({ error: "Broadcast not found — it may have been interrupted by a restart. Check WhatsApp for what was delivered." });
-  res.json({ ok: true, status: job.status, error: job.error, ...job.result });
+app.get("/api/campaigns/jobs/:jobId", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const job = await getCampaignJob(req.session.profile.email, req.params.jobId);
+    if (!job) return res.status(404).json({ error: "Broadcast not found — it may have been interrupted by a restart. Check WhatsApp for what was delivered." });
+    res.json({ ok: true, status: job.status, error: job.error, ...job.result });
+  } catch (error) { next(error); }
 });
 
 // ── Birthday prompts ─────────────────────────────────────────────────────────
@@ -5069,6 +5072,7 @@ if (isMainModule) {
       tokenEncryption: encryptionEnabled() ? "on" : "off",
     });
     startReminderScheduler();
+    void rehydrateInterruptedCampaigns();
   });
 
   // Graceful shutdown: on a deploy/restart Railway sends SIGTERM. Stop accepting

@@ -198,6 +198,24 @@ async function ensurePostgres() {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      // Persists campaign broadcast state so jobs survive instance restarts.
+      // Any job still marked "running" at boot is an interrupted broadcast.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS campaign_broadcasts (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL,
+          status TEXT NOT NULL,
+          started_at TIMESTAMPTZ NOT NULL,
+          finished_at TIMESTAMPTZ,
+          result_json JSONB NOT NULL DEFAULT '{}',
+          error TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_campaign_broadcasts_email
+        ON campaign_broadcasts (email)
+      `);
     } finally {
       client.release();
     }
@@ -578,4 +596,100 @@ export async function findWorkspaceByMetaUserId(metaUserId: string) {
       ),
     ) ?? null
   );
+}
+
+// ── Campaign broadcast persistence ──────────────────────────────────────────
+// Persists job state so the polling endpoint can answer after a restart.
+// In file mode (no Postgres) these are no-ops — the in-process map is
+// sufficient for single-instance dev.
+
+export async function saveCampaignBroadcast(job: {
+  id: string;
+  email: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  result: object;
+}): Promise<void> {
+  if (!hasPostgres()) return;
+  await ensurePostgres();
+  await getPool().query(
+    `INSERT INTO campaign_broadcasts (id, email, status, started_at, finished_at, result_json, error, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, NOW())
+     ON CONFLICT (id)
+     DO UPDATE SET
+       status = EXCLUDED.status,
+       finished_at = EXCLUDED.finished_at,
+       result_json = EXCLUDED.result_json,
+       error = EXCLUDED.error,
+       updated_at = NOW()`,
+    [
+      job.id,
+      normalizeEmail(job.email),
+      job.status,
+      job.startedAt,
+      job.finishedAt ?? null,
+      JSON.stringify(job.result),
+      job.error ?? null,
+    ],
+  );
+}
+
+export async function loadCampaignBroadcast(
+  jobId: string,
+  email: string,
+): Promise<{
+  id: string;
+  email: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  result: object;
+} | null> {
+  if (!hasPostgres()) return null;
+  await ensurePostgres();
+  const res = await getPool().query<{
+    id: string;
+    email: string;
+    status: string;
+    started_at: Date;
+    finished_at: Date | null;
+    result_json: object;
+    error: string | null;
+  }>(
+    `SELECT id, email, status, started_at, finished_at, result_json, error
+     FROM campaign_broadcasts
+     WHERE id = $1 AND email = $2
+     LIMIT 1`,
+    [jobId, normalizeEmail(email)],
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    status: row.status,
+    startedAt: row.started_at.toISOString(),
+    finishedAt: row.finished_at?.toISOString(),
+    error: row.error ?? undefined,
+    result: row.result_json,
+  };
+}
+
+// Called once on startup. Any broadcast still marked "running" from a previous
+// instance is by definition interrupted — mark it so the UI can tell the user.
+// Returns the number of jobs transitioned.
+export async function markInterruptedCampaigns(): Promise<number> {
+  if (!hasPostgres()) return 0;
+  await ensurePostgres();
+  const res = await getPool().query(
+    `UPDATE campaign_broadcasts
+     SET status = 'interrupted',
+         error = 'Server restarted while broadcast was in progress',
+         updated_at = NOW()
+     WHERE status = 'running'`,
+  );
+  return res.rowCount ?? 0;
 }

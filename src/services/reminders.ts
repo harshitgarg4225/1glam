@@ -11,6 +11,13 @@ const REMINDER_LOCK_KEY = 918_273_001;
 const REVIEW_LOCK_KEY = 918_273_002;
 const PAYMENT_LOCK_KEY = 918_273_003;
 
+// Spread per-workspace Sheets reads across time so a large fleet doesn't
+// burst the Google Sheets API all at once at 8 UTC. 200 ms × 500 workspaces
+// ≈ 100 s — well within the hour window, nearly invisible to users.
+const WORKSPACE_STAGGER_MS = 200;
+const stagger = (i: number): Promise<void> =>
+  i > 0 ? new Promise((r) => setTimeout(r, WORKSPACE_STAGGER_MS)) : Promise.resolve();
+
 export function startReminderScheduler() {
   const now = new Date();
   const nextRun = new Date(now);
@@ -44,7 +51,9 @@ async function runReminderJob() {
   logger.info("[reminders] running daily job");
   const workspaces = await listWorkspaces();
 
-  for (const workspace of workspaces) {
+  for (let i = 0; i < workspaces.length; i++) {
+    await stagger(i);
+    const workspace = workspaces[i];
     const templateName = String(workspace.config.reminderTemplate || "").trim();
     if (!templateName) continue;
 
@@ -116,7 +125,9 @@ async function runReviewRequestJob() {
   const REVIEW_MARKER = "review";
   const workspaces = await listWorkspaces();
 
-  for (const workspace of workspaces) {
+  for (let i = 0; i < workspaces.length; i++) {
+    await stagger(i);
+    const workspace = workspaces[i];
     const daysAfter = parseFirstPositiveInt(workspace.config.reviewRequestDaysAfter);
     if (daysAfter === null) continue;
 
@@ -220,7 +231,9 @@ async function runPaymentReminderJob() {
   logger.info("[payments] running daily payment-reminder job");
   const workspaces = await listWorkspaces();
 
-  for (const workspace of workspaces) {
+  for (let i = 0; i < workspaces.length; i++) {
+    await stagger(i);
+    const workspace = workspaces[i];
     if (String(workspace.config.autoPaymentReminders || "Yes") === "No") continue;
 
     const templateName = String(workspace.config.collectionTemplate || "").trim();
