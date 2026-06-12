@@ -121,6 +121,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   logoUrl: string;
   gstNumber: string;
   gstPercentage: number;
+  cancellationWindowDays: number;
+  cancellationFeePercent: number;
 };
 
 export type WalletLedgerEntry = {

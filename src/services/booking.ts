@@ -10,7 +10,61 @@ import { sendWhatsAppTemplate } from "./messaging.js";
 import { sendPushToWorkspace } from "./push.js";
 import { listArtists } from "./team.js";
 import { getWorkspaceByEmail } from "./workspace.js";
+import { lockKeyFromString, withSerializedLock } from "./database.js";
+import { TtlCache } from "./cache.js";
 import { bookingHeaders, leadHeaders, sheetNames } from "./sheet-definitions.js";
+
+// Raw sheet-scan cache. Google Sheets allows ~60 reads/min per user, and
+// every dashboard refresh, webhook, and scheduler pass scans the full Leads
+// and Bookings sheets — so this cache is what lets one artist's busy day (or
+// many artists on one instance) stay inside quota. Row numbers are stable
+// (rows are only appended or updated in place, never deleted), so cached row
+// positions remain valid for the cache's lifetime. Every write below
+// invalidates the relevant sheet's entry.
+const SHEET_CACHE_TTL_MS = 20_000;
+const leadSheetCache = new TtlCache<string[][]>(SHEET_CACHE_TTL_MS);
+const bookingSheetCache = new TtlCache<string[][]>(SHEET_CACHE_TTL_MS);
+
+async function readLeadSheetRows(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  opts?: { fresh?: boolean },
+): Promise<string[][]> {
+  const key = workspace.spreadsheetId;
+  if (opts?.fresh) leadSheetCache.delete(key);
+  return leadSheetCache.getOrLoad(key, async () => {
+    const { sheets } = createGoogleClients(tokens);
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.leads}!A2:${toColumn(leadHeaders.length)}`,
+    });
+    return response.data.values ?? [];
+  });
+}
+
+async function readBookingSheetRows(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  opts?: { fresh?: boolean },
+): Promise<string[][]> {
+  const key = workspace.spreadsheetId;
+  if (opts?.fresh) bookingSheetCache.delete(key);
+  return bookingSheetCache.getOrLoad(key, async () => {
+    const { sheets } = createGoogleClients(tokens);
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.bookings}!A2:${toColumn(bookingHeaders.length)}`,
+    });
+    return response.data.values ?? [];
+  });
+}
+
+function invalidateLeadSheet(spreadsheetId: string) {
+  leadSheetCache.delete(spreadsheetId);
+}
+function invalidateBookingSheet(spreadsheetId: string) {
+  bookingSheetCache.delete(spreadsheetId);
+}
 import type { WorkspaceRecord } from "../types.js";
 
 export type LeadStatus =
@@ -229,6 +283,7 @@ export async function createLeadForWorkspace(
       values: [leadToRow(lead)],
     },
   });
+  invalidateLeadSheet(workspace.spreadsheetId);
 
   // Ping the owner about client-initiated requests (booking page, DMs,
   // webhooks) so nothing sits unseen until she opens the app. Her own manual
@@ -459,6 +514,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
         values: [bookingToRow(booking)],
       },
     });
+    invalidateBookingSheet(workspace.spreadsheetId);
   } catch (error) {
     await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, confirmedEventId).catch(() => {});
     throw error;
@@ -874,6 +930,7 @@ export async function importClients(
       valueInputOption: "USER_ENTERED",
       requestBody: { values: records.map((record) => leadToRow(record).map(String)) },
     });
+    invalidateLeadSheet(workspace.spreadsheetId);
   }
 
   return { imported: records.length, skipped };
@@ -905,13 +962,7 @@ export async function findLatestLeadByActor(
   input: { channel: "Instagram" | "WhatsApp"; actorId: string },
 ) {
   const workspace = await getRequiredWorkspace(email);
-  const { sheets } = createGoogleClients(tokens);
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.leads}!A2:${toColumn(leadHeaders.length)}`,
-  });
-
-  const rows = response.data.values ?? [];
+  const rows = await readLeadSheetRows(workspace, tokens);
   const matches = rows
     .map((row, index) => ({ rowNumber: index + 2, record: rowToLead(row) }))
     .filter(({ record }) => {
@@ -936,14 +987,19 @@ export async function updateLeadRecord(
   updater: (lead: LeadRecord) => LeadRecord,
 ) {
   const workspace = await getRequiredWorkspace(email);
-  const lead = await findLeadById(workspace, tokens, leadId);
-  if (!lead) {
-    throw new Error("Lead not found");
-  }
+  // Serialize the read-modify-write so two concurrent updates (e.g. a webhook
+  // racing a manual edit) can't both read the same row and clobber each other.
+  // The fresh read inside the lock guarantees we modify the latest version.
+  return withSerializedLock(lockKeyFromString(`lead:${leadId}`), async () => {
+    const lead = await findLeadById(workspace, tokens, leadId, { fresh: true });
+    if (!lead) {
+      throw new Error("Lead not found");
+    }
 
-  const updated = updater(lead.record);
-  await updateLeadRow(workspace, tokens, lead.rowNumber, updated);
-  return updated;
+    const updated = updater(lead.record);
+    await updateLeadRow(workspace, tokens, lead.rowNumber, updated);
+    return updated;
+  });
 }
 
 export async function getLeadRecord(email: string, tokens: Credentials, leadId: string) {
@@ -1037,14 +1093,18 @@ export async function updateBookingRecord(
   updater: (booking: BookingRecord) => BookingRecord,
 ) {
   const workspace = await getRequiredWorkspace(email);
-  const booking = await findBookingById(workspace, tokens, bookingId);
-  if (!booking) {
-    throw new Error("Booking not found");
-  }
+  // Same serialization as updateLeadRecord: payments-log appends from the
+  // Razorpay webhook and a manual "record payment" tap must not interleave.
+  return withSerializedLock(lockKeyFromString(`booking:${bookingId}`), async () => {
+    const booking = await findBookingById(workspace, tokens, bookingId, { fresh: true });
+    if (!booking) {
+      throw new Error("Booking not found");
+    }
 
-  const updated = updater(booking.record);
-  await updateBookingRow(workspace, tokens, booking.rowNumber, updated);
-  return updated;
+    const updated = updater(booking.record);
+    await updateBookingRow(workspace, tokens, booking.rowNumber, updated);
+    return updated;
+  });
 }
 
 async function getRequiredWorkspace(email: string) {
@@ -1224,26 +1284,19 @@ export async function getMonthlyRecap(
 }
 
 async function listLeadRows(workspace: WorkspaceRecord, tokens: Credentials) {
-  const { sheets } = createGoogleClients(tokens);
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.leads}!A2:${toColumn(leadHeaders.length)}`,
-  });
-
-  const rows = response.data.values ?? [];
+  const rows = await readLeadSheetRows(workspace, tokens);
   return rows
     .filter((row) => row[0])
     .map((row) => rowToLead(row));
 }
 
-async function findLeadById(workspace: WorkspaceRecord, tokens: Credentials, leadId: string) {
-  const { sheets } = createGoogleClients(tokens);
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.leads}!A2:${toColumn(leadHeaders.length)}`,
-  });
-
-  const rows = response.data.values ?? [];
+async function findLeadById(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  leadId: string,
+  opts?: { fresh?: boolean },
+) {
+  const rows = await readLeadSheetRows(workspace, tokens, opts);
   for (let index = 0; index < rows.length; index += 1) {
     if (rows[index][0] === leadId) {
       return {
@@ -1257,26 +1310,19 @@ async function findLeadById(workspace: WorkspaceRecord, tokens: Credentials, lea
 }
 
 async function listBookingRows(workspace: WorkspaceRecord, tokens: Credentials) {
-  const { sheets } = createGoogleClients(tokens);
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.bookings}!A2:${toColumn(bookingHeaders.length)}`,
-  });
-
-  const rows = response.data.values ?? [];
+  const rows = await readBookingSheetRows(workspace, tokens);
   return rows
     .filter((row) => row[0])
     .map((row) => rowToBooking(row));
 }
 
-async function findBookingById(workspace: WorkspaceRecord, tokens: Credentials, bookingId: string) {
-  const { sheets } = createGoogleClients(tokens);
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.bookings}!A2:${toColumn(bookingHeaders.length)}`,
-  });
-
-  const rows = response.data.values ?? [];
+async function findBookingById(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  bookingId: string,
+  opts?: { fresh?: boolean },
+) {
+  const rows = await readBookingSheetRows(workspace, tokens, opts);
   for (let index = 0; index < rows.length; index += 1) {
     if (rows[index][0] === bookingId) {
       return {
@@ -1304,6 +1350,7 @@ async function updateLeadRow(
       values: [leadToRow(lead)],
     },
   });
+  invalidateLeadSheet(workspace.spreadsheetId);
 }
 
 async function updateBookingRow(
@@ -1321,6 +1368,7 @@ async function updateBookingRow(
       values: [bookingToRow(booking)],
     },
   });
+  invalidateBookingSheet(workspace.spreadsheetId);
 }
 
 async function updateBookingPaymentStatus(
@@ -1331,22 +1379,14 @@ async function updateBookingPaymentStatus(
 ) {
   if (!bookingId) return;
 
-  const { sheets } = createGoogleClients(tokens);
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.bookings}!A2:${toColumn(bookingHeaders.length)}`,
+  await withSerializedLock(lockKeyFromString(`booking:${bookingId}`), async () => {
+    const found = await findBookingById(workspace, tokens, bookingId, { fresh: true });
+    if (!found) return;
+    const booking = found.record;
+    booking.paymentStatus = paymentStatus;
+    booking.status = paymentStatus === "Paid in Full" ? "Paid" : booking.status;
+    await updateBookingRow(workspace, tokens, found.rowNumber, booking);
   });
-
-  const rows = response.data.values ?? [];
-  for (let index = 0; index < rows.length; index += 1) {
-    if (rows[index][0] === bookingId) {
-      const booking = rowToBooking(rows[index]);
-      booking.paymentStatus = paymentStatus;
-      booking.status = paymentStatus === "Paid in Full" ? "Paid" : booking.status;
-      await updateBookingRow(workspace, tokens, index + 2, booking);
-      return;
-    }
-  }
 }
 
 async function upsertTentativeCalendarEvent(

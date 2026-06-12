@@ -27,7 +27,6 @@ import {
   getDashboardData,
   getMonthlyRecap,
   importClients,
-  listActiveBookings,
   parsePaymentsLog,
   recordBookingPayment,
   rescheduleBooking,
@@ -105,7 +104,7 @@ import {
   parseDocumentAdjustments,
 } from "./services/documents.js";
 import { buildPublicDocumentUrl, buildRescheduleUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken } from "./services/document-links.js";
-import { broadcastCampaign, estimateCampaignReach, type CampaignSegment } from "./services/campaigns.js";
+import { estimateCampaignReach, getCampaignJob, rehydrateInterruptedCampaigns, startCampaignBroadcast, type CampaignSegment } from "./services/campaigns.js";
 import {
   checkLeegalityDocumentDetails,
   createLeegalityContract,
@@ -113,6 +112,7 @@ import {
   verifyLeegalityWebhookRequest,
 } from "./services/contracts.js";
 import { sheetNames } from "./services/sheet-definitions.js";
+import { TtlCache } from "./services/cache.js";
 import type { MetaChannel, WorkspaceConfig, WorkspaceRecord } from "./types.js";
 import {
   addPortfolioImage,
@@ -191,7 +191,7 @@ app.use((req, res, next) => {
   res.setHeader("x-request-id", requestId);
   (req as express.Request & { requestId?: string }).requestId = requestId;
 
-  if (req.path === "/api/health") return next();
+  if (req.path === "/api/health" || req.path === "/api/ready") return next();
 
   const start = process.hrtime.bigint();
   res.on("finish", () => {
@@ -247,6 +247,32 @@ const publicWriteLimiter = rateLimit({
   message: { error: "Too many requests. Please wait a minute and try again." },
 });
 
+// Public read endpoints (booking pages, pay pages, reschedule links) get a
+// looser limit — legit clients refresh these freely — but still enough to stop
+// workspace/lead enumeration sweeps.
+const publicReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please wait a minute and try again." },
+});
+
+// Mounted via app.use (rather than inline per-route) so Express keeps the
+// path-literal param typing on the handlers below. Prefix matching also
+// covers the POST variants of these public surfaces.
+app.use(
+  [
+    "/book/:workspaceId",
+    "/reschedule/:workspaceId/:bookingId",
+    "/api/public/:workspaceId/profile",
+    "/api/public/:workspaceId/payment/:leadId",
+    "/api/public/:workspaceId/reschedule/:bookingId",
+    "/api/public/contract/:workspaceId/:bookingId",
+  ],
+  publicReadLimiter,
+);
+
 // Throttle authenticated API endpoints — 300 req/min per IP covers normal
 // single-user sessions with headroom for burst, while blocking credential
 // stuffing and naive scrapers. Webhooks and public routes are excluded below.
@@ -259,7 +285,8 @@ const apiLimiter = rateLimit({
   skip: (req) =>
     req.path.startsWith("/webhooks/") ||
     req.path.startsWith("/api/public/") ||
-    req.path === "/api/health",
+    req.path === "/api/health" ||
+    req.path === "/api/ready",
 });
 app.use("/api", apiLimiter);
 
@@ -298,11 +325,12 @@ app.use(
     secret: appConfig.sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true, // reset the 7-day window on each active request
     cookie: {
       httpOnly: true,
       sameSite: "lax",
       secure: appConfig.baseUrl.startsWith("https://"),
-      maxAge: 1000 * 60 * 60 * 24 * 30,
+      maxAge: 1000 * 60 * 60 * 24 * 7,
       path: "/",
     },
   }),
@@ -331,7 +359,7 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // /api/session is intentionally public: it reports authenticated:false for
 // logged-out visitors so the landing page can render without bouncing them (and
 // Google's OAuth-verification crawler) to a login screen.
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/session", "/api/document-templates", "/api/logout"]);
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout"]);
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
@@ -339,6 +367,13 @@ app.use((req, res, next) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   next();
+});
+
+// Liveness: instant, no dependencies. A platform health probe hitting this
+// should never recycle the instance just because Postgres had a blip — that's
+// what /api/health (deep check, for dashboards/alerts) is for.
+app.get("/api/ready", (_req, res) => {
+  res.json({ ok: true });
 });
 
 app.get("/api/health", async (_req, res) => {
@@ -663,6 +698,9 @@ app.post("/api/public/contract/:workspaceId/:bookingId/sign", publicWriteLimiter
   }
 });
 
+// Rate-limited: this returns client name + amounts due, and lead ids must not
+// be enumerable at network speed. (The page itself is reached via links we
+// send the client, so a modest per-IP budget never affects real users.)
 app.get("/api/public/:workspaceId/payment/:leadId", async (req, res, next) => {
   try {
     const details = await getPublicPaymentDetails(req.params.workspaceId, req.params.leadId);
@@ -795,10 +833,15 @@ if (
           config,
         });
       }
-      req.session.profile = profile;
-      req.session.save((err) => {
-        if (err) return next(err);
-        res.type("text").send("dev login ok");
+      // Same session-fixation defense as the real OAuth callback: a fresh
+      // session id on every privilege change, even in dev.
+      req.session.regenerate((regenErr) => {
+        if (regenErr) return next(regenErr);
+        req.session.profile = profile;
+        req.session.save((err) => {
+          if (err) return next(err);
+          res.type("text").send("dev login ok");
+        });
       });
     } catch (error) {
       next(error);
@@ -2316,13 +2359,140 @@ app.get("/api/campaigns/reach", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+// Starts the broadcast in the background and returns the job id right away —
+// a 200-contact send takes ~3 minutes and must not hold a request open.
 app.post("/api/campaigns/broadcast", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
     const { segment, message, imageUrl } = req.body as { segment: CampaignSegment; message: string; imageUrl?: string };
     if (!segment || !message?.trim()) return res.status(400).json({ error: "segment and message are required" });
-    const result = await broadcastCampaign(req.session.profile.email, req.session.googleTokens, { segment, message: message.trim(), imageUrl });
-    res.json({ ok: true, ...result });
+    const job = startCampaignBroadcast(req.session.profile.email, req.session.googleTokens, { segment, message: message.trim(), imageUrl });
+    res.status(202).json({ ok: true, jobId: job.id });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/campaigns/jobs/:jobId", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const job = await getCampaignJob(req.session.profile.email, req.params.jobId);
+    if (!job) return res.status(404).json({ error: "Broadcast not found — it may have been interrupted by a restart. Check WhatsApp for what was delivered." });
+    res.json({ ok: true, status: job.status, error: job.error, ...job.result });
+  } catch (error) { next(error); }
+});
+
+// ── Birthday prompts ─────────────────────────────────────────────────────────
+// Returns clients whose stored birthday falls in the next `days` days (default 7),
+// so the dashboard can show a proactive "wish [Name] happy birthday" nudge.
+// Computing it scans every client's notes record, so the result is cached for
+// an hour — birthdays don't move, and this runs on every dashboard load.
+const birthdaysSoonCache = new TtlCache<{ name: string; phone: string; birthday: string; daysUntil: number }[]>(60 * 60 * 1000);
+app.get("/api/clients/birthdays-soon", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const daysAhead = Math.min(Math.max(Number(req.query.days) || 7, 1), 30);
+
+    const cacheKey = `${workspace.workspaceId}:${daysAhead}:${new Date().toDateString()}`;
+    const cached = birthdaysSoonCache.get(cacheKey);
+    if (cached) return res.json({ ok: true, upcoming: cached });
+
+    // Collect unique phones from leads.
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const leadRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.leads}!A2:E`,
+    });
+    const leadRows = leadRes.data.values ?? [];
+    const phoneNameMap = new Map<string, string>();
+    for (const row of leadRows) {
+      const name = String(row[3] ?? "").trim();
+      const phone = String(row[4] ?? "").replace(/\D/g, "");
+      if (phone.length >= 8 && name) phoneNameMap.set(phone, name);
+    }
+
+    const phones = Array.from(phoneNameMap.keys()).slice(0, 300);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const results: { name: string; phone: string; birthday: string; daysUntil: number }[] = [];
+
+    await Promise.all(
+      phones.map(async (phone) => {
+        const notes = await loadClientNotes(workspace.workspaceId, phone);
+        if (!notes.birthday) return;
+        const [, mm, dd] = notes.birthday.split("-").map(Number);
+        if (!mm || !dd) return;
+        const next = new Date(today.getFullYear(), mm - 1, dd);
+        if (next < today) next.setFullYear(today.getFullYear() + 1);
+        const daysUntil = Math.round((next.getTime() - today.getTime()) / 86400000);
+        if (daysUntil <= daysAhead) {
+          results.push({ name: phoneNameMap.get(phone) ?? "Client", phone, birthday: notes.birthday, daysUntil });
+        }
+      }),
+    );
+    results.sort((a, b) => a.daysUntil - b.daysUntil);
+    birthdaysSoonCache.set(cacheKey, results);
+    res.json({ ok: true, upcoming: results });
+  } catch (error) { next(error); }
+});
+
+// ── GST / tax summary (JSON) ──────────────────────────────────────────────────
+// Returns a structured summary of bookings with GST breakdown for the Analytics
+// tab. The CSV version (/api/export/accountant) is for accountants; this is
+// for the in-app tax overview widget.
+app.get("/api/reports/gst", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const now = new Date();
+    const fyStartYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const defaultFrom = `${fyStartYear}-04-01`;
+    const defaultTo = `${fyStartYear + 1}-03-31`;
+    const from = typeof req.query.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : defaultFrom;
+    const to = typeof req.query.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.to) ? req.query.to : defaultTo;
+
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const gstPct = Number(workspace.config.gstPercentage) || 0;
+    const gstNumber = workspace.config.gstNumber || "";
+
+    const rows: {
+      invoiceNumber: string; invoiceDate: string; clientName: string;
+      eventType: string; eventDate: string; total: number; taxable: number;
+      gstAmount: number; received: number; paymentStatus: string; bookingStatus: string;
+    }[] = [];
+
+    for (const booking of bookings) {
+      const invoiceDate = (booking.invoiceGeneratedAt || booking.bookedAt || "").slice(0, 10);
+      if (!invoiceDate || invoiceDate < from || invoiceDate > to) continue;
+      const log = parsePaymentsLog(booking.paymentsLog);
+      const received = log.filter((p: { kind?: string }) => p.kind !== "refund").reduce((s: number, p: { amount?: number }) => s + (p.amount || 0), 0);
+      const total = Math.round(Number(booking.finalPrice) || 0);
+      const taxable = gstPct > 0 ? Math.round(total / (1 + gstPct / 100)) : total;
+      const gstAmount = total - taxable;
+      rows.push({
+        invoiceNumber: booking.invoiceNumber || `INV-${booking.bookingId}`,
+        invoiceDate,
+        clientName: booking.clientName,
+        eventType: booking.eventType,
+        eventDate: booking.eventDate,
+        total,
+        taxable,
+        gstAmount,
+        received,
+        paymentStatus: booking.paymentStatus,
+        bookingStatus: booking.status,
+      });
+    }
+    rows.sort((a, b) => a.invoiceDate.localeCompare(b.invoiceDate));
+
+    const totalGross = rows.reduce((s, r) => s + r.total, 0);
+    const totalTaxable = rows.reduce((s, r) => s + r.taxable, 0);
+    const totalGst = rows.reduce((s, r) => s + r.gstAmount, 0);
+    const totalReceived = rows.reduce((s, r) => s + r.received, 0);
+
+    res.json({ ok: true, from, to, gstPct, gstNumber, rows, totals: { gross: totalGross, taxable: totalTaxable, gst: totalGst, received: totalReceived } });
   } catch (error) { next(error); }
 });
 
@@ -4881,6 +5051,19 @@ if (isMainModule) {
   // token-encryption key, rather than silently using ephemeral/plaintext storage.
   assertDeploymentConfig();
 
+  // A rejected promise nobody awaited (fire-and-forget notifications, scheduler
+  // ticks) must be visible in logs/Sentry, not silently swallowed — and on
+  // modern Node it would otherwise crash the process.
+  process.on("unhandledRejection", (reason) => {
+    captureException(reason, { phase: "unhandledRejection" });
+  });
+  // After a truly unexpected synchronous throw the process state is undefined;
+  // log it and exit so the platform restarts us clean rather than limping on.
+  process.on("uncaughtException", (error) => {
+    captureException(error, { phase: "uncaughtException" });
+    process.exit(1);
+  });
+
   const server = app.listen(appConfig.port, () => {
     logger.info("BusyDays app listening", {
       baseUrl: appConfig.baseUrl,
@@ -4889,6 +5072,7 @@ if (isMainModule) {
       tokenEncryption: encryptionEnabled() ? "on" : "off",
     });
     startReminderScheduler();
+    void rehydrateInterruptedCampaigns();
   });
 
   // Graceful shutdown: on a deploy/restart Railway sends SIGTERM. Stop accepting
@@ -4900,10 +5084,12 @@ if (isMainModule) {
     shuttingDown = true;
     logger.info("shutdown_initiated", { signal });
 
+    // 30s drain window: long enough for slow Sheets/PDF requests to finish,
+    // still well inside typical platform kill timeouts.
     const forceExit = setTimeout(() => {
       logger.error("shutdown_forced", { signal });
       process.exit(1);
-    }, 10_000);
+    }, 30_000);
     forceExit.unref();
 
     server.close(async () => {

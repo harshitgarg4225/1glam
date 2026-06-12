@@ -3,7 +3,26 @@ import path from "node:path";
 import { Pool } from "pg";
 import { appConfig } from "../config.js";
 import { decryptWorkspaceSecrets, encryptWorkspaceSecrets } from "./crypto.js";
+import { TtlCache } from "./cache.js";
+import { logger } from "./logger.js";
 import type { MetaChannel, WorkspaceRecord } from "../types.js";
+
+// Workspace records are read on virtually every API request (auth guard →
+// getWorkspaceByEmail) but written rarely (config saves, token refreshes).
+// A short TTL plus invalidation-on-write keeps DB round-trips off the hot
+// path without risking stale reads after a save.
+const WORKSPACE_CACHE_TTL_MS = 30_000;
+const workspaceByEmailCache = new TtlCache<WorkspaceRecord | null>(WORKSPACE_CACHE_TTL_MS);
+const workspaceByIdCache = new TtlCache<WorkspaceRecord | null>(WORKSPACE_CACHE_TTL_MS);
+
+function invalidateWorkspaceCache(record?: { email?: string; workspaceId?: string }) {
+  if (record?.email) workspaceByEmailCache.delete(normalizeEmail(record.email));
+  if (record?.workspaceId) workspaceByIdCache.delete(record.workspaceId);
+  if (!record) {
+    workspaceByEmailCache.clear();
+    workspaceByIdCache.clear();
+  }
+}
 
 // Persistence boundary helpers: records are encrypted on the way to storage and
 // decrypted on the way back, so the rest of the app only ever sees plaintext
@@ -35,6 +54,20 @@ function getPool() {
     pool = new Pool({
       connectionString: appConfig.databaseUrl,
       ssl: appConfig.databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+      // Bounded pool: workspaces are small JSONB rows, so 10 connections per
+      // instance is plenty — and it keeps N instances from breaching the
+      // Postgres max_connections ceiling.
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+      // Kill any query stuck longer than 30s so a wedged connection can't
+      // hold an advisory lock or pool slot forever.
+      statement_timeout: 30_000,
+    });
+    // Idle clients can error (server restart, network blip). Without a
+    // listener that's an uncaught exception that kills the process.
+    pool.on("error", (err) => {
+      logger.error("pg_pool_idle_client_error", { message: err.message });
     });
   }
 
@@ -164,6 +197,24 @@ async function ensurePostgres() {
           id TEXT PRIMARY KEY,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      // Persists campaign broadcast state so jobs survive instance restarts.
+      // Any job still marked "running" at boot is an interrupted broadcast.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS campaign_broadcasts (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL,
+          status TEXT NOT NULL,
+          started_at TIMESTAMPTZ NOT NULL,
+          finished_at TIMESTAMPTZ,
+          result_json JSONB NOT NULL DEFAULT '{}',
+          error TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_campaign_broadcasts_email
+        ON campaign_broadcasts (email)
       `);
     } finally {
       client.release();
@@ -336,6 +387,7 @@ export async function readWorkspaceDb(): Promise<WorkspaceDb> {
 }
 
 export async function writeWorkspaceDb(db: WorkspaceDb) {
+  invalidateWorkspaceCache(); // bulk overwrite — drop everything cached
   if (hasPostgres()) {
     await ensurePostgres();
     const client = await getPool().connect();
@@ -374,15 +426,18 @@ export async function listWorkspaces() {
 }
 
 export async function findWorkspaceByEmail(email: string) {
-  if (hasPostgres()) {
-    return findWorkspaceByEmailFromPostgres(email);
-  }
-
-  const db = await readWorkspaceDbFromFile();
-  return db.workspaces.find((workspace) => normalizeEmail(workspace.email) === normalizeEmail(email)) ?? null;
+  const key = normalizeEmail(email);
+  return workspaceByEmailCache.getOrLoad(key, async () => {
+    if (hasPostgres()) {
+      return findWorkspaceByEmailFromPostgres(email);
+    }
+    const db = await readWorkspaceDbFromFile();
+    return db.workspaces.find((workspace) => normalizeEmail(workspace.email) === key) ?? null;
+  });
 }
 
 export async function saveWorkspace(record: WorkspaceRecord) {
+  invalidateWorkspaceCache(record);
   if (hasPostgres()) {
     await saveWorkspaceToPostgres(record);
     return;
@@ -404,31 +459,38 @@ export async function updateWorkspaceByEmail(
   email: string,
   updater: (workspace: WorkspaceRecord) => WorkspaceRecord,
 ) {
+  // Invalidate before AND after: before so a concurrent read mid-update can't
+  // re-prime the cache with the old value for a full TTL, after so the next
+  // read sees the committed record.
+  invalidateWorkspaceCache({ email });
+  let updated: WorkspaceRecord | null;
   if (hasPostgres()) {
-    return updateWorkspaceByEmailInPostgres(email, updater);
+    updated = await updateWorkspaceByEmailInPostgres(email, updater);
+  } else {
+    const db = await readWorkspaceDbFromFile();
+    const index = db.workspaces.findIndex((workspace) => normalizeEmail(workspace.email) === normalizeEmail(email));
+    if (index === -1) return null;
+    db.workspaces[index] = updater(db.workspaces[index]);
+    await writeWorkspaceDbToFile(db);
+    updated = db.workspaces[index];
   }
-
-  const db = await readWorkspaceDbFromFile();
-  const index = db.workspaces.findIndex((workspace) => normalizeEmail(workspace.email) === normalizeEmail(email));
-  if (index === -1) return null;
-
-  db.workspaces[index] = updater(db.workspaces[index]);
-  await writeWorkspaceDbToFile(db);
-  return db.workspaces[index];
+  if (updated) invalidateWorkspaceCache(updated);
+  return updated;
 }
 
 export async function findWorkspaceByWorkspaceId(workspaceId: string) {
-  if (hasPostgres()) {
-    await ensurePostgres();
-    const result = await getPool().query<{ data: WorkspaceRecord }>(
-      `SELECT data FROM workspace_records WHERE workspace_id = $1 LIMIT 1`,
-      [workspaceId],
-    );
-    return result.rows[0]?.data ? fromStored(result.rows[0].data) : null;
-  }
-
-  const db = await readWorkspaceDbFromFile();
-  return db.workspaces.find((workspace) => workspace.workspaceId === workspaceId) ?? null;
+  return workspaceByIdCache.getOrLoad(workspaceId, async () => {
+    if (hasPostgres()) {
+      await ensurePostgres();
+      const result = await getPool().query<{ data: WorkspaceRecord }>(
+        `SELECT data FROM workspace_records WHERE workspace_id = $1 LIMIT 1`,
+        [workspaceId],
+      );
+      return result.rows[0]?.data ? fromStored(result.rows[0].data) : null;
+    }
+    const db = await readWorkspaceDbFromFile();
+    return db.workspaces.find((workspace) => workspace.workspaceId === workspaceId) ?? null;
+  });
 }
 
 export async function findWorkspaceByMetaAsset(input: {
@@ -534,4 +596,100 @@ export async function findWorkspaceByMetaUserId(metaUserId: string) {
       ),
     ) ?? null
   );
+}
+
+// ── Campaign broadcast persistence ──────────────────────────────────────────
+// Persists job state so the polling endpoint can answer after a restart.
+// In file mode (no Postgres) these are no-ops — the in-process map is
+// sufficient for single-instance dev.
+
+export async function saveCampaignBroadcast(job: {
+  id: string;
+  email: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  result: object;
+}): Promise<void> {
+  if (!hasPostgres()) return;
+  await ensurePostgres();
+  await getPool().query(
+    `INSERT INTO campaign_broadcasts (id, email, status, started_at, finished_at, result_json, error, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, NOW())
+     ON CONFLICT (id)
+     DO UPDATE SET
+       status = EXCLUDED.status,
+       finished_at = EXCLUDED.finished_at,
+       result_json = EXCLUDED.result_json,
+       error = EXCLUDED.error,
+       updated_at = NOW()`,
+    [
+      job.id,
+      normalizeEmail(job.email),
+      job.status,
+      job.startedAt,
+      job.finishedAt ?? null,
+      JSON.stringify(job.result),
+      job.error ?? null,
+    ],
+  );
+}
+
+export async function loadCampaignBroadcast(
+  jobId: string,
+  email: string,
+): Promise<{
+  id: string;
+  email: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  result: object;
+} | null> {
+  if (!hasPostgres()) return null;
+  await ensurePostgres();
+  const res = await getPool().query<{
+    id: string;
+    email: string;
+    status: string;
+    started_at: Date;
+    finished_at: Date | null;
+    result_json: object;
+    error: string | null;
+  }>(
+    `SELECT id, email, status, started_at, finished_at, result_json, error
+     FROM campaign_broadcasts
+     WHERE id = $1 AND email = $2
+     LIMIT 1`,
+    [jobId, normalizeEmail(email)],
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    status: row.status,
+    startedAt: row.started_at.toISOString(),
+    finishedAt: row.finished_at?.toISOString(),
+    error: row.error ?? undefined,
+    result: row.result_json,
+  };
+}
+
+// Called once on startup. Any broadcast still marked "running" from a previous
+// instance is by definition interrupted — mark it so the UI can tell the user.
+// Returns the number of jobs transitioned.
+export async function markInterruptedCampaigns(): Promise<number> {
+  if (!hasPostgres()) return 0;
+  await ensurePostgres();
+  const res = await getPool().query(
+    `UPDATE campaign_broadcasts
+     SET status = 'interrupted',
+         error = 'Server restarted while broadcast was in progress',
+         updated_at = NOW()
+     WHERE status = 'running'`,
+  );
+  return res.rowCount ?? 0;
 }

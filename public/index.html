@@ -716,6 +716,22 @@
         .view-toggle-btn { padding: 6px 10px; font-size: 12px; }
       }
 
+      /* ─── Birthday banner ─── */
+      .birthday-card { background: linear-gradient(135deg, #fff8f0, #fff); border: 1px solid #fde0c0; border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+      .birthday-card .bd-icon { font-size: 28px; flex: 0 0 auto; }
+      .birthday-card .bd-info { flex: 1; min-width: 0; }
+      .birthday-card .bd-name { font-weight: 700; font-size: 15px; }
+      .birthday-card .bd-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+      .birthday-card .bd-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+
+      /* ─── GST report table ─── */
+      .gst-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .gst-table th { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--line); font-weight: 600; white-space: nowrap; }
+      .gst-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
+      .gst-table tr:last-child td { border-bottom: none; }
+      .gst-table tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
+      @media (max-width: 640px) { .gst-table th, .gst-table td { padding: 6px 6px; font-size: 12px; } }
+
       /* ─── Bottom navigation (mobile only) ─── */
       .bottom-nav {
         display: none !important;
@@ -1029,6 +1045,7 @@
           <div class="kicker" style="color:var(--accent);">Needs your attention</div>
           <div id="attention-items"></div>
         </div>
+        <div id="birthday-banner" style="display:none;margin-bottom:20px;"></div>
         <div class="panel section" style="margin-bottom:20px;">
           <div class="kicker">What’s next</div>
           <h2 id="upcoming-title">Your upcoming jobs</h2>
@@ -1300,10 +1317,18 @@
             <div>
               <label for="campaign-segment">Who to reach</label>
               <select id="campaign-segment">
-                <option value="past-clients">Past clients (completed bookings)</option>
-                <option value="confirmed-this-year">Confirmed bookings this year</option>
-                <option value="pending-leads">Open enquiries</option>
-                <option value="all-past-leads">Everyone who has enquired</option>
+                <optgroup label="Smart segments">
+                  <option value="birthday-this-month">🎂 Birthdays this month</option>
+                  <option value="slipping-away">😴 Slipping away (90+ days since last booking)</option>
+                  <option value="vip-clients">⭐ VIP clients (3+ bookings)</option>
+                  <option value="new-clients">✨ New clients (first booking in last 60 days)</option>
+                </optgroup>
+                <optgroup label="All clients">
+                  <option value="past-clients">Past clients (completed bookings)</option>
+                  <option value="confirmed-this-year">Confirmed bookings this year</option>
+                  <option value="pending-leads">Open enquiries</option>
+                  <option value="all-past-leads">Everyone who has enquired</option>
+                </optgroup>
               </select>
             </div>
             <div style="display:flex;align-items:flex-end;">
@@ -1598,6 +1623,28 @@
           </div>
           <div class="status" id="recap-status" style="margin-top:8px;"></div>
         </div>
+        <div class="panel section" style="margin-bottom:20px;" id="gst-report-panel">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">For your accountant</div>
+              <h2>Tax summary</h2>
+            </div>
+            <div class="action-row" style="gap:8px;flex-wrap:wrap;">
+              <select id="gst-period" style="font-size:13px;">
+                <option value="current-fy">Current financial year</option>
+                <option value="prev-fy">Previous financial year</option>
+                <option value="q1">Q1 (Apr–Jun)</option>
+                <option value="q2">Q2 (Jul–Sep)</option>
+                <option value="q3">Q3 (Oct–Dec)</option>
+                <option value="q4">Q4 (Jan–Mar)</option>
+              </select>
+              <button class="button secondary small" type="button" id="gst-refresh">↻ Refresh</button>
+              <a id="gst-csv-link" class="button secondary small" href="/api/export/accountant" target="_blank" rel="noreferrer">⬇ CSV</a>
+            </div>
+          </div>
+          <div id="gst-loading" class="muted" style="font-size:13px;padding:12px 0;display:none;">Loading…</div>
+          <div id="gst-body" style="margin-top:14px;overflow-x:auto;"></div>
+        </div>
         <div class="panel section">
           <div class="kicker">Business Insights</div>
           <h2>Analytics</h2>
@@ -1834,6 +1881,8 @@
                 </div>
                 <div><label for="reminderDaysBefore">Remind clients this many days before</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
                 <div><label for="reviewRequestDaysAfter">Ask for a review this many days after</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
+                <div><label for="cancellationWindowDays">Late cancellation window (days)</label><input id="cancellationWindowDays" name="cancellationWindowDays" type="number" min="0" max="60" placeholder="7" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Cancellations inside this many days before the event will prompt you to charge a fee.</p></div>
+                <div><label for="cancellationFeePercent">Cancellation fee (%)</label><input id="cancellationFeePercent" name="cancellationFeePercent" type="number" min="0" max="100" placeholder="50" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Percentage of the booking price charged for late cancellations.</p></div>
                 <div>
                   <label for="autoPaymentReminders">Auto-remind clients about payments?</label>
                   <select id="autoPaymentReminders" name="autoPaymentReminders"><option>Yes</option><option>No</option></select>
@@ -2712,7 +2761,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (name === "conversations") loadConversations();
         if (name === "team") loadTeam();
         if (name === "reviews") loadReviews();
-        if (name === "analytics") { loadAnalytics(); loadMonthlyRecap(); }
+        if (name === "analytics") { loadAnalytics(); loadMonthlyRecap(); loadGstReport(); }
         if (name === "mypage") loadMyPage();
         if (name === "wallet") loadWallet();
       }
@@ -5199,7 +5248,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           <p class="muted" style="margin-top:14px;">Connecting Instagram and WhatsApp lets new enquiries flow in automatically and lets you reply right from here. Only you can see your own account — your data stays private to you.</p>`;
       }
 
-      async function refreshSession() {
+      // Coalesced: actions often fire refreshSession in quick succession
+      // (action handler + tab activation + focus). Concurrent callers share
+      // one in-flight request instead of stampeding the server.
+      let refreshSessionInflight = null;
+      function refreshSession() {
+        if (refreshSessionInflight) return refreshSessionInflight;
+        refreshSessionInflight = doRefreshSession().finally(() => { refreshSessionInflight = null; });
+        return refreshSessionInflight;
+      }
+
+      async function doRefreshSession() {
         const response = await fetch("/api/session");
         // A logged-out visitor must stay on the public landing page — never
         // auto-redirect to Google sign-in (that makes the homepage look "behind
@@ -5278,6 +5337,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           renderDashboard(payload);
           syncProtectButton(payload.workspace);
           loadTeam();
+          loadBirthdayBanner();
           // Bottom mobile nav: visible only once she's signed in.
           const bnav = document.getElementById("bottom-nav");
           if (bnav) { bnav.classList.add("authed"); bnav.style.display = ""; document.body.classList.add("has-bottom-nav"); }
@@ -5319,13 +5379,28 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         return serverMessage || "That didn't work. Please try again.";
       }
 
-      async function postJson(url, body) {
-        let response;
+      // All API calls time out after 45s so a dead connection shows a clear
+      // message instead of a spinner that never ends. (Long jobs like campaign
+      // broadcasts run server-side in the background and are polled, so no
+      // request legitimately needs longer than this.)
+      const FETCH_TIMEOUT_MS = 45000;
+      async function fetchWithTimeout(url, init) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         try {
-          response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        } catch {
+          return await fetch(url, { ...(init || {}), signal: controller.signal });
+        } catch (err) {
+          if (err && err.name === "AbortError") {
+            throw new Error("That took too long — the server may be busy. Please try again.");
+          }
           throw new Error("You seem to be offline — check your connection and try again.");
+        } finally {
+          clearTimeout(timer);
         }
+      }
+
+      async function postJson(url, body) {
+        const response = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         if (response.status === 401) {
           handleSessionExpired();
           return;
@@ -5336,12 +5411,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       async function getJson(url) {
-        let response;
-        try {
-          response = await fetch(url);
-        } catch {
-          throw new Error("You seem to be offline — check your connection and try again.");
-        }
+        const response = await fetchWithTimeout(url);
         if (response.status === 401) {
           handleSessionExpired();
           return null;
@@ -6827,6 +6897,28 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           setLoading(cx, "Cancelling…");
           try {
             await postJson(`/api/bookings/${bookingId}/cancel`, {});
+            // Check if within late-cancellation window to prompt for fee
+            if (b?.eventDate) {
+              const cfg = sessionState?.workspace?.config || {};
+              const windowDays = Number(cfg.cancellationWindowDays) || 7;
+              const feePercent = Number(cfg.cancellationFeePercent) || 50;
+              const daysUntil = Math.ceil((new Date(b.eventDate).getTime() - Date.now()) / 86400000);
+              if (daysUntil >= 0 && daysUntil <= windowDays) {
+                const price = Number(b.finalPrice) || 0;
+                const feeAmount = Math.round(price * feePercent / 100);
+                const waPhone = String(b.clientWhatsApp || "").replace(/\D/g, "");
+                const artistName = String(cfg.ownerName || "").split(/\s+/)[0] || "your artist";
+                const feeMsg = encodeURIComponent(`Hi ${b.clientName},\n\nAs per our booking terms, cancellations within ${windowDays} days of the event date are subject to a cancellation fee.\n\nCancellation fee: ₹${feeAmount.toLocaleString("en-IN")} (${feePercent}% of ₹${price.toLocaleString("en-IN")})\n\nThis is non-refundable as the date has been reserved for you. Please transfer to the UPI details on record.\n\nThank you for understanding.\n— ${artistName}`);
+                const waLink = waPhone ? `https://wa.me/${waPhone}?text=${feeMsg}` : "";
+                toast(
+                  `Booking cancelled. Event was ${daysUntil === 0 ? "today" : `${daysUntil} day${daysUntil === 1 ? "" : "s"} away`} — send cancellation fee notice?`,
+                  "warning",
+                  waLink ? { label: `Send ₹${feeAmount.toLocaleString("en-IN")} fee notice`, onClick: () => window.open(waLink, "_blank") } : undefined,
+                );
+                await refreshSession();
+                return;
+              }
+            }
             toast("Booking cancelled and removed from your calendar.", "success");
             await refreshSession();
           } catch (error) {
@@ -6887,19 +6979,33 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         setLoading(btn, "Sending…");
         statusEl.textContent = "";
         resultsEl.style.display = "none";
+        // The server runs the broadcast in the background (1 msg/sec, up to
+        // ~3 min for a big list); we poll for live progress so she can watch
+        // it go out — and safely close the tab without stopping the send.
+        const renderResults = (r) => {
+          if (!r.contacts?.length) return;
+          resultsEl.style.display = "block";
+          resultsBody.innerHTML = r.contacts.map((c) =>
+            `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line);">
+              <span>${escapeHtml(c.name)} <span class="muted" style="font-size:11px;">${escapeHtml(c.phone)}</span></span>
+              <span style="color:${c.status === "sent" ? "#16a34a" : "#dc2626"};font-size:12px;font-weight:600;">${c.status === "sent" ? "✓ Sent" : "✗ Failed"}</span>
+            </div>`
+          ).join("");
+        };
         try {
-          const r = await postJson("/api/campaigns/broadcast", { segment, message });
-          const line = `Sent to ${r.sent} · Failed: ${r.failed}${r.skipped > 0 ? ` · Skipped (capped): ${r.skipped}` : ""}`;
-          statusEl.textContent = line;
-          if (r.contacts?.length) {
-            resultsEl.style.display = "block";
-            resultsBody.innerHTML = r.contacts.map((c) =>
-              `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line);">
-                <span>${escapeHtml(c.name)} <span class="muted" style="font-size:11px;">${escapeHtml(c.phone)}</span></span>
-                <span style="color:${c.status === "sent" ? "#16a34a" : "#dc2626"};font-size:12px;font-weight:600;">${c.status === "sent" ? "✓ Sent" : "✗ Failed"}</span>
-              </div>`
-            ).join("");
+          const start = await postJson("/api/campaigns/broadcast", { segment, message });
+          let r;
+          for (;;) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            r = await getJson(`/api/campaigns/jobs/${encodeURIComponent(start.jobId)}`);
+            if (!r) return; // session expired mid-poll
+            statusEl.textContent = `Sending… ${r.sent + r.failed} of ${Math.min(r.total, 200) || "?"} done`;
+            renderResults(r);
+            if (r.status !== "running") break;
           }
+          if (r.status === "failed") throw new Error(r.error || "Broadcast failed.");
+          statusEl.textContent = `Sent to ${r.sent} · Failed: ${r.failed}${r.skipped > 0 ? ` · Skipped (capped): ${r.skipped}` : ""}`;
+          renderResults(r);
           toast(`Campaign sent to ${r.sent} clients.`, "success");
         } catch (err) {
           statusEl.textContent = err.message;
@@ -6958,6 +7064,107 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           toast(err.message, "error");
         } finally { clearLoading(btn); }
       });
+
+      // ─── Birthday banner ─────────────────────────────────────────────────────
+      // Loaded silently on dashboard activation; failures are swallowed so a
+      // missing birthday never breaks the main page.
+      async function loadBirthdayBanner() {
+        const banner = document.getElementById("birthday-banner");
+        if (!banner) return;
+        try {
+          const r = await getJson("/api/clients/birthdays-soon?days=7");
+          if (!r.ok || !r.upcoming?.length) { banner.style.display = "none"; return; }
+          const cfg = sessionState?.workspace?.config || {};
+          const artistName = String(cfg.ownerName || "").split(/\s+/)[0] || "your artist";
+          banner.innerHTML = r.upcoming.map((c) => {
+            const dayLabel = c.daysUntil === 0 ? "Today!" : c.daysUntil === 1 ? "Tomorrow" : `In ${c.daysUntil} days`;
+            const bdMonth = c.birthday ? new Date(c.birthday + "T00:00:00").toLocaleString("en-IN", { month: "short", day: "numeric" }) : "";
+            const waPhone = String(c.phone || "").replace(/\D/g, "");
+            const msg = encodeURIComponent(`Happy Birthday ${c.name}! 🎂🎉\nHope your day is as beautiful as you make everyone else feel. Wishing you all the love and joy!\n— ${artistName}`);
+            const waLink = waPhone ? `https://wa.me/${waPhone}?text=${msg}` : "";
+            return `<div class="birthday-card">
+              <div class="bd-icon">🎂</div>
+              <div class="bd-info">
+                <div class="bd-name">${escapeHtml(c.name)}'s birthday ${dayLabel.toLowerCase() !== "today!" ? "is " : ""}${dayLabel}</div>
+                <div class="bd-sub">${bdMonth} · ${c.phone}</div>
+              </div>
+              <div class="bd-actions">
+                ${waLink ? `<a href="${escapeHtml(waLink)}" target="_blank" rel="noreferrer" class="button small">🎉 Wish on WhatsApp</a>` : ""}
+                <button class="button small secondary" type="button" onclick="this.closest('.birthday-card').remove();if(!document.querySelector('.birthday-card'))document.getElementById('birthday-banner').style.display='none';">Dismiss</button>
+              </div>
+            </div>`;
+          }).join("");
+          banner.style.display = "block";
+        } catch { banner.style.display = "none"; }
+      }
+
+      // ─── GST / tax summary ────────────────────────────────────────────────────
+      let gstLoaded = false;
+      async function loadGstReport() {
+        const loadingEl = document.getElementById("gst-loading");
+        const bodyEl = document.getElementById("gst-body");
+        const csvLink = document.getElementById("gst-csv-link");
+        if (!loadingEl || !bodyEl) return;
+        loadingEl.style.display = "block";
+        bodyEl.innerHTML = "";
+
+        const period = document.getElementById("gst-period")?.value || "current-fy";
+        const now = new Date();
+        const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+        let from, to;
+        if (period === "current-fy") { from = `${fyStart}-04-01`; to = `${fyStart + 1}-03-31`; }
+        else if (period === "prev-fy") { from = `${fyStart - 1}-04-01`; to = `${fyStart}-03-31`; }
+        else if (period === "q1") { from = `${fyStart}-04-01`; to = `${fyStart}-06-30`; }
+        else if (period === "q2") { from = `${fyStart}-07-01`; to = `${fyStart}-09-30`; }
+        else if (period === "q3") { from = `${fyStart}-10-01`; to = `${fyStart}-12-31`; }
+        else if (period === "q4") { from = `${fyStart + 1}-01-01`; to = `${fyStart + 1}-03-31`; }
+
+        if (csvLink) csvLink.href = `/api/export/accountant?from=${from}&to=${to}`;
+
+        try {
+          const r = await getJson(`/api/reports/gst?from=${from}&to=${to}`);
+          if (!r.ok) throw new Error(r.error);
+
+          if (!r.rows.length) {
+            bodyEl.innerHTML = `<p class="muted" style="padding:12px 0;font-size:13.5px;">No invoiced bookings found for this period.</p>`;
+            return;
+          }
+
+          const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+          const gstLabel = r.gstPct > 0 ? `GST @${r.gstPct}%` : "GST";
+          const gstInfo = r.gstNumber ? `<p class="muted" style="font-size:12px;margin:4px 0 10px;">GSTIN: ${escapeHtml(r.gstNumber)}</p>` : "";
+
+          bodyEl.innerHTML = `${gstInfo}<table class="gst-table">
+            <thead><tr>
+              <th>Invoice #</th><th>Date</th><th>Client</th><th>Occasion</th>
+              <th>Total</th>${r.gstPct > 0 ? `<th>Taxable</th><th>${gstLabel}</th>` : ""}<th>Received</th><th>Status</th>
+            </tr></thead>
+            <tbody>${r.rows.map((row) => `<tr>
+              <td>${escapeHtml(row.invoiceNumber)}</td>
+              <td style="white-space:nowrap;">${row.invoiceDate}</td>
+              <td>${escapeHtml(row.clientName)}</td>
+              <td>${escapeHtml(row.eventType)}</td>
+              <td style="text-align:right;">${fmt(row.total)}</td>
+              ${r.gstPct > 0 ? `<td style="text-align:right;">${fmt(row.taxable)}</td><td style="text-align:right;">${fmt(row.gstAmount)}</td>` : ""}
+              <td style="text-align:right;">${fmt(row.received)}</td>
+              <td><span class="${row.bookingStatus === "Completed" ? "pill success" : "pill"}" style="font-size:11px;">${escapeHtml(row.bookingStatus)}</span></td>
+            </tr>`).join("")}</tbody>
+            <tfoot><tr>
+              <td colspan="${r.gstPct > 0 ? 4 : 4}"><strong>Total (${r.rows.length} invoices)</strong></td>
+              <td style="text-align:right;"><strong>${fmt(r.totals.gross)}</strong></td>
+              ${r.gstPct > 0 ? `<td style="text-align:right;"><strong>${fmt(r.totals.taxable)}</strong></td><td style="text-align:right;"><strong>${fmt(r.totals.gst)}</strong></td>` : ""}
+              <td style="text-align:right;"><strong>${fmt(r.totals.received)}</strong></td>
+              <td></td>
+            </tr></tfoot>
+          </table>`;
+          gstLoaded = true;
+        } catch (err) {
+          bodyEl.innerHTML = `<p class="muted" style="font-size:13.5px;padding:8px 0;">${escapeHtml(err.message || "Could not load tax summary.")}</p>`;
+        } finally { loadingEl.style.display = "none"; }
+      }
+
+      document.getElementById("gst-refresh")?.addEventListener("click", loadGstReport);
+      document.getElementById("gst-period")?.addEventListener("change", loadGstReport);
 
       // ─── AI auto-reply status card on Messages (one-tap control) ───
       function renderAiStatusCard() {
