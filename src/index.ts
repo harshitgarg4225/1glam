@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
+import { OAuth2Client } from "google-auth-library";
 import { appConfig, assertDeploymentConfig } from "./config.js";
 import { createLeadSchema, editLeadDetailsSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema, quickBookingSchema, recordPaymentSchema } from "./api-schema.js";
 import { askBusinessAssistant, buildAssistantSnapshot } from "./services/assistant.js";
@@ -361,7 +362,7 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // /api/session is intentionally public: it reports authenticated:false for
 // logged-out visitors so the landing page can render without bouncing them (and
 // Google's OAuth-verification crawler) to a login screen.
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange"]);
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token"]);
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
@@ -798,25 +799,13 @@ app.get("/auth/google/callback", async (req, res, next) => {
     await persistWorkspaceTokens(profile.email, tokens);
 
     if (req.query.state === "mobile") {
-      // Native-app flow: this page is open in the system browser, not the app's
-      // webview. Mint a single-use token and deep-link back into the app, which
-      // exchanges it for a session (POST /api/auth/mobile/exchange). The page
-      // body is a fallback for browsers that block automatic scheme redirects.
+      // Native-app flow: the callback runs inside a Chrome Custom Tab. Issue a
+      // 302 redirect to the busydays:// custom scheme so the OS routes it back
+      // to the app and the Custom Tab closes automatically. The webview's
+      // appUrlOpen listener (mobile-bridge.js) picks up the OTT and exchanges
+      // it for a real session via POST /api/auth/mobile/exchange.
       const ott = await createMobileLoginToken(profile.email);
-      const deepLink = `busydays://auth?ott=${encodeURIComponent(ott)}`;
-      res
-        .status(200)
-        .type("html")
-        .send(
-          `<!doctype html><html><head><meta charset="utf-8"><title>Signed in</title>` +
-            `<meta name="viewport" content="width=device-width, initial-scale=1">` +
-            `<style>body{font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:90vh;gap:16px;text-align:center;padding:24px}a{background:#111;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:600}</style>` +
-            `</head><body>` +
-            `<h2>✅ Signed in</h2><p>Returning you to the BusyDays app…</p>` +
-            `<a href="${deepLink}">Open BusyDays</a>` +
-            `<script>window.location.href=${JSON.stringify(deepLink)};</script>` +
-            `</body></html>`,
-        );
+      res.redirect(`busydays://auth?ott=${encodeURIComponent(ott)}`);
       return;
     }
 
@@ -847,6 +836,55 @@ app.post("/api/auth/mobile/exchange", publicWriteLimiter, async (req, res, next)
       req.session.googleTokens = await getWorkspaceCredentials(email);
     } catch {
       // Tokens restore lazily via the session-heal middleware on the next request.
+    }
+    await new Promise<void>((resolve, reject) =>
+      req.session.save((err) => (err ? reject(err) : resolve())),
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Native-app Google Sign-In (Android/iOS): the native plugin returns a Google
+// ID token which we verify server-side and convert to a session. This avoids
+// the system-browser OAuth flow for users who already have a workspace — they
+// get a native account-picker bottom sheet without leaving the app.
+// For first-time users (no workspace yet) we return requiresFullAuth:true and
+// the bridge falls back to Chrome Custom Tab OAuth (needed for Sheets scopes).
+app.post("/api/auth/google/id-token", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const idToken = String(req.body?.idToken ?? "");
+    if (!idToken) return res.status(400).json({ error: "idToken required" });
+    if (!appConfig.googleClientId) return res.status(503).json({ error: "Google Sign-In not configured" });
+
+    let email: string;
+    let name: string;
+    try {
+      const oauthClient = new OAuth2Client(appConfig.googleClientId);
+      const ticket = await oauthClient.verifyIdToken({ idToken, audience: appConfig.googleClientId });
+      const payload = ticket.getPayload();
+      if (!payload?.email) throw new Error("no email in token");
+      email = payload.email.toLowerCase();
+      name = payload.name ?? email;
+    } catch {
+      return res.status(401).json({ error: "Invalid or expired Google ID token" });
+    }
+
+    const workspace = await getWorkspaceByEmail(email);
+    if (!workspace) {
+      // New user — must go through full OAuth to provision Google Sheets/Calendar.
+      return res.json({ ok: false, requiresFullAuth: true });
+    }
+
+    await new Promise<void>((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve())),
+    );
+    req.session.profile = { email: workspace.email, name: workspace.name };
+    try {
+      req.session.googleTokens = await getWorkspaceCredentials(email);
+    } catch {
+      // Restored lazily on next Google API call.
     }
     await new Promise<void>((resolve, reject) =>
       req.session.save((err) => (err ? reject(err) : resolve())),
@@ -2177,7 +2215,7 @@ app.post("/api/bookings/:bookingId/payments", async (req, res, next) => {
 // ---- Push notifications (web push for PWA, FCM for the native app) ----
 app.get("/api/push/config", (req, res) => {
   if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
-  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured() });
+  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured(), googleClientId: appConfig.googleClientId || null });
 });
 
 app.post("/api/push/subscribe", async (req, res, next) => {
