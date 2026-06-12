@@ -761,6 +761,22 @@
         body.has-bottom-nav nav.tabs.requires-auth { display: none !important; }
       }
 
+      /* ─── Typeahead suggestions (clients, venues) ─── */
+      .suggest-wrap { position: relative; }
+      .suggest-list {
+        position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 9500;
+        background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+        box-shadow: 0 10px 36px rgba(0,0,0,0.14); overflow: hidden; max-height: 240px; overflow-y: auto;
+      }
+      .suggest-item {
+        display: block; width: 100%; text-align: left; background: none; border: none;
+        cursor: pointer; font: inherit; font-size: 14px; padding: 10px 14px; color: var(--text);
+        border-bottom: 1px solid var(--line);
+      }
+      .suggest-item:last-child { border-bottom: none; }
+      .suggest-item:hover, .suggest-item.focused { background: var(--surface); }
+      .suggest-item .suggest-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+
       /* Mobile board swipe hint — shows once until she scrolls the board */
       .board-swipe-hint {
         display: none; text-align: center; font-size: 12px; color: var(--muted);
@@ -1090,7 +1106,7 @@
                   </div>
                   <div><label for="eventDate">Event date</label><input id="eventDate" name="eventDate" type="date" required /></div>
                   <div><label for="eventTime">Time (optional)</label><input id="eventTime" name="eventTime" type="time" /></div>
-                  <div class="wide"><label for="locationText">Where is the event? <span class="muted" style="font-weight:400;">(can add later)</span></label><input id="locationText" name="locationText" placeholder="Venue or area, city" /></div>
+                  <div class="wide suggest-wrap"><label for="locationText">Where is the event? <span class="muted" style="font-weight:400;">(can add later)</span></label><input id="locationText" name="locationText" autocomplete="off" placeholder="Venue or area, city" /></div>
                 </div>
                 <details class="collapse" style="margin-top:14px;">
                   <summary>More details (optional)</summary>
@@ -1769,6 +1785,19 @@
                 <div><label for="advancePercentage">Advance to lock a date (%)</label><input id="advancePercentage" name="advancePercentage" type="number" required /></div>
                 <div><label for="upiId">Your UPI ID (for advances)</label><input id="upiId" name="upiId" placeholder="yourname@bank" /></div>
                 <div class="wide">
+                  <label>How long each booking takes (hours)</label>
+                  <p class="muted" style="margin:0 0 8px;font-size:12.5px;">Used to block the right window on your calendar — a bridal look needs more time than a party look.</p>
+                  <input type="hidden" id="serviceDurations" name="serviceDurations" />
+                  <div class="section-grid" id="duration-grid">
+                    <div><label for="qd-Bridal">Bridal</label><input id="qd-Bridal" data-duration-for="Bridal" type="number" min="0.5" max="24" step="0.5" /></div>
+                    <div><label for="qd-Engagement">Engagement</label><input id="qd-Engagement" data-duration-for="Engagement" type="number" min="0.5" max="24" step="0.5" /></div>
+                    <div><label for="qd-Reception">Reception</label><input id="qd-Reception" data-duration-for="Reception" type="number" min="0.5" max="24" step="0.5" /></div>
+                    <div><label for="qd-Party">Party</label><input id="qd-Party" data-duration-for="Party" type="number" min="0.5" max="24" step="0.5" /></div>
+                    <div><label for="qd-Shoot">Shoot</label><input id="qd-Shoot" data-duration-for="Shoot" type="number" min="0.5" max="24" step="0.5" /></div>
+                    <div><label for="qd-Other">Other</label><input id="qd-Other" data-duration-for="Other" type="number" min="0.5" max="24" step="0.5" /></div>
+                  </div>
+                </div>
+                <div class="wide">
                   <label>Instant online payments (recommended)</label>
                   <p class="muted" style="margin:0 0 8px;font-size:12.5px;">Add your free Razorpay keys and clients can pay the advance by UPI or card on your payment page — the booking is marked paid <strong>automatically</strong>, no screenshots. Create a free account at razorpay.com → Settings → API Keys.</p>
                   <div class="section-grid">
@@ -2326,7 +2355,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         </div>
         <p class="muted" style="font-size:13px;margin:0 0 14px;">For a client you've already said yes to — on the phone or in person. This confirms the booking and puts it on your calendar in one go.</p>
         <form id="quick-booking-form">
-          <div class="wizard-field"><label for="qb-name">Client name</label><input id="qb-name" name="clientName" required /></div>
+          <div class="wizard-field suggest-wrap"><label for="qb-name">Client name</label><input id="qb-name" name="clientName" required autocomplete="off" placeholder="Start typing — past clients appear" /></div>
           <div class="wizard-field"><label for="qb-phone">Their WhatsApp number</label><input id="qb-phone" name="clientWhatsApp" required placeholder="+91…" /></div>
           <div class="wizard-field">
             <label for="qb-event">Occasion</label>
@@ -2336,13 +2365,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="wizard-field" style="flex:1;"><label for="qb-date">Date</label><input id="qb-date" name="eventDate" type="date" required /></div>
             <div class="wizard-field" style="flex:1;"><label for="qb-time">Time (optional)</label><input id="qb-time" name="eventTime" type="time" /></div>
           </div>
+          <p class="muted" id="qb-duration-hint" style="display:none;font-size:12.5px;margin:-6px 0 12px;"></p>
           <div id="qb-conflict" style="margin-bottom:14px;"></div>
-          <div class="wizard-field"><label for="qb-venue">Where? <span class="muted" style="font-weight:400;">(can add later)</span></label><input id="qb-venue" name="locationText" placeholder="Venue or area, city" /></div>
+          <div class="wizard-field suggest-wrap"><label for="qb-venue">Where? <span class="muted" style="font-weight:400;">(can add later)</span></label><input id="qb-venue" name="locationText" autocomplete="off" placeholder="Venue or area, city" /></div>
           <div class="wizard-field"><label for="qb-price">Price (₹) <span class="muted" style="font-weight:400;">(leave blank to decide later)</span></label><input id="qb-price" name="price" type="number" min="0" placeholder="e.g. 25000" /></div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:16px;cursor:pointer;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:8px;cursor:pointer;">
             <input type="checkbox" id="qb-advance-paid" name="advancePaid" style="width:auto;" />
             They've already paid the advance
           </label>
+          <div class="wizard-field" id="qb-advance-amount-wrap" style="display:none;">
+            <label for="qb-advance-amount">How much did they pay? (₹)</label>
+            <input id="qb-advance-amount" name="advanceAmount" type="number" min="0" placeholder="e.g. 7500" />
+            <div class="hint" id="qb-advance-amount-hint" style="display:none;"></div>
+          </div>
           <button class="button" type="submit" id="qb-submit" style="width:100%;">Confirm booking</button>
           <div class="status" id="qb-status"></div>
         </form>
@@ -2363,7 +2398,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="wizard-field" style="flex:1;"><label for="rs-date">New date</label><input id="rs-date" type="date" required /></div>
             <div class="wizard-field" style="flex:1;"><label for="rs-time">New time (optional)</label><input id="rs-time" type="time" /></div>
           </div>
-          <div class="wizard-field"><label for="rs-venue">Venue</label><input id="rs-venue" type="text" maxlength="200" placeholder="Venue or area, city" /></div>
+          <div class="wizard-field suggest-wrap"><label for="rs-venue">Venue</label><input id="rs-venue" type="text" maxlength="200" autocomplete="off" placeholder="Venue or area, city" /></div>
           <div id="rs-conflict" style="margin-bottom:14px;"></div>
           <button class="button" type="submit" id="rs-submit" style="width:100%;">Save changes</button>
           <div class="status" id="rs-status"></div>
@@ -2742,8 +2777,36 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
       function setValue(form, name, value) { const f = form.elements.namedItem(name); if (f) f.value = value ?? ""; }
+
+      // The six per-occasion duration inputs read from / write to the single
+      // serviceDurations config string ("Bridal=4, Party=2").
+      function fillDurationGrid(raw) {
+        const defaults = { Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2 };
+        document.querySelectorAll("[data-duration-for]").forEach((input) => {
+          const type = input.getAttribute("data-duration-for");
+          let hours = defaults[type] ?? 3;
+          for (const pair of String(raw || "").split(",")) {
+            const [key, value] = pair.split("=").map((s) => s.trim());
+            if (key && key.toLowerCase() === type.toLowerCase() && Number(value) > 0) hours = Number(value);
+          }
+          input.value = hours;
+        });
+      }
+      function syncDurationField() {
+        const parts = [];
+        document.querySelectorAll("[data-duration-for]").forEach((input) => {
+          const hours = Number(input.value);
+          if (Number.isFinite(hours) && hours > 0) parts.push(`${input.getAttribute("data-duration-for")}=${hours}`);
+        });
+        const hidden = document.getElementById("serviceDurations");
+        if (hidden) hidden.value = parts.join(", ");
+      }
+      document.getElementById("duration-grid")?.addEventListener("input", syncDurationField);
+
       function fillConfig(config) {
         Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v));
+        fillDurationGrid(config.serviceDurations);
+        syncDurationField();
         renderTemplatePicker(config.documentTemplate);
         reflectToneProfile(config.aiToneProfile);
         const logoPreview = document.getElementById("logo-preview");
@@ -3173,16 +3236,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("stat-bookings").textContent = String(bookings.length);
         document.getElementById("stat-awaiting").textContent = String(leads.filter((l) => l.status === "Awaiting Client").length);
 
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const upcomingRevenue = bookings
-          .filter((b) => { const d = new Date(b.eventDate); return !isNaN(d) && d >= today; })
-          .reduce((s, b) => s + Number(b.finalPrice || 0), 0);
-        document.getElementById("stat-revenue").textContent = formatMoney(upcomingRevenue);
-
-        // Money actually received vs still owed, across active bookings.
-        const active = bookings.filter(bookingIsActive);
+        // All three money stats come from the SAME set of bookings (anything
+        // not cancelled), so they can never contradict each other — booked
+        // always equals collected + still-to-collect.
+        const active = bookings.filter((b) => (b.status || "") !== "Cancelled");
+        const bookedRevenue = active.reduce((s, b) => s + Number(b.finalPrice || 0), 0);
         const collected = active.reduce((s, b) => s + bookingPaidTotal(b), 0);
         const outstanding = active.reduce((s, b) => s + Math.max(0, Number(b.finalPrice || 0) - bookingPaidTotal(b)), 0);
+        document.getElementById("stat-revenue").textContent = formatMoney(bookedRevenue);
         const collectedEl = document.getElementById("stat-collected");
         const outstandingEl = document.getElementById("stat-outstanding");
         if (collectedEl) collectedEl.textContent = formatMoney(collected);
@@ -6360,6 +6421,70 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       // ─── Quick booking: walk-in/phone booking in one step ───
       const quickBookingModal = document.getElementById("quick-booking-modal");
+      // ─── Shared typeahead: attaches a suggestion dropdown to an input ───
+      // getItems(query) → [{ label, sub?, value, extra? }]; onPick(item) fills fields.
+      function attachTypeahead(input, getItems, onPick) {
+        if (!input) return;
+        const wrap = input.closest(".suggest-wrap");
+        if (!wrap) return;
+        let list = null;
+        let token = 0;
+        const close = () => { list?.remove(); list = null; };
+        const render = (items) => {
+          close();
+          if (!items.length) return;
+          list = document.createElement("div");
+          list.className = "suggest-list";
+          for (const item of items) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "suggest-item";
+            btn.innerHTML = `${escapeHtml(item.label)}${item.sub ? `<span class="suggest-sub">${escapeHtml(item.sub)}</span>` : ""}`;
+            // mousedown beats the input's blur so the pick registers.
+            btn.addEventListener("mousedown", (e) => { e.preventDefault(); onPick(item); close(); });
+            list.appendChild(btn);
+          }
+          wrap.appendChild(list);
+        };
+        input.addEventListener("input", debounce(async () => {
+          const q = input.value.trim();
+          if (q.length < 2) { close(); return; }
+          const my = ++token;
+          const items = await Promise.resolve(getItems(q)).catch(() => []);
+          if (my !== token) return; // stale response — a newer keystroke won
+          render(items || []);
+        }, 200));
+        input.addEventListener("blur", () => setTimeout(close, 150));
+        input.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+      }
+
+      // Venue fields suggest real places (Google Places, when configured).
+      async function placeSuggestions(q) {
+        const r = await getJson(`/api/maps/places?q=${encodeURIComponent(q)}`).catch(() => null);
+        return (r?.suggestions || []).map((s) => ({ label: s, value: s }));
+      }
+      function attachPlaceTypeahead(input) {
+        attachTypeahead(input, placeSuggestions, (item) => {
+          input.value = item.value;
+          input.dispatchEvent(new Event("blur"));
+        });
+      }
+
+      // How long each occasion blocks the calendar — mirrors the server's
+      // durationHoursForEvent (Settings → serviceDurations, "Bridal=4, Party=2").
+      function durationHoursFor(eventType) {
+        const fallback = { Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2 }[eventType] ?? 3;
+        const raw = sessionState?.workspace?.config?.serviceDurations || "";
+        for (const pair of raw.split(",")) {
+          const [key, value] = pair.split("=").map((s) => s.trim());
+          if (key && key.toLowerCase() === String(eventType).toLowerCase()) {
+            const hours = Number(value);
+            if (Number.isFinite(hours) && hours > 0 && hours <= 24) return hours;
+          }
+        }
+        return fallback;
+      }
+
       const quickBookingForm = document.getElementById("quick-booking-form");
       function openQuickBooking(prefill) {
         quickBookingForm.reset();
@@ -6374,6 +6499,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           dateInput.value = prefill.eventDate;
           document.getElementById("qb-conflict").innerHTML = conflictWarningHtml(prefill.eventDate);
         }
+        document.getElementById("qb-advance-amount-wrap").style.display = "none";
+        updateQbDurationHint();
         quickBookingModal.classList.add("open");
         setTimeout(() => document.getElementById(prefill?.name ? "qb-date" : "qb-name").focus(), 50);
       }
@@ -6383,6 +6510,76 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       });
       document.getElementById("qb-date")?.addEventListener("change", (e) => {
         document.getElementById("qb-conflict").innerHTML = conflictWarningHtml(e.target.value);
+      });
+
+      // Returning client? Typing her name pulls up name + number from history.
+      attachTypeahead(
+        document.getElementById("qb-name"),
+        (q) => buildClientDirectory()
+          .filter((c) => `${c.name} ${c.phone}`.toLowerCase().includes(q.toLowerCase()))
+          .slice(0, 6)
+          .map((c) => ({
+            label: c.name || c.phone,
+            sub: [c.phone, c.bookings ? `${c.bookings} booking${c.bookings > 1 ? "s" : ""}` : "", c.lastEventType].filter(Boolean).join(" · "),
+            value: c.name || "",
+            phone: c.phone || "",
+          })),
+        (item) => {
+          document.getElementById("qb-name").value = item.value;
+          if (item.phone) document.getElementById("qb-phone").value = item.phone;
+        },
+      );
+
+      // Venue fields use Google Places suggestions when a Maps key is set.
+      attachPlaceTypeahead(document.getElementById("qb-venue"));
+      attachPlaceTypeahead(document.getElementById("locationText"));
+      attachPlaceTypeahead(document.getElementById("rs-venue"));
+
+      // Occasion + time → show exactly what the calendar will block.
+      function updateQbDurationHint() {
+        const hint = document.getElementById("qb-duration-hint");
+        if (!hint) return;
+        const eventType = document.getElementById("qb-event").value;
+        const time = document.getElementById("qb-time").value;
+        const hours = durationHoursFor(eventType);
+        const fmtH = hours === Math.round(hours) ? String(hours) : hours.toFixed(1);
+        if (time) {
+          const [h, m] = time.split(":").map(Number);
+          const endMin = (h * 60 + m + Math.round(hours * 60)) % (24 * 60);
+          const end = `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
+          hint.textContent = `⏱ ${eventType} blocks ~${fmtH}h on your calendar (${time}–${end}). Change in Settings → Your prices.`;
+        } else {
+          hint.textContent = `⏱ ${eventType} blocks ~${fmtH}h on your calendar. Add a time to see the exact window.`;
+        }
+        hint.style.display = "";
+      }
+      document.getElementById("qb-event")?.addEventListener("change", updateQbDurationHint);
+      document.getElementById("qb-time")?.addEventListener("input", updateQbDurationHint);
+
+      // "Already paid" reveals the amount — collected money should be real
+      // rupees in the ledger, not just a status flag.
+      function updateQbAdvanceUI() {
+        const checked = document.getElementById("qb-advance-paid").checked;
+        const wrap = document.getElementById("qb-advance-amount-wrap");
+        wrap.style.display = checked ? "" : "none";
+        if (!checked) return;
+        const price = Number(document.getElementById("qb-price").value) || 0;
+        const pct = Number(sessionState?.workspace?.config?.advancePercentage) || 30;
+        const amountInput = document.getElementById("qb-advance-amount");
+        const hintEl = document.getElementById("qb-advance-amount-hint");
+        if (price > 0 && !amountInput.value) {
+          const suggested = Math.round((price * pct) / 100);
+          amountInput.value = suggested;
+          hintEl.textContent = `Pre-filled with your usual advance (${pct}% of ₹${price.toLocaleString("en-IN")}) — change it if they paid a different amount.`;
+          hintEl.style.display = "";
+        }
+      }
+      document.getElementById("qb-advance-paid")?.addEventListener("change", updateQbAdvanceUI);
+      document.getElementById("qb-price")?.addEventListener("input", () => {
+        if (document.getElementById("qb-advance-paid").checked) {
+          document.getElementById("qb-advance-amount").value = "";
+          updateQbAdvanceUI();
+        }
       });
       function closeQuickBooking() { quickBookingModal.classList.remove("open"); }
       document.getElementById("quick-booking-btn")?.addEventListener("click", openQuickBooking);

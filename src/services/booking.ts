@@ -1370,6 +1370,7 @@ async function upsertTentativeCalendarEvent(
     location: lead.locationText,
     eventDate: lead.eventDate,
     eventTime: lead.eventTime,
+    durationHours: durationHoursForEvent(workspace.config.serviceDurations, lead.eventType),
   });
 
   if (lead.tentativeCalendarEventId) {
@@ -1415,6 +1416,7 @@ async function createConfirmedCalendarEvent(
       location: lead.locationText,
       eventDate: lead.eventDate,
       eventTime: lead.eventTime,
+      durationHours: durationHoursForEvent(workspace.config.serviceDurations, lead.eventType),
     }),
   });
 
@@ -1442,8 +1444,9 @@ function buildCalendarEventBody(input: {
   location: string;
   eventDate: string;
   eventTime?: string;
+  durationHours?: number;
 }): calendar_v3.Schema$Event {
-  const { start, end } = buildEventWindow(input.eventDate, input.eventTime);
+  const { start, end } = buildEventWindow(input.eventDate, input.eventTime, input.durationHours ?? 4);
   return {
     summary: input.title,
     description: input.description,
@@ -1459,17 +1462,36 @@ function buildCalendarEventBody(input: {
   };
 }
 
-function buildEventWindow(eventDate: string, eventTime?: string) {
+// Fallback durations when the artist hasn't configured her own — a bridal
+// look genuinely takes ~4 hours; a party look doesn't.
+const DEFAULT_DURATIONS: Record<string, number> = {
+  Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2,
+};
+
+// Parses "Bridal=4, Party=2.5" (the service_durations config) and returns the
+// hours this occasion blocks on the calendar.
+export function durationHoursForEvent(raw: string | undefined, eventType: string): number {
+  const fallback = DEFAULT_DURATIONS[eventType] ?? 3;
+  for (const pair of String(raw || "").split(",")) {
+    const [key, value] = pair.split("=").map((s) => s.trim());
+    if (key && key.toLowerCase() === String(eventType).toLowerCase()) {
+      const hours = Number(value);
+      if (Number.isFinite(hours) && hours > 0 && hours <= 24) return hours;
+    }
+  }
+  return fallback;
+}
+
+function buildEventWindow(eventDate: string, eventTime: string | undefined, durationHours: number) {
   const time = normalizeEventTime(eventTime);
+  const ms = durationHours * 60 * 60 * 1000;
   if (!time) {
-    return {
-      start: new Date(`${eventDate}T06:00:00+05:30`),
-      end: new Date(`${eventDate}T10:00:00+05:30`),
-    };
+    const start = new Date(`${eventDate}T06:00:00+05:30`);
+    return { start, end: new Date(start.getTime() + ms) };
   }
 
   const start = new Date(`${eventDate}T${time}:00+05:30`);
-  const end = new Date(start.getTime() + 4 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + ms);
   return { start, end };
 }
 

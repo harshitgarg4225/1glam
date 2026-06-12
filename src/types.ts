@@ -112,6 +112,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   quotePackages: string;
   // Pretty booking-page slug, e.g. "glowbyaisha" → /glowbyaisha. Unique app-wide.
   bookingSlug: string;
+  // How long each occasion blocks her calendar, "Bridal=4, Party=2" (hours).
+  serviceDurations: string;
   brandColor: string;
   coverImageUrl: string;
   headline: string;
