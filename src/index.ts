@@ -68,7 +68,7 @@ import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js"
 import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot } from "./services/public-booking.js";
 import { buildServicesContext, computeInsights } from "./services/insights.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
-import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply } from "./services/gmb.js";
+import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply, listGmbPosts, createGmbPost, getReputationSummary } from "./services/gmb.js";
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
@@ -1450,6 +1450,62 @@ app.post("/api/gmb/post-reply", async (req, res, next) => {
     if (!posted) {
       return res.status(400).json({ error: "Couldn't post automatically. Copy the reply and post it on Google instead." });
     }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Reputation summary: aggregate rating, total reviews, unanswered count and response rate.
+// Returns data from GMB API when available; falls back to cached Places rating.
+app.get("/api/gmb/reputation", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const summary = await getReputationSummary(workspace, req.session.googleTokens);
+    res.json({ ok: true, summary });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Lists recent GMB Posts (updates/offers/events). Auto mode only.
+app.get("/api/gmb/posts", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const result = await listGmbPosts(workspace, req.session.googleTokens);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Creates a new GMB Post (update, offer, or event). Auto mode only.
+app.post("/api/gmb/post", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const summary = typeof req.body?.summary === "string" ? req.body.summary.trim() : "";
+    if (summary.length < 10) {
+      return res.status(400).json({ error: "Write at least a sentence for the post." });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const result = await createGmbPost(workspace, req.session.googleTokens, {
+      summary,
+      topicType: req.body?.topicType || "STANDARD",
+      callToActionType: req.body?.callToActionType,
+      callToActionUrl: req.body?.callToActionUrl,
+    });
+    if (!result.ok) return res.status(400).json({ error: result.error });
     res.json({ ok: true });
   } catch (error) {
     next(error);

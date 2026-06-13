@@ -1439,6 +1439,9 @@
 
       <!-- Reviews -->
       <section class="tab-panel" data-panel="reviews">
+        <!-- Reputation scorecard -->
+        <div id="reputation-scorecard" class="mini-grid" style="margin-bottom:20px;display:none;"></div>
+
         <div class="panel section" style="margin-bottom:20px;">
           <div class="kicker">Google reviews</div>
           <h2>Get found &amp; trusted on Google</h2>
@@ -1556,6 +1559,75 @@
           </div>
           <div id="review-replies" style="margin-top:16px;display:flex;flex-direction:column;gap:12px;"></div>
         </div>
+        <!-- Live Google Reviews (auto mode only — hidden until GMB API is available) -->
+        <div id="live-reviews-panel" class="panel section" style="margin-bottom:20px;display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker" style="color:var(--success);">🟢 Live from Google</div>
+              <h2>Your Google Reviews</h2>
+            </div>
+            <div class="filter-bar">
+              <select id="live-reviews-filter" style="font-size:13px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);cursor:pointer;">
+                <option value="all">All reviews</option>
+                <option value="unanswered">Unanswered only</option>
+              </select>
+              <button class="button secondary small" type="button" id="live-reviews-refresh">↻ Refresh</button>
+            </div>
+          </div>
+          <p class="muted" style="margin:8px 0 16px;font-size:13.5px;">Your live Google reviews — draft and post replies without leaving this tab. Replying quickly improves your ranking.</p>
+          <div id="live-reviews-list"><p class="muted" style="text-align:center;padding:24px;">Loading reviews…</p></div>
+        </div>
+
+        <!-- Google Business Posts (auto mode only) -->
+        <div id="gmb-posts-panel" class="panel section" style="margin-bottom:20px;display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+            <div>
+              <div class="kicker">📢 Business updates</div>
+              <h2>Google Business Posts</h2>
+            </div>
+            <button class="button small" type="button" id="new-gmb-post-btn">+ New post</button>
+          </div>
+          <p class="muted" style="margin:0 0 16px;font-size:13.5px;">Share updates, offers, and events on your Google listing. Posts appear in Google Search and Maps and help clients discover you.</p>
+          <!-- Post creation form -->
+          <div id="gmb-post-form" style="display:none;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;">
+            <h3 style="margin:0 0 12px;font-size:15px;">New post</h3>
+            <div class="section-grid">
+              <div class="wide">
+                <label for="gmb-post-text">What do you want to share?</label>
+                <textarea id="gmb-post-text" placeholder="Booking slots open for December weddings! DM or book at the link below." style="min-height:80px;"></textarea>
+              </div>
+              <div>
+                <label for="gmb-post-type">Post type</label>
+                <select id="gmb-post-type">
+                  <option value="STANDARD">Update</option>
+                  <option value="OFFER">Offer</option>
+                  <option value="EVENT">Event</option>
+                </select>
+              </div>
+              <div>
+                <label for="gmb-post-cta">Call to action (optional)</label>
+                <select id="gmb-post-cta">
+                  <option value="">None</option>
+                  <option value="BOOK">Book</option>
+                  <option value="LEARN_MORE">Learn more</option>
+                  <option value="CALL">Call</option>
+                  <option value="ORDER">Order online</option>
+                </select>
+              </div>
+              <div>
+                <label for="gmb-post-cta-url">CTA link (optional)</label>
+                <input id="gmb-post-cta-url" type="url" placeholder="https://…" />
+              </div>
+            </div>
+            <div class="action-row" style="margin-top:12px;">
+              <button class="button" type="button" id="gmb-post-submit">Publish to Google</button>
+              <button class="button secondary" type="button" id="gmb-post-cancel">Cancel</button>
+            </div>
+            <div class="status" id="gmb-post-status"></div>
+          </div>
+          <div id="gmb-posts-list"><p class="muted" style="text-align:center;padding:24px;">Loading posts…</p></div>
+        </div>
+
         <div class="panel section">
           <div class="kicker">Client Feedback</div>
           <h2>Review Tracker</h2>
@@ -4756,6 +4828,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       async function loadReviews() {
         renderGmbState();
         refreshGmbMode();
+        loadReputationScorecard();
         // We already know her business name and city — search for her so the
         // review link is one tap away instead of a typing exercise.
         const cfg = sessionState?.workspace?.config;
@@ -4969,9 +5042,235 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           if (payload?.ok && noteEl) {
             const s = payload.status;
             noteEl.innerHTML = (s.mode === "auto" ? "🟢 " : "💡 ") + escapeHtml(s.note);
+            // Show live panels only in auto mode
+            if (s.mode === "auto") {
+              document.getElementById("live-reviews-panel").style.display = "";
+              document.getElementById("gmb-posts-panel").style.display = "";
+              loadLiveReviews();
+              loadGmbPosts();
+            }
           }
         } catch { /* non-critical */ }
       }
+
+      // ---- Reputation Scorecard ----
+      async function loadReputationScorecard() {
+        const el = document.getElementById("reputation-scorecard");
+        if (!el) return;
+        try {
+          const payload = await getJson("/api/gmb/reputation");
+          if (!payload?.ok) return;
+          const s = payload.summary;
+          const stars = s.averageRating > 0
+            ? "★".repeat(Math.round(s.averageRating)) + "☆".repeat(5 - Math.round(s.averageRating))
+            : "—";
+          el.style.display = "";
+          el.innerHTML = [
+            `<div class="mini-card" style="text-align:center;">
+              <div class="kicker">Average rating</div>
+              <div style="font-size:28px;font-weight:700;color:var(--primary);letter-spacing:-0.5px;">${s.averageRating || "—"}</div>
+              <div style="font-size:16px;color:#f5a623;letter-spacing:1px;">${stars}</div>
+            </div>`,
+            `<div class="mini-card" style="text-align:center;">
+              <div class="kicker">Total reviews</div>
+              <div style="font-size:28px;font-weight:700;color:var(--primary);">${s.totalReviews || "—"}</div>
+              <div class="muted" style="font-size:12.5px;">${s.apiAvailable ? "from Google" : "from Google Places"}</div>
+            </div>`,
+            s.apiAvailable ? `<div class="mini-card" style="text-align:center;">
+              <div class="kicker">Unanswered</div>
+              <div style="font-size:28px;font-weight:700;color:${s.unansweredCount > 0 ? "var(--danger)" : "var(--success)"};">${s.unansweredCount}</div>
+              <div class="muted" style="font-size:12.5px;">need a reply</div>
+            </div>` : "",
+            s.apiAvailable ? `<div class="mini-card" style="text-align:center;">
+              <div class="kicker">Response rate</div>
+              <div style="font-size:28px;font-weight:700;color:var(--primary);">${s.responseRate}%</div>
+              <div class="muted" style="font-size:12.5px;">reviews replied to</div>
+            </div>` : "",
+          ].filter(Boolean).join("");
+        } catch { /* non-critical */ }
+      }
+
+      // ---- Live Google Reviews ----
+      let liveReviewsData = [];
+      async function loadLiveReviews() {
+        const list = document.getElementById("live-reviews-list");
+        if (!list) return;
+        list.innerHTML = `<p class="muted" style="text-align:center;padding:24px;">Loading reviews…</p>`;
+        try {
+          const payload = await getJson("/api/gmb/reviews");
+          if (!payload?.ok || !payload.apiAvailable) {
+            list.innerHTML = `<p class="muted" style="text-align:center;padding:24px;">Live reviews not available yet.</p>`;
+            return;
+          }
+          liveReviewsData = payload.reviews || [];
+          renderLiveReviews();
+        } catch (e) {
+          list.innerHTML = `<p class="muted" style="text-align:center;padding:24px;">${escapeHtml(e.message)}</p>`;
+        }
+      }
+
+      function renderLiveReviews() {
+        const list = document.getElementById("live-reviews-list");
+        const filter = document.getElementById("live-reviews-filter")?.value || "all";
+        const reviews = filter === "unanswered" ? liveReviewsData.filter((r) => !r.reply) : liveReviewsData;
+        if (!reviews.length) {
+          list.innerHTML = `<p class="muted" style="text-align:center;padding:24px;">${filter === "unanswered" ? "No unanswered reviews 🎉" : "No reviews yet. Share your review link with clients!"}</p>`;
+          return;
+        }
+        list.innerHTML = reviews.map((r) => {
+          const stars = "★".repeat(r.rating) + "☆".repeat(5 - r.rating);
+          const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" }) : "";
+          return `
+          <div class="mini-card" style="margin-bottom:12px;" data-review-name="${escapeHtml(r.reviewId)}">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+              <div>
+                <strong style="font-size:14px;">${escapeHtml(r.reviewer)}</strong>
+                <span style="font-size:15px;color:#f5a623;margin-left:8px;">${stars}</span>
+                <span class="muted" style="font-size:12px;margin-left:8px;">${date}</span>
+              </div>
+              ${r.reply ? `<span class="pill success" style="font-size:11px;">Replied</span>` : `<span class="pill warning" style="font-size:11px;">Needs reply</span>`}
+            </div>
+            ${r.comment ? `<p style="margin:8px 0 4px;font-size:13.5px;line-height:1.55;color:var(--text);">"${escapeHtml(r.comment)}"</p>` : `<p class="muted" style="margin:8px 0 4px;font-size:13px;font-style:italic;">No written review.</p>`}
+            ${r.reply ? `<div style="margin-top:8px;padding:10px 12px;background:var(--surface);border-left:3px solid var(--primary);border-radius:0 8px 8px 0;font-size:13px;color:var(--muted);"><strong>Your reply:</strong> ${escapeHtml(r.reply)}</div>` : ""}
+            <div class="action-row" style="margin-top:10px;">
+              <button class="button small secondary" type="button" data-live-draft="${escapeHtml(r.reviewId)}" data-reviewer="${escapeHtml(r.reviewer)}" data-rating="${r.rating}" data-text="${escapeHtml(r.comment || "")}">${r.reply ? "✨ Re-draft reply" : "✨ AI draft reply"}</button>
+            </div>
+            <div class="live-review-draft-area" style="display:none;margin-top:12px;"></div>
+          </div>`;
+        }).join("");
+      }
+
+      document.getElementById("live-reviews-filter")?.addEventListener("change", renderLiveReviews);
+      document.getElementById("live-reviews-refresh")?.addEventListener("click", loadLiveReviews);
+
+      document.getElementById("live-reviews-list")?.addEventListener("click", async (e) => {
+        // Draft AI reply for a live review
+        const draftBtn = e.target.closest("[data-live-draft]");
+        if (draftBtn) {
+          const card = draftBtn.closest(".mini-card");
+          const draftArea = card.querySelector(".live-review-draft-area");
+          draftArea.style.display = "";
+          draftArea.innerHTML = `<p class="muted" style="font-size:13px;">Drafting reply…</p>`;
+          setLoading(draftBtn, "Drafting…");
+          try {
+            const payload = await postJson("/api/gmb/draft-reply", {
+              reviewText: draftBtn.dataset.text || "(no written review)",
+              reviewerName: draftBtn.dataset.reviewer,
+              rating: Number(draftBtn.dataset.rating) || 5,
+              tone: "Warm and grateful",
+            });
+            if (!payload?.ok) throw new Error(payload?.error || "Couldn't draft");
+            const reviewName = draftBtn.getAttribute("data-live-draft");
+            draftArea.innerHTML = payload.replies.map((reply, i) => `
+              <div style="margin-bottom:10px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;">
+                <div class="kicker">Option ${i + 1}</div>
+                <p style="margin:6px 0;font-size:13.5px;line-height:1.55;white-space:pre-wrap;" class="reply-text-${i}">${escapeHtml(reply)}</p>
+                <div class="action-row" style="margin-top:8px;">
+                  <button class="button small" type="button" data-post-reply="${escapeHtml(reviewName)}" data-reply-idx="${i}" data-reply-text="${escapeHtml(reply)}">Post reply to Google</button>
+                  <button class="button small secondary" type="button" data-copy-live-reply="${i}">${escapeHtml(reply)}</button>
+                </div>
+              </div>`).join("");
+          } catch (err) {
+            draftArea.innerHTML = `<p class="muted" style="font-size:13px;">${escapeHtml(err.message)}</p>`;
+          } finally {
+            clearLoading(draftBtn, draftBtn.textContent || "✨ AI draft reply");
+          }
+          return;
+        }
+
+        // Post reply directly to Google
+        const postBtn = e.target.closest("[data-post-reply]");
+        if (postBtn) {
+          const reviewName = postBtn.getAttribute("data-post-reply");
+          const comment = postBtn.getAttribute("data-reply-text");
+          setLoading(postBtn, "Posting…");
+          try {
+            const payload = await postJson("/api/gmb/post-reply", { reviewName, comment });
+            if (!payload?.ok) throw new Error(payload?.error || "Couldn't post");
+            toast("Reply posted to Google ✓", "success");
+            // Reload to reflect new replied state
+            setTimeout(loadLiveReviews, 1500);
+          } catch (err) {
+            toast(err.message, "error");
+            clearLoading(postBtn, "Post reply to Google");
+          }
+          return;
+        }
+
+        // Copy live reply
+        const copyBtn = e.target.closest("[data-copy-live-reply]");
+        if (copyBtn) {
+          copyToClipboard(copyBtn.textContent, copyBtn);
+        }
+      });
+
+      // ---- GMB Business Posts ----
+      async function loadGmbPosts() {
+        const list = document.getElementById("gmb-posts-list");
+        if (!list) return;
+        list.innerHTML = `<p class="muted" style="text-align:center;padding:24px;">Loading posts…</p>`;
+        try {
+          const payload = await getJson("/api/gmb/posts");
+          if (!payload?.ok || !payload.apiAvailable) {
+            list.innerHTML = `<p class="muted" style="text-align:center;padding:16px;">No posts yet.</p>`;
+            return;
+          }
+          const posts = payload.posts || [];
+          if (!posts.length) {
+            list.innerHTML = `<p class="muted" style="text-align:center;padding:16px;">No posts yet. Create one to appear in Google Search.</p>`;
+            return;
+          }
+          list.innerHTML = `<div class="mini-grid">` + posts.map((p) => {
+            const typeLabel = { STANDARD: "Update", OFFER: "Offer", EVENT: "Event" }[p.topicType] || p.topicType;
+            const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN", { day:"numeric", month:"short" }) : "";
+            return `<div class="mini-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                <span class="pill" style="font-size:11px;">${escapeHtml(typeLabel)}</span>
+                <span class="muted" style="font-size:12px;">${date}</span>
+              </div>
+              <p style="margin:0;font-size:13.5px;line-height:1.55;">${escapeHtml(p.summary)}</p>
+              ${p.callToAction ? `<div style="margin-top:8px;"><span class="muted" style="font-size:12px;">CTA: ${escapeHtml(p.callToAction.actionType)}</span></div>` : ""}
+            </div>`;
+          }).join("") + `</div>`;
+        } catch (e) {
+          list.innerHTML = `<p class="muted" style="text-align:center;padding:16px;">${escapeHtml(e.message)}</p>`;
+        }
+      }
+
+      document.getElementById("new-gmb-post-btn")?.addEventListener("click", () => {
+        const form = document.getElementById("gmb-post-form");
+        form.style.display = form.style.display === "none" ? "" : "none";
+      });
+      document.getElementById("gmb-post-cancel")?.addEventListener("click", () => {
+        document.getElementById("gmb-post-form").style.display = "none";
+      });
+      document.getElementById("gmb-post-submit")?.addEventListener("click", async () => {
+        const btn = document.getElementById("gmb-post-submit");
+        const statusEl = document.getElementById("gmb-post-status");
+        const summary = document.getElementById("gmb-post-text").value.trim();
+        if (summary.length < 10) { statusEl.textContent = "Write at least a sentence."; return; }
+        statusEl.textContent = "";
+        setLoading(btn, "Publishing…");
+        try {
+          const ctaType = document.getElementById("gmb-post-cta").value;
+          const ctaUrl = document.getElementById("gmb-post-cta-url").value.trim();
+          const payload = await postJson("/api/gmb/post", {
+            summary,
+            topicType: document.getElementById("gmb-post-type").value,
+            callToActionType: ctaType || undefined,
+            callToActionUrl: ctaUrl || undefined,
+          });
+          if (!payload?.ok) throw new Error(payload?.error || "Couldn't publish");
+          toast("Post published to Google ✓", "success");
+          document.getElementById("gmb-post-text").value = "";
+          document.getElementById("gmb-post-form").style.display = "none";
+          setTimeout(loadGmbPosts, 1500);
+        } catch (err) {
+          statusEl.textContent = err.message;
+        } finally {
+          clearLoading(btn, "Publish to Google");
+        }
+      });
 
       document.getElementById("draft-reply-btn").addEventListener("click", async () => {
         const btn = document.getElementById("draft-reply-btn");
