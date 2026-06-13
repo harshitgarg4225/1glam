@@ -61,6 +61,12 @@
       .addon-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; cursor: pointer; font-size: 15px; }
       .addon-item input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
       .addon-price { color: var(--muted); font-size: 13px; }
+      .variant-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; cursor: pointer; background: var(--card); transition: border-color 0.15s, background 0.15s; }
+      .variant-item.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .variant-item input[type=radio] { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+      .variant-name { font-weight: 600; font-size: 14.5px; }
+      .variant-price { font-size: 13px; color: var(--accent); font-weight: 600; margin-top: 2px; }
+      .variant-desc { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
       .slots { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
       .slot { padding: 9px 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
       .slot:hover { border-color: var(--accent); background: var(--accent-soft); }
@@ -154,6 +160,10 @@
         <div class="services" id="services"></div>
         <div id="service-detail" class="hidden">
           <p id="service-desc" class="service-desc hidden"></p>
+          <div id="variants-wrap" style="display:none;margin-bottom:16px;">
+            <p class="addons-heading">Choose your package</p>
+            <div id="variants-list"></div>
+          </div>
           <div id="addons-wrap" class="addons-wrap hidden">
             <p class="addons-heading">Optional add-ons</p>
             <div id="addons-list"></div>
@@ -507,12 +517,35 @@
         const descEl = el("service-desc");
         const addonsWrap = el("addons-wrap");
         const addonsList = el("addons-list");
+        const variantsWrap = el("variants-wrap");
+        const variantsList = el("variants-list");
 
         if (type.description) {
           descEl.textContent = type.description;
           descEl.classList.remove("hidden");
         } else {
           descEl.classList.add("hidden");
+        }
+
+        // Render package variants if any exist
+        variantsList.innerHTML = "";
+        if (type.variants && type.variants.length > 0) {
+          type.variants.forEach((v, i) => {
+            const safeId = "variant-" + i;
+            const item = document.createElement("label");
+            item.className = "variant-item" + (i === 0 ? " selected" : "");
+            item.innerHTML =
+              `<input type="radio" name="serviceVariant" id="${safeId}" value="${v.name.replace(/"/g, "&quot;")}" data-price="${v.price}" ${i === 0 ? "checked" : ""} />` +
+              `<div>` +
+              `<div class="variant-name">${v.name}</div>` +
+              `<div class="variant-price">₹${Number(v.price).toLocaleString("en-IN")}</div>` +
+              (v.description ? `<div class="variant-desc">${v.description}</div>` : "") +
+              `</div>`;
+            variantsList.appendChild(item);
+          });
+          variantsWrap.style.display = "";
+        } else {
+          variantsWrap.style.display = "none";
         }
 
         addonsList.innerHTML = "";
@@ -533,7 +566,7 @@
           addonsWrap.classList.add("hidden");
         }
 
-        if (type.description || (type.addons && type.addons.length > 0)) {
+        if (type.description || (type.addons && type.addons.length > 0) || (type.variants && type.variants.length > 0)) {
           detail.classList.remove("hidden");
         } else {
           detail.classList.add("hidden");
@@ -574,6 +607,13 @@
         return "";
       }
 
+      // Variant selection highlight
+      el("variants-list").addEventListener("change", (e) => {
+        document.querySelectorAll("#variants-list .variant-item").forEach((item) => item.classList.remove("selected"));
+        const radio = e.target.closest("input[type=radio]");
+        if (radio) radio.closest(".variant-item")?.classList.add("selected");
+      });
+
       el("form").addEventListener("submit", async (event) => {
         event.preventDefault();
         const statusEl = el("status");
@@ -613,6 +653,9 @@
           .map((inp) => inp.placeholder + ": " + inp.value.trim())
           .filter((s) => s.includes(": ") && s.split(": ")[1]);
         const intakeNote = intakeAnswers.length ? "Intake: " + intakeAnswers.join(" | ") : "";
+        // Collect selected variant
+        const selectedVariant = document.querySelector("#variants-list input[name='serviceVariant']:checked");
+        const variantNote = selectedVariant ? "Package: " + selectedVariant.value : "";
         const payload = {
           eventType: selectedEventType,
           eventDate: el("eventDate").value,
@@ -622,7 +665,7 @@
           clientName: el("clientName").value.trim(),
           clientWhatsApp: el("clientWhatsApp").value.trim(),
           clientInstagram: el("clientInstagram").value.trim() || undefined,
-          notes: [el("notes").value.trim(), intakeNote].filter(Boolean).join("\n") || undefined,
+          notes: [el("notes").value.trim(), variantNote, intakeNote].filter(Boolean).join("\n") || undefined,
         };
 
         const submitBtn = el("submit");

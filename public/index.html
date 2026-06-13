@@ -1105,7 +1105,37 @@
               <h2>Your requests</h2>
               <p class="muted" style="margin:4px 0 0;font-size:13px;">Every enquiry starts here. Approve a price, the client says yes, and it becomes a <strong>Booking</strong>.</p>
             </div>
-            <button class="button secondary" type="button" id="toggle-add-client">➕ Add a client</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="button secondary" type="button" id="toggle-add-client">➕ Add a client</button>
+              <button class="button secondary small" type="button" id="toggle-recurring-btn" id="recurring-btn" style="display:none;">🔄 Recurring series</button>
+            </div>
+          </div>
+
+          <!-- Recurring booking form -->
+          <div id="recurring-form-wrap" style="display:none;margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;">
+            <h3 style="margin:0 0 12px;font-size:15px;">🔄 Schedule a recurring series</h3>
+            <p class="muted" style="margin:0 0 14px;font-size:13.5px;">Creates multiple leads at once — one per session. Each can be approved and confirmed individually.</p>
+            <div class="section-grid">
+              <div><label>Client name</label><input id="rec-client-name" placeholder="Priya Sharma" /></div>
+              <div><label>WhatsApp number</label><input id="rec-client-wa" placeholder="+91…" /></div>
+              <div>
+                <label>Service</label>
+                <select id="rec-event-type"><option>Bridal</option><option>Engagement</option><option>Reception</option><option selected>Party</option><option>Shoot</option><option>Other</option></select>
+              </div>
+              <div><label>First session date</label><input id="rec-start-date" type="date" /></div>
+              <div><label>Time (optional)</label><input id="rec-event-time" type="time" /></div>
+              <div>
+                <label>Frequency</label>
+                <select id="rec-frequency"><option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks</option><option value="monthly">Monthly</option></select>
+              </div>
+              <div><label>Number of sessions</label><input id="rec-session-count" type="number" min="1" max="52" value="4" placeholder="4" /></div>
+              <div><label>Location (optional)</label><input id="rec-location" placeholder="City or address" /></div>
+            </div>
+            <div class="action-row" style="margin-top:12px;">
+              <button class="button" type="button" id="rec-submit-btn">Create series</button>
+              <button class="button secondary" type="button" id="rec-cancel-btn">Cancel</button>
+            </div>
+            <div class="status" id="rec-status"></div>
           </div>
 
           <details class="collapse" id="add-client-collapse" style="margin-top:16px;">
@@ -2181,6 +2211,18 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
+          <details class="collapse" id="service-variants-section">
+            <summary>📦 Service packages &amp; tiers</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Create multiple pricing tiers within each service (e.g. Classic, Premium, Luxury). Clients choose their package when booking. Leave empty to use just the base price.
+              </p>
+              <div id="variants-editor" style="display:flex;flex-direction:column;gap:16px;"></div>
+              <input type="hidden" name="serviceVariantsJson" id="serviceVariantsJsonInput" />
+              <p class="muted" style="margin-top:12px;font-size:12.5px;">Changes are saved with the main settings form below.</p>
+            </div>
+          </details>
+
           <details class="collapse" id="intake-forms-section">
             <summary>📋 Intake &amp; consultation forms</summary>
             <div class="collapse-body">
@@ -2262,6 +2304,24 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
                 <div>
                   <label for="tipsEnabled">Show tip option at payment</label>
                   <select id="tipsEnabled" name="tipsEnabled">
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse" id="recurring-settings-section">
+            <summary>🔄 Recurring appointments</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Allow scheduling a series of bookings in one go (weekly, bi-weekly, or monthly). A "Schedule recurring" button will appear in the Leads tab.
+              </p>
+              <div class="form-grid">
+                <div>
+                  <label for="recurringEnabled">Enable recurring appointments</label>
+                  <select id="recurringEnabled" name="recurringEnabled">
                     <option value="No">No</option>
                     <option value="Yes">Yes</option>
                   </select>
@@ -3145,12 +3205,87 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
       document.getElementById("duration-grid")?.addEventListener("input", syncDurationField);
 
+      // ---- Service Variants Editor ----
+      const SERVICE_KEYS = ["Bridal", "Engagement", "Reception", "Party", "Shoot", "Other"];
+      let serviceVariantsData = {};
+
+      function renderVariantsEditor() {
+        const editor = document.getElementById("variants-editor");
+        if (!editor) return;
+        editor.innerHTML = SERVICE_KEYS.map((key) => {
+          const variants = serviceVariantsData[key] || [];
+          return `<div class="mini-card" data-service-key="${key}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+              <strong style="font-size:14px;">${key === "Shoot" ? "Photoshoot" : key}</strong>
+              <button class="button small secondary" type="button" data-add-variant="${key}">+ Add package</button>
+            </div>
+            <div class="variants-rows" data-key="${key}">
+              ${variants.length === 0 ? `<p class="muted" style="font-size:13px;margin:0;">No packages — uses base price. Add one above.</p>` :
+                variants.map((v, i) => `
+                <div class="filter-bar" style="margin-bottom:6px;" data-variant-row="${i}">
+                  <input type="text" placeholder="Name (e.g. Classic)" value="${escapeHtml(v.name)}" data-vfield="name" style="flex:1.5;" />
+                  <input type="number" placeholder="Price ₹" value="${v.price || ""}" data-vfield="price" style="flex:0.8;min-width:80px;" />
+                  <input type="text" placeholder="What's included (optional)" value="${escapeHtml(v.description || "")}" data-vfield="description" style="flex:2;" />
+                  <button class="button small secondary" type="button" data-remove-variant="${i}" style="padding:6px 10px;flex-shrink:0;">✕</button>
+                </div>`).join("")}
+            </div>
+          </div>`;
+        }).join("");
+        syncVariantsJson();
+      }
+
+      function syncVariantsJson() {
+        const editor = document.getElementById("variants-editor");
+        const input = document.getElementById("serviceVariantsJsonInput");
+        if (!editor || !input) return;
+        const result = {};
+        SERVICE_KEYS.forEach((key) => {
+          const rows = [...editor.querySelectorAll(`[data-key="${key}"] [data-variant-row]`)];
+          const variants = rows.map((row) => ({
+            name: row.querySelector("[data-vfield='name']").value.trim(),
+            price: Number(row.querySelector("[data-vfield='price']").value) || 0,
+            description: row.querySelector("[data-vfield='description']").value.trim() || undefined,
+          })).filter((v) => v.name);
+          if (variants.length) result[key] = variants;
+        });
+        serviceVariantsData = result;
+        input.value = JSON.stringify(result);
+      }
+
+      document.getElementById("variants-editor")?.addEventListener("click", (e) => {
+        const addKey = e.target.closest("[data-add-variant]")?.getAttribute("data-add-variant");
+        if (addKey) {
+          if (!serviceVariantsData[addKey]) serviceVariantsData[addKey] = [];
+          serviceVariantsData[addKey].push({ name: "", price: 0 });
+          renderVariantsEditor();
+          // Focus the new name input
+          const rows = document.querySelectorAll(`[data-key="${addKey}"] [data-variant-row]`);
+          rows[rows.length - 1]?.querySelector("[data-vfield='name']")?.focus();
+          return;
+        }
+        const removeBtn = e.target.closest("[data-remove-variant]");
+        if (removeBtn) {
+          const row = removeBtn.closest("[data-variant-row]");
+          const key = removeBtn.closest("[data-service-key]").getAttribute("data-service-key");
+          const idx = Number(removeBtn.getAttribute("data-remove-variant"));
+          if (serviceVariantsData[key]) serviceVariantsData[key].splice(idx, 1);
+          renderVariantsEditor();
+        }
+      });
+      document.getElementById("variants-editor")?.addEventListener("input", syncVariantsJson);
+
+      function initVariantsEditor(config) {
+        try { serviceVariantsData = JSON.parse(config.serviceVariantsJson || "{}"); } catch { serviceVariantsData = {}; }
+        renderVariantsEditor();
+      }
+
       function fillConfig(config) {
         Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v));
         fillDurationGrid(config.serviceDurations);
         syncDurationField();
         renderTemplatePicker(config.documentTemplate);
         reflectToneProfile(config.aiToneProfile);
+        initVariantsEditor(config);
         const logoPreview = document.getElementById("logo-preview");
         if (logoPreview) {
           if (config.logoUrl) { logoPreview.src = config.logoUrl; logoPreview.style.display = ""; }
@@ -6069,6 +6204,52 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (c) { c.open = !c.open; if (c.open) c.scrollIntoView({ behavior: "smooth", block: "start" }); }
       });
 
+      // ---- Recurring bookings ----
+      function showRecurringBtn() {
+        const cfg = sessionState?.workspace?.config;
+        const btn = document.getElementById("toggle-recurring-btn");
+        if (btn && cfg?.recurringEnabled === "Yes") btn.style.display = "";
+      }
+      document.getElementById("toggle-recurring-btn")?.addEventListener("click", () => {
+        const wrap = document.getElementById("recurring-form-wrap");
+        if (wrap) { wrap.style.display = wrap.style.display === "none" ? "" : "none"; }
+      });
+      document.getElementById("rec-cancel-btn")?.addEventListener("click", () => {
+        document.getElementById("recurring-form-wrap").style.display = "none";
+      });
+      document.getElementById("rec-submit-btn")?.addEventListener("click", async () => {
+        const btn = document.getElementById("rec-submit-btn");
+        const statusEl = document.getElementById("rec-status");
+        const clientName = document.getElementById("rec-client-name").value.trim();
+        const clientWhatsApp = document.getElementById("rec-client-wa").value.trim();
+        const startDate = document.getElementById("rec-start-date").value;
+        if (!clientName || !clientWhatsApp || !startDate) {
+          statusEl.textContent = "Please fill in client name, WhatsApp, and first session date.";
+          return;
+        }
+        statusEl.textContent = "";
+        setLoading(btn, "Creating series…");
+        try {
+          const payload = await postJson("/api/recurring", {
+            clientName, clientWhatsApp,
+            eventType: document.getElementById("rec-event-type").value,
+            startDate,
+            eventTime: document.getElementById("rec-event-time").value || undefined,
+            locationText: document.getElementById("rec-location").value.trim() || undefined,
+            frequency: document.getElementById("rec-frequency").value,
+            sessionCount: Number(document.getElementById("rec-session-count").value) || 4,
+          });
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          toast(`✓ ${payload.created} sessions created`, "success");
+          document.getElementById("recurring-form-wrap").style.display = "none";
+          loadDashboard();
+        } catch (err) {
+          statusEl.textContent = err.message;
+        } finally {
+          clearLoading(btn, "Create series");
+        }
+      });
+
       // ---- Session ----
       function renderMetaConnections(workspace, profile) {
         const instagram = workspace?.metaConnections?.instagram;
@@ -6183,6 +6364,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           syncProtectButton(payload.workspace);
           loadTeam();
           loadBirthdayBanner();
+          showRecurringBtn();
           // Bottom mobile nav: visible only once she's signed in.
           const bnav = document.getElementById("bottom-nav");
           if (bnav) { bnav.classList.add("authed"); bnav.style.display = ""; document.body.classList.add("has-bottom-nav"); }

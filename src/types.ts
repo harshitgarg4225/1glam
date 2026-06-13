@@ -160,6 +160,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   smtpFrom: string;
   // Recurring appointments
   recurringEnabled: string;
+  // Service variants: JSON string mapping service key → array of {name, price, description}
+  serviceVariantsJson: string;
 };
 
 export type WalletLedgerEntry = {

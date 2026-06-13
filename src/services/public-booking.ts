@@ -13,12 +13,19 @@ export type PublicAddon = {
   price: number;
 };
 
+export type ServiceVariant = {
+  name: string;
+  price: number;
+  description?: string;
+};
+
 export type PublicEventType = {
   key: string;
   label: string;
   startingPrice: number;
   description: string;
   addons: PublicAddon[];
+  variants: ServiceVariant[];
 };
 
 export type PublicAvailability = {
@@ -71,6 +78,7 @@ export type PublicPaymentDetails = {
   // (Razorpay Checkout needs it client-side); the secret never leaves the server.
   onlinePayAvailable: boolean;
   razorpayKeyId: string;
+  tipsEnabled: boolean;
 };
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -178,8 +186,31 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   Other: "Other",
 };
 
+function parseServiceVariants(config: WorkspaceConfig): Record<string, ServiceVariant[]> {
+  try {
+    const raw = config.serviceVariantsJson || "{}";
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const result: Record<string, ServiceVariant[]> = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      if (!Array.isArray(val)) continue;
+      result[key] = val
+        .filter((v): v is Record<string, unknown> => v && typeof v === "object")
+        .map((v) => ({
+          name: String(v.name || ""),
+          price: Number(v.price) || 0,
+          description: v.description ? String(v.description) : undefined,
+        }))
+        .filter((v) => v.name);
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
 function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
   const { config } = workspace;
+  const allVariants = parseServiceVariants(config);
   const eventTypes: PublicEventType[] = [
     { key: "Bridal", startingPrice: config.basePriceBridal, descKey: "serviceBridalDesc" as const, addonsKey: "serviceBridalAddons" as const },
     { key: "Engagement", startingPrice: config.basePriceEngagement, descKey: "serviceEngagementDesc" as const, addonsKey: "serviceEngagementAddons" as const },
@@ -187,13 +218,19 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
     { key: "Party", startingPrice: config.basePriceParty, descKey: "servicePartyDesc" as const, addonsKey: "servicePartyAddons" as const },
     { key: "Shoot", startingPrice: config.basePriceShoot, descKey: "serviceShootDesc" as const, addonsKey: "serviceShootAddons" as const },
     { key: "Other", startingPrice: config.basePriceOther, descKey: "serviceOtherDesc" as const, addonsKey: "serviceOtherAddons" as const },
-  ].map((entry) => ({
-    key: entry.key,
-    label: EVENT_TYPE_LABELS[entry.key] ?? entry.key,
-    startingPrice: Number(entry.startingPrice) || 0,
-    description: String(config[entry.descKey] || ""),
-    addons: parseAddons(String(config[entry.addonsKey] || "")),
-  }));
+  ].map((entry) => {
+    const variants = allVariants[entry.key] ?? [];
+    const basePrice = Number(entry.startingPrice) || 0;
+    const startingPrice = variants.length > 0 ? Math.min(...variants.map((v) => v.price)) || basePrice : basePrice;
+    return {
+      key: entry.key,
+      label: EVENT_TYPE_LABELS[entry.key] ?? entry.key,
+      startingPrice,
+      description: String(config[entry.descKey] || ""),
+      addons: parseAddons(String(config[entry.addonsKey] || "")),
+      variants,
+    };
+  });
 
   return {
     workspaceId: workspace.workspaceId,
@@ -489,6 +526,7 @@ export async function getPublicPaymentDetails(
     paymentStatus: lead.paymentStatus || "",
     onlinePayAvailable: Boolean(config.razorpayKeyId && config.razorpayKeySecret),
     razorpayKeyId: config.razorpayKeyId || "",
+    tipsEnabled: config.tipsEnabled === "Yes",
   };
 }
 

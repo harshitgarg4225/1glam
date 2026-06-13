@@ -156,6 +156,8 @@ export const workspaceConfigSchema = z.object({
   smtpFrom: z.string().optional().default(""),
   // Recurring appointments
   recurringEnabled: z.string().optional().default("No"),
+  // Service variants JSON
+  serviceVariantsJson: z.string().optional().default("{}"),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

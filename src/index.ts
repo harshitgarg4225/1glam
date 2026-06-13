@@ -4750,6 +4750,63 @@ app.post("/api/bookings/:bookingId/no-show", async (req, res, next) => {
   }
 });
 
+// ---- Recurring appointments ----
+// Creates a series of bookings (via leads) for a recurring appointment.
+// Each occurrence gets its own lead with a shared recurringGroupId in the notes.
+app.post("/api/recurring", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    if (workspace.config.recurringEnabled !== "Yes") {
+      return res.status(400).json({ error: "Recurring appointments are not enabled." });
+    }
+
+    const { clientName, clientWhatsApp, eventType, startDate, eventTime, locationText,
+      frequency, sessionCount } = req.body;
+    if (!clientName || !clientWhatsApp || !eventType || !startDate || !frequency) {
+      return res.status(400).json({ error: "Missing required fields." });
+    }
+    const count = Math.min(Math.max(Number(sessionCount) || 4, 1), 52);
+    const FREQ_DAYS: Record<string, number> = { weekly: 7, biweekly: 14, monthly: 30 };
+    const stepDays = FREQ_DAYS[frequency] ?? 7;
+
+    const groupId = `REC-${Date.now()}`;
+    const leads: Array<{ leadId: string; eventDate: string }> = [];
+
+    for (let i = 0; i < count; i++) {
+      const eventDate = new Date(startDate);
+      eventDate.setUTCDate(eventDate.getUTCDate() + i * stepDays);
+      const dateStr = eventDate.toISOString().slice(0, 10);
+      try {
+        const result = await createLeadForWorkspace(
+          req.session.profile.email,
+          req.session.googleTokens,
+          {
+            clientName: String(clientName),
+            clientWhatsApp: String(clientWhatsApp),
+            eventType: String(eventType),
+            eventDate: dateStr,
+            eventTime: eventTime ? String(eventTime) : undefined,
+            locationText: locationText ? String(locationText) : workspace.config.city || "",
+            source: "Manual" as const,
+            inboundMessage: `Recurring series: ${groupId} (${i + 1}/${count}, ${frequency})`,
+          },
+        );
+        leads.push({ leadId: result.lead.leadId, eventDate: dateStr });
+      } catch {
+        // Skip dates that fail (e.g. blocked); continue with the rest.
+      }
+    }
+
+    res.json({ ok: true, groupId, created: leads.length, leads });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ---- Saved quote packages, parsed from the quotePackages config — one-tap line
 // items when building a quote.
 app.get("/api/quote-packages", async (req, res, next) => {

@@ -469,6 +469,7 @@ async function seedSpreadsheet(
     ["smtp_pass", config.smtpPass, "SMTP password or app password"],
     ["smtp_from", config.smtpFrom, "From address shown to recipients (e.g. hello@glowbyaisha.com)"],
     ["recurring_enabled", config.recurringEnabled, "Allow recurring appointment setup (Yes/No)"],
+    ["service_variants_json", config.serviceVariantsJson, "Service package tiers per service type (JSON)"],
   ];
 
   const artistsRows = [[
@@ -763,6 +764,7 @@ async function loadConfigFromSpreadsheet(
       smtpPass: String(values.smtp_pass ?? base.smtpPass),
       smtpFrom: String(values.smtp_from ?? base.smtpFrom),
       recurringEnabled: String(values.recurring_enabled ?? base.recurringEnabled),
+      serviceVariantsJson: String(values.service_variants_json ?? base.serviceVariantsJson),
     });
 
     return parsed.success ? parsed.data : base;
