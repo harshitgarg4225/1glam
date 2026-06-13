@@ -158,6 +158,10 @@
             <p class="addons-heading">Optional add-ons</p>
             <div id="addons-list"></div>
           </div>
+          <div id="intake-wrap" style="display:none;margin-top:12px;">
+            <p class="addons-heading">A few quick questions</p>
+            <div id="intake-questions"></div>
+          </div>
         </div>
 
         <form id="form">
@@ -534,6 +538,28 @@
         } else {
           detail.classList.add("hidden");
         }
+
+        // Load intake questions for this service type
+        const intakeWrap = el("intake-wrap");
+        const intakeQs = el("intake-questions");
+        intakeWrap.style.display = "none";
+        intakeQs.innerHTML = "";
+        if (workspaceId && type.key) {
+          fetch("/api/public/" + encodeURIComponent(workspaceId) + "/intake-form/" + encodeURIComponent(type.key))
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => {
+              const questions = data?.questions || [];
+              if (!questions.length) return;
+              intakeQs.innerHTML = questions.map((q, i) => `
+                <div style="margin-bottom:10px;">
+                  <label style="font-size:13.5px;display:block;margin-bottom:4px;font-weight:500;">${q}</label>
+                  <input data-intake-q="${i}" name="intakeQ${i}" class="intake-answer" style="width:100%;box-sizing:border-box;" placeholder="Your answer" />
+                </div>`).join("");
+              intakeWrap.style.display = "";
+              detail.classList.remove("hidden");
+            })
+            .catch(() => null);
+        }
       }
 
       function dateUnavailableReason(value) {
@@ -582,6 +608,11 @@
 
         const checkedAddons = [...document.querySelectorAll("#addons-list input:checked")]
           .map((cb) => cb.value).join(", ");
+        // Collect intake form answers into ownerNotes prefix
+        const intakeAnswers = [...document.querySelectorAll(".intake-answer")]
+          .map((inp) => inp.placeholder + ": " + inp.value.trim())
+          .filter((s) => s.includes(": ") && s.split(": ")[1]);
+        const intakeNote = intakeAnswers.length ? "Intake: " + intakeAnswers.join(" | ") : "";
         const payload = {
           eventType: selectedEventType,
           eventDate: el("eventDate").value,
@@ -591,7 +622,7 @@
           clientName: el("clientName").value.trim(),
           clientWhatsApp: el("clientWhatsApp").value.trim(),
           clientInstagram: el("clientInstagram").value.trim() || undefined,
-          notes: el("notes").value.trim() || undefined,
+          notes: [el("notes").value.trim(), intakeNote].filter(Boolean).join("\n") || undefined,
         };
 
         const submitBtn = el("submit");

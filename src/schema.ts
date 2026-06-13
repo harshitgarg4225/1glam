@@ -127,6 +127,35 @@ export const workspaceConfigSchema = z.object({
   gstPercentage: z.coerce.number().min(0).max(28).optional().default(0),
   cancellationWindowDays: z.coerce.number().min(0).max(365).optional().default(7),
   cancellationFeePercent: z.coerce.number().min(0).max(100).optional().default(50),
+  // Loyalty program
+  loyaltyEnabled: z.string().optional().default("No"),
+  loyaltyVisitsForReward: numberFromForm.optional().default(5),
+  loyaltyRewardValue: numberFromForm.optional().default(500),
+  loyaltyRewardNote: z.string().optional().default(""),
+  // Gift cards
+  giftCardsEnabled: z.string().optional().default("No"),
+  // Intake / consultation forms (one per service type — comma-separated questions)
+  intakeFormBridal: z.string().optional().default(""),
+  intakeFormEngagement: z.string().optional().default(""),
+  intakeFormReception: z.string().optional().default(""),
+  intakeFormParty: z.string().optional().default(""),
+  intakeFormShoot: z.string().optional().default(""),
+  intakeFormOther: z.string().optional().default(""),
+  // Commission / tips
+  commissionDefaultPercent: numberFromForm.optional().default(0),
+  tipsEnabled: z.string().optional().default("No"),
+  // No-show tracking
+  noShowFeePercent: numberFromForm.optional().default(0),
+  noShowPolicy: z.string().optional().default(""),
+  // Email channel
+  emailEnabled: z.string().optional().default("No"),
+  smtpHost: z.string().optional().default(""),
+  smtpPort: numberFromForm.optional().default(587),
+  smtpUser: z.string().optional().default(""),
+  smtpPass: z.string().optional().default(""),
+  smtpFrom: z.string().optional().default(""),
+  // Recurring appointments
+  recurringEnabled: z.string().optional().default("No"),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

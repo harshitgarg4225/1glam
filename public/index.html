@@ -1558,7 +1558,7 @@
         </div>
         <div class="panel section">
           <div class="kicker">Client Feedback</div>
-          <h2>Reviews</h2>
+          <h2>Review Tracker</h2>
           <p class="muted" style="margin-bottom:16px;font-size:14px;">
             Reviews requested via the Bookings tab appear here. Mark reviews confirmed once the client leaves one on Google.
           </p>
@@ -1575,6 +1575,46 @@
               </tr></thead>
               <tbody id="reviews-table-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr></tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Loyalty stamps section (shown when loyalty is enabled) -->
+        <div id="loyalty-section" style="margin-top:24px;display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">⭐ Loyalty stamps</div>
+              <h2>Reward loyal clients</h2>
+            </div>
+            <button class="button secondary small" type="button" id="loyalty-refresh">↻ Refresh</button>
+          </div>
+          <p class="muted" style="margin:8px 0 14px;font-size:13.5px;" id="loyalty-config-note">Enable the loyalty program in Settings → Loyalty &amp; Retention to start rewarding repeat clients.</p>
+          <div id="loyalty-list"></div>
+        </div>
+
+        <!-- Gift cards section (shown when gift cards are enabled) -->
+        <div id="gift-cards-section" style="margin-top:24px;display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">🎁 Gift cards</div>
+              <h2>Digital gift cards</h2>
+            </div>
+            <button class="button" type="button" id="create-gift-card-btn">+ Create gift card</button>
+          </div>
+          <p class="muted" style="margin:8px 0 14px;font-size:13.5px;">Create digital gift cards for clients to purchase and give to others. Codes are applied at booking time.</p>
+          <div id="gift-cards-list"><p class="muted">Loading…</p></div>
+          <div id="gift-card-form-wrap" style="display:none;margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;">
+            <h3 style="margin:0 0 14px;font-size:15px;">New gift card</h3>
+            <div class="form-grid">
+              <div><label>Value (₹)</label><input id="gc-amount" type="number" min="100" placeholder="5000" /></div>
+              <div><label>Recipient name (optional)</label><input id="gc-name" placeholder="For Priya's wedding gift" /></div>
+              <div><label>Purchaser WhatsApp (optional)</label><input id="gc-phone" placeholder="+91…" /></div>
+              <div class="wide"><label>Message to show (optional)</label><input id="gc-message" placeholder="Wishing you a beautiful look!" /></div>
+            </div>
+            <div class="action-row" style="margin-top:12px;">
+              <button class="button" type="button" id="gc-create-confirm">Create &amp; copy code</button>
+              <button class="button secondary" type="button" id="gc-create-cancel">Cancel</button>
+            </div>
+            <div class="status" id="gc-status"></div>
           </div>
         </div>
       </section>
@@ -2066,6 +2106,122 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
                 <div><label>Other — Description</label><input name="serviceOtherDesc" placeholder="Custom makeup services…" /></div>
                 <div><label>Other — Add-ons</label><input name="serviceOtherAddons" placeholder="" /></div>
               </div>
+            </div>
+          </details>
+
+          <details class="collapse" id="intake-forms-section">
+            <summary>📋 Intake &amp; consultation forms</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Add questions clients answer when they book. Questions appear after they select the service. Enter questions comma-separated — e.g. <em>What skin type do you have?, Airbrush or HD?, Trial needed?</em>
+              </p>
+              <div class="form-grid">
+                <div class="wide"><label>Bridal — intake questions</label><input name="intakeFormBridal" placeholder="Skin type?, Trial needed?, Airbrush or HD?" /></div>
+                <div class="wide"><label>Engagement — intake questions</label><input name="intakeFormEngagement" placeholder="Skin type?, Look preference?" /></div>
+                <div class="wide"><label>Reception — intake questions</label><input name="intakeFormReception" placeholder="Skin type?, Heavy or dewy look?" /></div>
+                <div class="wide"><label>Party — intake questions</label><input name="intakeFormParty" placeholder="Glam or natural look?" /></div>
+                <div class="wide"><label>Photoshoot — intake questions</label><input name="intakeFormShoot" placeholder="Indoor or outdoor?, HD or airbrush?" /></div>
+                <div class="wide"><label>Other — intake questions</label><input name="intakeFormOther" placeholder="Any specific requirements?" /></div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse" id="loyalty-settings-section">
+            <summary>⭐ Loyalty &amp; retention</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Reward repeat clients automatically. When a client completes the set number of bookings, you're notified and can send them a one-tap reward message.
+              </p>
+              <div class="form-grid">
+                <div>
+                  <label for="loyaltyEnabled">Enable loyalty program</label>
+                  <select id="loyaltyEnabled" name="loyaltyEnabled">
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+                <div><label for="loyaltyVisitsForReward">Bookings needed for reward</label><input id="loyaltyVisitsForReward" name="loyaltyVisitsForReward" type="number" min="1" max="20" placeholder="5" /></div>
+                <div><label for="loyaltyRewardValue">Reward value (₹ discount)</label><input id="loyaltyRewardValue" name="loyaltyRewardValue" type="number" min="0" placeholder="500" /></div>
+                <div class="wide"><label for="loyaltyRewardNote">Reward description (shown to client)</label><input id="loyaltyRewardNote" name="loyaltyRewardNote" placeholder="₹500 off your next booking!" /></div>
+              </div>
+              <p class="muted" style="margin-top:10px;font-size:12.5px;">Go to the <strong>Reviews</strong> tab → Loyalty stamps to see who's earned a reward and send it with one tap.</p>
+            </div>
+          </details>
+
+          <details class="collapse" id="gift-cards-settings-section">
+            <summary>🎁 Gift cards</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Allow clients to purchase digital gift cards that others can redeem at booking time. Cards are managed from the <strong>Reviews</strong> tab.
+              </p>
+              <div class="form-grid">
+                <div>
+                  <label for="giftCardsEnabled">Enable gift cards</label>
+                  <select id="giftCardsEnabled" name="giftCardsEnabled">
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse" id="no-show-settings-section">
+            <summary>🚫 No-show protection</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Configure your no-show policy. When you mark a booking as a no-show, you'll be reminded of the fee. The policy text appears on your booking page.
+              </p>
+              <div class="form-grid">
+                <div><label for="noShowFeePercent">No-show fee (%)</label><input id="noShowFeePercent" name="noShowFeePercent" type="number" min="0" max="100" placeholder="50" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Percentage of booking price charged on no-shows. 0 = no fee.</p></div>
+                <div class="wide"><label for="noShowPolicy">No-show policy text</label><textarea id="noShowPolicy" name="noShowPolicy" rows="2" placeholder="No-shows within 48 hours forfeit the advance payment." style="width:100%;box-sizing:border-box;"></textarea></div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse" id="commission-settings-section">
+            <summary>💼 Commission &amp; payouts</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Set a default commission percentage paid to specialists. The <strong>Team</strong> tab shows earnings and commission due per artist.
+              </p>
+              <div class="form-grid">
+                <div><label for="commissionDefaultPercent">Default commission (%)</label><input id="commissionDefaultPercent" name="commissionDefaultPercent" type="number" min="0" max="100" placeholder="20" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Percentage of booking value paid to the assigned specialist.</p></div>
+                <div>
+                  <label for="tipsEnabled">Show tip option at payment</label>
+                  <select id="tipsEnabled" name="tipsEnabled">
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse" id="email-settings-section">
+            <summary>📧 Email notifications (SMTP)</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Send booking confirmations, quotes, invoices and reminders by email in addition to WhatsApp. Works with Gmail, Outlook, SendGrid, or any SMTP provider.
+              </p>
+              <div class="form-grid">
+                <div>
+                  <label for="emailEnabled">Enable email notifications</label>
+                  <select id="emailEnabled" name="emailEnabled">
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+                <div><label for="smtpHost">SMTP host</label><input id="smtpHost" name="smtpHost" placeholder="smtp.gmail.com" /></div>
+                <div><label for="smtpPort">SMTP port</label><input id="smtpPort" name="smtpPort" type="number" placeholder="587" /></div>
+                <div><label for="smtpUser">SMTP username / email</label><input id="smtpUser" name="smtpUser" type="email" placeholder="hello@glowbyaisha.com" /></div>
+                <div><label for="smtpPass">SMTP password / app password</label><input id="smtpPass" name="smtpPass" type="password" placeholder="App password from Google/Outlook" /></div>
+                <div><label for="smtpFrom">From address (optional)</label><input id="smtpFrom" name="smtpFrom" type="email" placeholder="Glow by Aisha &lt;noreply@glowbyaisha.com&gt;" /></div>
+              </div>
+              <div class="action-row" style="margin-top:12px;">
+                <button class="button secondary small" type="button" id="email-test-btn">Send test email</button>
+              </div>
+              <div class="status" id="email-test-status"></div>
             </div>
           </details>
 
@@ -2824,8 +2980,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (name === "clients") renderClients();
         if (name === "calendar") { renderCalendar(); renderBlockedDates(); }
         if (name === "conversations") loadConversations();
-        if (name === "team") loadTeam();
-        if (name === "reviews") loadReviews();
+        if (name === "team") { loadTeam(); loadCommissionReport().then(renderTeamEarnings); }
+        if (name === "reviews") { loadReviews(); loadLoyalty(); loadGiftCards(); }
         if (name === "analytics") { loadAnalytics(); loadMonthlyRecap(); loadGstReport(); }
         if (name === "mypage") loadMyPage();
         if (name === "wallet") loadWallet();
@@ -4117,6 +4273,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                   <button class="button small secondary" data-booking-reschedule-link="${booking.bookingId}">🔗 Send reschedule link</button>
                   <button class="button small secondary" data-booking-expenses="${booking.bookingId}">💸 Expenses</button>
                   <button class="button small secondary" data-book-again-name="${escapeHtml(booking.clientName)}" data-book-again-phone="${escapeHtml(booking.clientWhatsApp)}">🔁 Book again</button>
+                  <button class="button small secondary" data-booking-no-show="${booking.bookingId}" title="Mark as no-show">🚫 No show</button>
                   <button class="button small secondary danger" data-booking-cancel="${booking.bookingId}">✕ Cancel booking</button>
                 </div>
               </details>
@@ -4463,10 +4620,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       // Per-specialist earnings from booking assignments: this month + all
       // time, with collected money — the basis for commission/payouts.
+      let commissionReport = [];
+      async function loadCommissionReport() {
+        try {
+          const data = await fetchJson("/api/team/commission-report");
+          if (data.ok) commissionReport = data.report || [];
+        } catch { /* non-critical */ }
+      }
+
       function renderTeamEarnings() {
         const box = document.getElementById("team-earnings");
         if (!box) return;
-        const bookings = (sessionState?.dashboard?.bookings || []).filter((b) => b.status !== "Cancelled");
+        const bookings = (sessionState?.dashboard?.bookings || []).filter((b) => b.status !== "Cancelled" && b.status !== "No Show");
         if (!bookings.length) {
           box.innerHTML = `<p class="muted" style="font-size:13.5px;">Earnings appear here once you have bookings with assigned specialists.</p>`;
           return;
@@ -4475,21 +4640,26 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const byArtist = {};
         for (const b of bookings) {
           const name = (b.assignedArtist || "").trim() || "Unassigned";
-          const row = (byArtist[name] = byArtist[name] || { jobs: 0, value: 0, collected: 0, monthJobs: 0, monthValue: 0 });
+          const row = (byArtist[name] = byArtist[name] || { jobs: 0, value: 0, collected: 0, monthJobs: 0, monthValue: 0, commission: 0 });
           row.jobs += 1;
           row.value += Number(b.finalPrice || 0);
           row.collected += bookingPaidTotal(b);
           if ((b.eventDate || "").startsWith(monthKey)) { row.monthJobs += 1; row.monthValue += Number(b.finalPrice || 0); }
+          // Apply commission from API report if available
+          const cr = commissionReport.find((r) => r.artistName === name);
+          if (cr) row.commission = cr.commissionAmount;
         }
         const rows = Object.entries(byArtist).sort((a, b) => b[1].value - a[1].value);
+        const showCommission = commissionReport.length > 0 && commissionReport.some((r) => r.commissionAmount > 0);
         box.innerHTML = `<div class="table-wrap cards-on-mobile"><table>
-          <thead><tr><th>Specialist</th><th>This month</th><th>All time</th><th>Collected</th></tr></thead>
+          <thead><tr><th>Specialist</th><th>This month</th><th>All time</th><th>Collected</th>${showCommission ? "<th>Commission due</th>" : ""}</tr></thead>
           <tbody>${rows.map(([name, r]) => `
             <tr>
               <td data-label="Specialist"><strong>${escapeHtml(name)}</strong></td>
               <td data-label="This month">${r.monthJobs ? `${r.monthJobs} job${r.monthJobs > 1 ? "s" : ""} · ${formatMoney(r.monthValue)}` : "—"}</td>
               <td data-label="All time">${r.jobs} job${r.jobs > 1 ? "s" : ""} · ${formatMoney(r.value)}</td>
               <td data-label="Collected" style="color:var(--success);">${formatMoney(r.collected)}</td>
+              ${showCommission ? `<td data-label="Commission due" style="font-weight:600;">${r.commission > 0 ? formatMoney(r.commission) : "—"}</td>` : ""}
             </tr>`).join("")}
           </tbody></table></div>`;
       }
@@ -4887,6 +5057,149 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           toast(error.message, "error");
           clearLoading(btn);
         }
+      });
+
+      // ---- Loyalty program ----
+      async function loadLoyalty() {
+        const section = document.getElementById("loyalty-section");
+        const listEl = document.getElementById("loyalty-list");
+        const note = document.getElementById("loyalty-config-note");
+        if (!section || !listEl) return;
+        try {
+          const data = await fetchJson("/api/loyalty");
+          section.style.display = "";
+          if (!data.enabled) {
+            note.textContent = "Enable the loyalty program in Settings → Loyalty & Retention to start rewarding repeat clients.";
+            listEl.innerHTML = "";
+            return;
+          }
+          note.textContent = `Rewarding clients every ${sessionState?.workspace?.config?.loyaltyVisitsForReward || 5} bookings. ${data.statuses?.filter(s => s.rewardEarned).length || 0} reward(s) ready to send.`;
+          const statuses = data.statuses || [];
+          if (!statuses.length) {
+            listEl.innerHTML = `<p class="muted" style="font-size:13.5px;">No clients in the loyalty program yet. They appear here after completing their first booking.</p>`;
+            return;
+          }
+          const milestone = sessionState?.workspace?.config?.loyaltyVisitsForReward || 5;
+          listEl.innerHTML = `<div class="mini-grid">${statuses.sort((a, b) => b.visits - a.visits).map((s) => {
+            const pct = Math.min(100, Math.round((s.visits % milestone || milestone) / milestone * 100));
+            const earned = s.rewardEarned;
+            return `<div class="mini-card" style="${earned ? "border-color:var(--primary);background:var(--primary-tint,#fdf4ef);" : ""}">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+                <strong style="font-size:14px;">${escapeHtml(s.clientName)}</strong>
+                ${earned ? `<span class="pill success">🎉 Reward!</span>` : ""}
+              </div>
+              <p class="card-meta" style="margin:0 0 8px;">📱 ${escapeHtml(s.phone)}</p>
+              <div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden;margin-bottom:8px;">
+                <div style="background:var(--primary);height:100%;width:${pct}%;border-radius:4px;transition:width .3s;"></div>
+              </div>
+              <p class="card-meta" style="margin:0 0 10px;">${s.visits} of ${s.nextMilestone} bookings${earned ? ` — ${escapeHtml(s.rewardNote)}` : ""}</p>
+              ${earned ? `<button class="button small" data-loyalty-send="${s.phone}" data-loyalty-name="${escapeHtml(s.clientName)}">💬 Send reward</button>` : ""}
+            </div>`;
+          }).join("")}</div>`;
+        } catch { section.style.display = "none"; }
+      }
+
+      document.getElementById("loyalty-refresh")?.addEventListener("click", () => loadLoyalty());
+
+      document.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-loyalty-send]");
+        if (!btn) return;
+        const phone = btn.getAttribute("data-loyalty-send");
+        const name = btn.getAttribute("data-loyalty-name");
+        setLoading(btn, "Sending…");
+        try {
+          await postJson(`/api/loyalty/${phone}/send-reward`, {});
+          toast(`Loyalty reward sent to ${name}!`, "success");
+        } catch (err) { toast(err.message, "error"); }
+        finally { clearLoading(btn); }
+      });
+
+      // ---- Gift cards ----
+      async function loadGiftCards() {
+        const section = document.getElementById("gift-cards-section");
+        const listEl = document.getElementById("gift-cards-list");
+        if (!section || !listEl) return;
+        const cfg = sessionState?.workspace?.config || {};
+        if (cfg.giftCardsEnabled !== "Yes") { section.style.display = "none"; return; }
+        section.style.display = "";
+        try {
+          const data = await fetchJson("/api/gift-cards");
+          const cards = data.cards || [];
+          if (!cards.length) {
+            listEl.innerHTML = `<p class="muted" style="font-size:13.5px;">No gift cards yet. Tap "Create gift card" to generate one.</p>`;
+            return;
+          }
+          listEl.innerHTML = `<div class="table-wrap"><table>
+            <thead><tr><th>Code</th><th>Value</th><th>Purchaser</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>${cards.map((c) => `<tr>
+              <td data-label="Code"><code style="font-size:15px;font-weight:700;letter-spacing:.05em;">${escapeHtml(c.code)}</code></td>
+              <td data-label="Value">${formatMoney(c.amount)}</td>
+              <td data-label="Purchaser">${escapeHtml(c.purchaserName || "—")}${c.purchaserWhatsApp ? `<br><span class="muted" style="font-size:12px;">${escapeHtml(c.purchaserWhatsApp)}</span>` : ""}</td>
+              <td data-label="Status"><span class="pill ${c.status === "Active" ? "success" : c.status === "Redeemed" ? "info" : "danger"}">${escapeHtml(c.status)}</span></td>
+              <td data-label="Actions">
+                <div class="action-row" style="gap:4px;">
+                  <button class="button tiny secondary" data-gc-copy="${escapeHtml(c.code)}" title="Copy code">📋 Copy</button>
+                  ${c.status === "Active" ? `<button class="button tiny secondary danger" data-gc-deactivate="${escapeHtml(c.code)}">Deactivate</button>` : ""}
+                </div>
+              </td>
+            </tr>`).join("")}
+            </tbody></table></div>`;
+        } catch { listEl.innerHTML = `<p class="muted">Could not load gift cards.</p>`; }
+      }
+
+      document.getElementById("create-gift-card-btn")?.addEventListener("click", () => {
+        const form = document.getElementById("gift-card-form-wrap");
+        form.style.display = form.style.display === "none" ? "" : "none";
+      });
+      document.getElementById("gc-create-cancel")?.addEventListener("click", () => {
+        document.getElementById("gift-card-form-wrap").style.display = "none";
+      });
+      document.getElementById("gc-create-confirm")?.addEventListener("click", async () => {
+        const amount = Number(document.getElementById("gc-amount").value);
+        if (!amount || amount < 100) { toast("Enter a valid amount (₹100 minimum)", "error"); return; }
+        const btn = document.getElementById("gc-create-confirm");
+        setLoading(btn, "Creating…");
+        try {
+          const data = await postJson("/api/gift-cards", {
+            amount,
+            purchaserName: document.getElementById("gc-name").value,
+            purchaserWhatsApp: document.getElementById("gc-phone").value,
+            message: document.getElementById("gc-message").value,
+          });
+          if (data.ok) {
+            await navigator.clipboard.writeText(data.card.code).catch(() => null);
+            toast(`Gift card created! Code: ${data.card.code} (copied)`, "success");
+            document.getElementById("gift-card-form-wrap").style.display = "none";
+            loadGiftCards();
+          }
+        } catch (err) { toast(err.message, "error"); }
+        finally { clearLoading(btn); }
+      });
+
+      document.getElementById("gift-cards-list")?.addEventListener("click", async (e) => {
+        const copyBtn = e.target.closest("[data-gc-copy]");
+        if (copyBtn) { await navigator.clipboard.writeText(copyBtn.getAttribute("data-gc-copy")).catch(() => null); toast("Code copied!", "success"); return; }
+        const deactivateBtn = e.target.closest("[data-gc-deactivate]");
+        if (deactivateBtn) {
+          const code = deactivateBtn.getAttribute("data-gc-deactivate");
+          if (!(await showConfirm("Deactivate this gift card?", `Code ${code} will be marked invalid and cannot be used.`, "Deactivate"))) return;
+          setLoading(deactivateBtn, "…");
+          try { await postJson(`/api/gift-cards/${code}/deactivate`, {}); toast("Gift card deactivated.", "success"); loadGiftCards(); }
+          catch (err) { toast(err.message, "error"); clearLoading(deactivateBtn); }
+        }
+      });
+
+      // ---- Email test ----
+      document.getElementById("email-test-btn")?.addEventListener("click", async () => {
+        const btn = document.getElementById("email-test-btn");
+        const status = document.getElementById("email-test-status");
+        setLoading(btn, "Sending…");
+        try {
+          const data = await postJson("/api/email/test", {});
+          if (data.ok) showStatus(status, data.message || "Test email sent!", "success");
+          else showStatus(status, data.error || "Failed", "error");
+        } catch (err) { showStatus(status, err.message, "error"); }
+        finally { clearLoading(btn); }
       });
 
       // ---- Wallet & credits ----
@@ -7124,6 +7437,27 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
         const ex = e.target.closest("[data-booking-expenses]");
         if (ex) { openExpenses(ex.getAttribute("data-booking-expenses")); return; }
+        const nsx = e.target.closest("[data-booking-no-show]");
+        if (nsx) {
+          const bookingId = nsx.getAttribute("data-booking-no-show");
+          const b = (sessionState?.dashboard?.bookings || []).find((x) => x.bookingId === bookingId);
+          if (!(await showConfirm(`Mark ${b ? b.clientName + "'s" : "this"} booking as no-show?`, "The booking stays on record but is marked as a no-show. You can still collect a fee if applicable.", "Mark no-show"))) return;
+          setLoading(nsx, "Marking…");
+          try {
+            const result = await postJson(`/api/bookings/${bookingId}/no-show`, {});
+            const cfg = sessionState?.workspace?.config || {};
+            const noShowFee = result?.noShowFeePercent;
+            if (noShowFee > 0 && b?.finalPrice) {
+              const fee = Math.round(b.finalPrice * noShowFee / 100);
+              toast(`No-show recorded. Consider charging ₹${fee.toLocaleString("en-IN")} (${noShowFee}% no-show fee).`, "info");
+            } else {
+              toast("No-show recorded.", "success");
+            }
+            await refreshDashboard();
+          } catch (error) { toast(error.message, "error"); }
+          finally { clearLoading(nsx); }
+          return;
+        }
         const cx = e.target.closest("[data-booking-cancel]");
         if (cx) {
           const bookingId = cx.getAttribute("data-booking-cancel");

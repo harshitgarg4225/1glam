@@ -6,6 +6,7 @@ export const sheetNames = {
   followUps: "FollowUps",
   interactionLog: "InteractionLog",
   reviews: "Reviews",
+  giftCards: "GiftCards",
 } as const;
 
 export const leadHeaders = [
@@ -135,4 +136,18 @@ export const reviewHeaders = [
   "Review Link Clicked",
   "Review Confirmed",
   "Notes",
+] as const;
+
+export const giftCardHeaders = [
+  "Card ID",
+  "Code",
+  "Amount",
+  "Message",
+  "Purchaser Name",
+  "Purchaser Email",
+  "Purchaser WhatsApp",
+  "Redeemed By Lead ID",
+  "Redeemed At",
+  "Created At",
+  "Status",
 ] as const;

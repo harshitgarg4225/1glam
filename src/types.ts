@@ -131,6 +131,35 @@ export type WorkspaceConfig = PricingRuleConfig & {
   gstPercentage: number;
   cancellationWindowDays: number;
   cancellationFeePercent: number;
+  // Loyalty program
+  loyaltyEnabled: string;
+  loyaltyVisitsForReward: number;
+  loyaltyRewardValue: number;
+  loyaltyRewardNote: string;
+  // Gift cards
+  giftCardsEnabled: string;
+  // Intake / consultation forms (comma-separated questions per service type)
+  intakeFormBridal: string;
+  intakeFormEngagement: string;
+  intakeFormReception: string;
+  intakeFormParty: string;
+  intakeFormShoot: string;
+  intakeFormOther: string;
+  // Staff commission & tips
+  commissionDefaultPercent: number;
+  tipsEnabled: string;
+  // No-show protection
+  noShowFeePercent: number;
+  noShowPolicy: string;
+  // Email channel (SMTP)
+  emailEnabled: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFrom: string;
+  // Recurring appointments
+  recurringEnabled: string;
 };
 
 export type WalletLedgerEntry = {

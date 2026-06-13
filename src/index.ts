@@ -117,6 +117,9 @@ import {
   verifyLeegalityWebhookRequest,
 } from "./services/contracts.js";
 import { sheetNames } from "./services/sheet-definitions.js";
+import { computeLoyaltyStatuses, loyaltyForPhone } from "./services/loyalty.js";
+import { generateGiftCode, parseGiftCard, giftCardToRow } from "./services/gift-cards.js";
+import { emailEnabled, sendEmail, wrapEmailHtml } from "./services/email.js";
 import { TtlCache } from "./services/cache.js";
 import type { MetaChannel, WorkspaceConfig, WorkspaceRecord } from "./types.js";
 import {
@@ -4383,7 +4386,315 @@ app.post("/api/waitlist/:leadId/offer", async (req, res, next) => {
   }
 });
 
-// Saved quote packages, parsed from the quotePackages config — one-tap line
+// ---- Loyalty program ----
+
+app.get("/api/loyalty", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const statuses = computeLoyaltyStatuses(workspace.config, bookings);
+    res.json({ ok: true, statuses, enabled: workspace.config.loyaltyEnabled === "Yes" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/loyalty/:phone", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const status = loyaltyForPhone(workspace.config, bookings, req.params.phone);
+    res.json({ ok: true, status });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Send loyalty reward WhatsApp to client
+app.post("/api/loyalty/:phone/send-reward", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const status = loyaltyForPhone(workspace.config, bookings, req.params.phone);
+    if (!status) return res.status(404).json({ error: "Client not found in loyalty program" });
+
+    const rewardNote = status.rewardNote;
+    const brandName = workspace.config.businessName || workspace.name;
+    const message = `Hi ${status.clientName} 🌟 You've completed ${status.visits} bookings with ${brandName}! Your loyalty has earned you: ${rewardNote}. Mention this on your next booking. Thank you for being an amazing client! ${workspace.config.aiSignOff || ""}`.trim();
+
+    const connection = workspace.metaConnections?.whatsapp;
+    if (connection?.accessToken && connection?.phoneNumberId) {
+      await sendChannelMessage({
+        workspace,
+        connection,
+        channel: "WhatsApp",
+        actorId: req.params.phone,
+        message,
+      });
+    }
+    res.json({ ok: true, message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Gift cards ----
+
+app.get("/api/gift-cards", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const res2 = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!A2:K`,
+    });
+    const cards = (res2.data.values ?? []).map(parseGiftCard);
+    res.json({ ok: true, cards });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/gift-cards", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const amount = Number(req.body?.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Amount is required" });
+
+    const card = {
+      cardId: `GC-${Date.now()}`,
+      code: generateGiftCode(),
+      amount,
+      message: String(req.body?.message || ""),
+      purchaserName: String(req.body?.purchaserName || ""),
+      purchaserEmail: String(req.body?.purchaserEmail || ""),
+      purchaserWhatsApp: String(req.body?.purchaserWhatsApp || ""),
+      redeemedByLeadId: "",
+      redeemedAt: "",
+      createdAt: new Date().toISOString(),
+      status: "Active" as const,
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!A:K`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [giftCardToRow(card)] },
+    });
+    res.json({ ok: true, card });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/gift-cards/:code/deactivate", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const res2 = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!A2:K`,
+    });
+    const rows = res2.data.values ?? [];
+    const idx = rows.findIndex((r) => r[1] === req.params.code);
+    if (idx < 0) return res.status(404).json({ error: "Gift card not found" });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!K${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [["Deactivated"]] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public: validate a gift card code before booking
+app.get("/api/public/:workspaceId/gift-cards/:code", publicReadLimiter, async (req, res, next) => {
+  try {
+    const code = String(req.params.code).toUpperCase();
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace || workspace.config.giftCardsEnabled !== "Yes") {
+      return res.status(404).json({ error: "Gift cards not available" });
+    }
+    const tokens = await getWorkspaceCredentials(workspace.email).catch(() => null);
+    if (!tokens) return res.status(503).json({ error: "Service unavailable" });
+    const { sheets } = createGoogleClients(tokens);
+    const res2 = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!A2:K`,
+    });
+    const rows = res2.data.values ?? [];
+    const row = rows.find((r) => String(r[1] || "").toUpperCase() === code);
+    if (!row) return res.json({ ok: false, error: "Invalid gift card code" });
+    const card = parseGiftCard(row);
+    if (card.status !== "Active") return res.json({ ok: false, error: "Gift card already used or deactivated" });
+    res.json({ ok: true, amount: card.amount, message: card.message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Commission report ----
+
+app.get("/api/team/commission-report", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const artistsRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.artists}!A2:J`,
+    });
+    const artistRows = artistsRes.data.values ?? [];
+    const defaultCommission = workspace.config.commissionDefaultPercent || 0;
+
+    const artistMap = new Map<string, { name: string; commissionPercent: number }>();
+    for (const r of artistRows) {
+      const name = String(r[1] || "");
+      // priceMultiplier is at index 6; store it for reference
+      if (name) artistMap.set(name, { name, commissionPercent: defaultCommission });
+    }
+
+    const reportMap = new Map<string, { artistName: string; bookingCount: number; totalRevenue: number; commissionAmount: number }>();
+    for (const b of bookings) {
+      if (!b.assignedArtist || b.status === "Cancelled") continue;
+      const artist = artistMap.get(b.assignedArtist) || { name: b.assignedArtist, commissionPercent: defaultCommission };
+      const existing = reportMap.get(b.assignedArtist) || { artistName: b.assignedArtist, bookingCount: 0, totalRevenue: 0, commissionAmount: 0 };
+      existing.bookingCount++;
+      existing.totalRevenue += b.finalPrice || 0;
+      existing.commissionAmount += Math.round((b.finalPrice || 0) * artist.commissionPercent / 100);
+      reportMap.set(b.assignedArtist, existing);
+    }
+
+    res.json({ ok: true, report: Array.from(reportMap.values()), defaultCommissionPercent: defaultCommission });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Intake forms ----
+
+app.get("/api/intake-forms", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const c = workspace.config;
+    res.json({
+      ok: true,
+      forms: {
+        Bridal: c.intakeFormBridal,
+        Engagement: c.intakeFormEngagement,
+        Reception: c.intakeFormReception,
+        Party: c.intakeFormParty,
+        Shoot: c.intakeFormShoot,
+        Other: c.intakeFormOther,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public: get intake form questions for a service type
+app.get("/api/public/:workspaceId/intake-form/:eventType", publicReadLimiter, async (req, res, next) => {
+  try {
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+    const c = workspace.config;
+    const et = req.params.eventType;
+    const formKey = `intakeForm${et}` as keyof typeof c;
+    const raw = typeof c[formKey] === "string" ? (c[formKey] as string) : "";
+    const questions = raw
+      .split(",")
+      .map((q) => q.trim())
+      .filter(Boolean);
+    res.json({ ok: true, questions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Email test ----
+
+app.post("/api/email/test", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    if (!emailEnabled(workspace.config)) {
+      return res.status(400).json({ error: "Email not configured. Add SMTP settings first." });
+    }
+    const result = await sendEmail(workspace.config, {
+      to: workspace.config.ownerEmail,
+      subject: `Test email from ${workspace.config.businessName || "BusyDays"}`,
+      html: wrapEmailHtml(workspace.config, `<h2>Test email working! ✅</h2><p>Your email notifications are configured correctly. Clients will receive booking confirmations, quotes, invoices and reminders via email when it's enabled.</p>`),
+    });
+    if (!result.ok) return res.status(500).json({ error: result.error });
+    res.json({ ok: true, message: `Test email sent to ${workspace.config.ownerEmail}` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- No-show tracking ----
+
+app.post("/api/bookings/:bookingId/no-show", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) return res.status(404).json({ error: "Booking not found" });
+
+    await updateBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId, (current) => ({
+      ...current,
+      status: "No Show",
+    }));
+
+    res.json({ ok: true, noShowFeePercent: workspace.config.noShowFeePercent || 0 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Saved quote packages, parsed from the quotePackages config — one-tap line
 // items when building a quote.
 app.get("/api/quote-packages", async (req, res, next) => {
   try {
