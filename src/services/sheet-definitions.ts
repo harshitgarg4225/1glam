@@ -51,6 +51,7 @@ export const leadHeaders = [
   "Quote Number",
   "Quote Viewed At",
   "Quote Accepted At",
+  "Referred By",
 ] as const;
 
 export const bookingHeaders = [

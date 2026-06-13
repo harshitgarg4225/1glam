@@ -14,6 +14,7 @@ export const createLeadSchema = z.object({
   profileTier: z.enum(["Low", "Mid", "High"]).optional(),
   followers: z.coerce.number().optional(),
   clientTags: z.string().optional(),
+  referredBy: z.string().max(120).optional(),
 });
 
 export const publicBookingSchema = z.object({

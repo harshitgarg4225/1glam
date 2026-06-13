@@ -1171,6 +1171,7 @@
                       </div>
                       <div><label for="followers">Their Instagram followers</label><input id="followers" name="followers" type="number" value="0" /></div>
                       <div class="wide"><label for="clientTags">Notes / tags</label><input id="clientTags" name="clientTags" placeholder="e.g. luxury bride, very keen" /></div>
+                      <div class="wide"><label for="referredBy">Referred by (optional)</label><input id="referredBy" name="referredBy" placeholder="Name of client who referred them" /></div>
                     </div>
                   </div>
                 </details>
@@ -2650,6 +2651,10 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
             <label for="cp-birthday" style="font-size:12.5px;">🎂 Birthday</label>
             <input type="date" id="cp-birthday" style="font-size:13px;" />
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <label for="cp-referred-by" style="font-size:12.5px;white-space:nowrap;">🤝 Referred by</label>
+            <input type="text" id="cp-referred-by" placeholder="Client who referred them" style="font-size:13px;flex:1;min-width:0;" />
             <button class="button small" type="button" id="cp-notes-save">Save notes</button>
             <span class="muted" id="cp-notes-status" style="font-size:12px;"></span>
           </div>
@@ -7366,16 +7371,34 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           ? events.map((ev) => ev.html).join("")
           : `<p class="muted" style="font-size:13px;">No history yet.</p>`;
 
-        // Notes load asynchronously so the modal opens instantly.
+        // Notes and profile load asynchronously so the modal opens instantly.
         document.getElementById("cp-notes").value = "";
         document.getElementById("cp-birthday").value = "";
-        document.getElementById("cp-notes-status").textContent = "Loading notes…";
+        document.getElementById("cp-notes-status").textContent = "Loading…";
         clientProfileModal.classList.add("open");
         try {
-          const notes = await getJson(`/api/clients/${encodeURIComponent(digits || "unknown")}/notes`);
-          if (notes?.ok) {
-            document.getElementById("cp-notes").value = notes.notes || "";
-            document.getElementById("cp-birthday").value = notes.birthday || "";
+          // Fetch full profile (aggregates leads, bookings, notes, loyalty)
+          const profile = await getJson(`/api/clients/${encodeURIComponent(digits || "unknown")}/profile`);
+          if (profile?.ok) {
+            document.getElementById("cp-notes").value = profile.notes || "";
+            document.getElementById("cp-birthday").value = profile.birthday || "";
+            // Enrich summary with loyalty & referral
+            const loyaltyPill = profile.loyalty?.rewardEarned
+              ? `<span class="pill success" style="font-size:11px;">🎁 Reward earned!</span>`
+              : profile.loyalty
+                ? `<span class="pill" style="font-size:11px;">⭐ ${profile.loyalty.visits}/${profile.loyalty.milestoneAt} visits</span>`
+                : "";
+            const referralPill = profile.tags ? `<span class="pill" style="font-size:11px;">🏷 ${escapeHtml(profile.tags)}</span>` : "";
+            const referredByBadge = profile.referredBy ? `<span class="pill warning" style="font-size:11px;">Referred by ${escapeHtml(profile.referredBy)}</span>` : "";
+            document.getElementById("cp-summary").innerHTML =
+              `${escapeHtml(c.phone || "No number")} · ${profile.totalBookings} booking${profile.totalBookings === 1 ? "" : "s"} · ${formatMoney(profile.totalRevenue)} booked` +
+              (loyaltyPill || referralPill || referredByBadge ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${loyaltyPill}${referralPill}${referredByBadge}</div>` : "");
+          } else {
+            const notes = await getJson(`/api/clients/${encodeURIComponent(digits || "unknown")}/notes`);
+            if (notes?.ok) {
+              document.getElementById("cp-notes").value = notes.notes || "";
+              document.getElementById("cp-birthday").value = notes.birthday || "";
+            }
           }
           document.getElementById("cp-notes-status").textContent = "";
         } catch {

@@ -122,6 +122,8 @@ export type LeadRecord = {
   quoteViewedAt: string;
   // Set when the client taps "Accept" on the public quote page.
   quoteAcceptedAt: string;
+  // Who referred this client (name or WhatsApp number of referrer).
+  referredBy: string;
 };
 
 export type BookingRecord = {
@@ -196,6 +198,7 @@ export type CreateLeadInput = {
   followers?: number;
   clientTags?: string;
   inboundMessage?: string;
+  referredBy?: string;
 };
 
 export async function createLeadForWorkspace(
@@ -273,6 +276,7 @@ export async function createLeadForWorkspace(
     quoteNumber: "",
     quoteViewedAt: "",
     quoteAcceptedAt: "",
+    referredBy: input.referredBy ?? "",
   };
 
   await sheets.spreadsheets.values.append({
@@ -718,7 +722,7 @@ function leadFromBooking(booking: BookingRecord): LeadRecord {
     lastContactedAt: "", tentativeCalendarEventId: "", confirmedCalendarEventId: "",
     bookingId: booking.bookingId, paymentStatus: booking.paymentStatus, quoteUrl: "",
     quoteGeneratedAt: "", quoteVoidedAt: "", quoteAdjustments: "", orderItems: booking.orderItems,
-    quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "",
+    quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "", referredBy: "",
   };
 }
 
@@ -919,6 +923,7 @@ export async function importClients(
       quoteNumber: "",
       quoteViewedAt: "",
       quoteAcceptedAt: "",
+      referredBy: "",
     });
   }
 
@@ -1664,6 +1669,7 @@ function leadToRow(lead: LeadRecord) {
     lead.quoteNumber,
     lead.quoteViewedAt,
     lead.quoteAcceptedAt,
+    lead.referredBy,
   ];
 }
 
@@ -1710,6 +1716,7 @@ function rowToLead(row: string[]): LeadRecord {
     quoteNumber: row[38] ?? "",
     quoteViewedAt: row[39] ?? "",
     quoteAcceptedAt: row[40] ?? "",
+    referredBy: row[41] ?? "",
   };
 }
 

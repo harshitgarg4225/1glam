@@ -2474,6 +2474,59 @@ app.post("/api/clients/:phone/notes", async (req, res, next) => {
   }
 });
 
+// Unified client profile — aggregates all data we have on a single client by phone.
+// Returns: basic info, all their leads + bookings, total revenue, loyalty status,
+// and saved notes. Powers the "Client profile" drawer in the dashboard.
+app.get("/api/clients/:phone/profile", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ error: "Invalid phone" });
+
+    const [{ leads, bookings }, notes] = await Promise.all([
+      getDashboardData(req.session.profile.email, req.session.googleTokens),
+      loadClientNotes(workspace.workspaceId, phone),
+    ]);
+
+    const clientLeads = leads.filter((l) => l.clientWhatsApp?.replace(/\D/g, "") === phone);
+    const clientBookings = bookings.filter((b) => b.clientWhatsApp?.replace(/\D/g, "") === phone);
+
+    const totalRevenue = clientBookings
+      .filter((b) => b.status === "Confirmed" || b.status === "Completed")
+      .reduce((s, b) => s + (b.finalPrice || 0), 0);
+
+    const loyalty = loyaltyForPhone(workspace.config, bookings, phone);
+
+    const clientName = clientBookings[0]?.clientName || clientLeads[0]?.clientName || "Client";
+    const clientInstagram = clientLeads[0]?.clientInstagram || "";
+    const firstBookingDate = [...clientLeads.map((l) => l.createdAt), ...clientBookings.map((b) => b.bookedAt)]
+      .sort()[0] || "";
+
+    res.json({
+      ok: true,
+      phone,
+      clientName,
+      clientInstagram,
+      firstSeenAt: firstBookingDate,
+      totalLeads: clientLeads.length,
+      totalBookings: clientBookings.length,
+      totalRevenue,
+      leads: clientLeads.slice(0, 20),
+      bookings: clientBookings.slice(0, 20),
+      loyalty,
+      notes: notes.notes || "",
+      birthday: notes.birthday || "",
+      tags: clientLeads[0]?.clientTags || "",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Bulk-imports existing clients (paste from Excel / CSV) as past clients.
 app.post("/api/clients/import", async (req, res, next) => {
   try {
