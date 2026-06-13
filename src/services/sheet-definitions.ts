@@ -7,6 +7,9 @@ export const sheetNames = {
   interactionLog: "InteractionLog",
   reviews: "Reviews",
   giftCards: "GiftCards",
+  promoCodes: "PromoCodes",
+  clientPackages: "Packages",
+  clientPhotos: "ClientPhotos",
 } as const;
 
 export const leadHeaders = [

@@ -27,6 +27,7 @@ export const publicBookingSchema = z.object({
   locationText: z.string().min(1).max(200),
   addons: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
+  promoCode: z.string().max(40).optional(),
 });
 
 // One-shot walk-in/phone booking: creates the lead and confirms it in a single

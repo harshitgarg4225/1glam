@@ -6,6 +6,10 @@ import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } fro
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
+import { ensureSheetTab } from "./sheets-util.js";
+import { sheetNames } from "./sheet-definitions.js";
+import { parsePromoCode, promoCodeToRow, promoCodeHeaders, validatePromo } from "./promo-codes.js";
+import type { Credentials } from "google-auth-library";
 import type { WorkspaceConfig, WorkspaceRecord } from "../types.js";
 
 export type PublicAddon = {
@@ -175,6 +179,7 @@ export type PublicBookingInput = {
   locationText: string;
   addons?: string;
   notes?: string;
+  promoCode?: string;
 };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -403,13 +408,16 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
   // Selected add-ons price themselves into the quote: matched against the
   // service's configured "Name:Price" list and stored as quote line items, so
   // the PDF shows "Airbrush (add-on)  +Rs 2,000" on top of the base price
-  // instead of the add-ons silently vanishing into the notes. Best-effort.
+  // instead of the add-ons silently vanishing into the notes. A valid promo
+  // code joins them as a negative line item. Best-effort.
   try {
     const addonLines = matchSelectedAddons(workspace.config, input.eventType, input.addons);
-    if (addonLines.length) {
+    const promoLine = await applyPromoCode(workspace, tokens, input.promoCode, result.lead.finalApprovedPrice);
+    const lineItems = [...addonLines, ...(promoLine ? [promoLine] : [])];
+    if (lineItems.length) {
       await updateLeadRecord(workspace.email, tokens, result.lead.leadId, (lead) => ({
         ...lead,
-        quoteAdjustments: JSON.stringify({ lineItems: addonLines }),
+        quoteAdjustments: JSON.stringify({ lineItems }),
       }));
     }
   } catch {
@@ -640,6 +648,47 @@ export function matchSelectedAddons(
   return configured
     .filter((addon) => addon.price > 0 && selected.includes(addon.name.toLowerCase()))
     .map((addon) => ({ label: `${addon.name} (add-on)`, amount: addon.price }));
+}
+
+// Validates and redeems a promo code at booking time. On success it increments
+// the code's redemption counter and returns the discount as a negative quote
+// line item; returns null when no code, codes are disabled, or it's invalid.
+async function applyPromoCode(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  rawCode: string | undefined,
+  baseAmount: number,
+): Promise<{ label: string; amount: number } | null> {
+  const code = String(rawCode || "").trim().toUpperCase();
+  if (!code || workspace.config.promoCodesEnabled !== "Yes") return null;
+
+  const { sheets } = createGoogleClients(tokens);
+  await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+  const got = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.promoCodes}!A2:J`,
+  });
+  const rows = got.data.values ?? [];
+  const idx = rows.findIndex((r) => String(r[1] || "").toUpperCase() === code);
+  if (idx < 0) return null;
+
+  const promo = parsePromoCode(rows[idx]);
+  const result = validatePromo(promo, baseAmount);
+  if (!result.ok) return null;
+
+  // Increment the redemption counter (best-effort; the discount stands regardless).
+  promo.timesRedeemed += 1;
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A${idx + 2}:J${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [promoCodeToRow(promo)] },
+    });
+  } catch {
+    // Counter is advisory; never block the booking on a write hiccup.
+  }
+  return { label: `Promo ${code} (${result.label})`, amount: -result.discount };
 }
 
 // Time slots for a date with real availability: each configured slot, greyed

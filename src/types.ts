@@ -162,6 +162,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   recurringEnabled: string;
   // Service variants: JSON string mapping service key → array of {name, price, description}
   serviceVariantsJson: string;
+  // Promo codes: show the "Have a promo code?" field on the public booking page.
+  promoCodesEnabled: string;
 };
 
 export type WalletLedgerEntry = {

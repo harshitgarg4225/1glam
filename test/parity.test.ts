@@ -5,6 +5,8 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-
 
 const { computeLoyaltyStatuses, loyaltyForPhone } = await import("../src/services/loyalty.ts");
 const { generateGiftCode, parseGiftCard, giftCardToRow } = await import("../src/services/gift-cards.ts");
+const { generatePromoCode, parsePromoCode, promoCodeToRow, validatePromo } = await import("../src/services/promo-codes.ts");
+const { parseClientPackage, clientPackageToRow, remainingSessions, isRedeemable } = await import("../src/services/packages.ts");
 const { buildDefaultConfig } = await import("../src/defaults.ts");
 
 const baseConfig = () =>
@@ -133,4 +135,101 @@ test("parseGiftCard handles empty/short rows gracefully", () => {
   assert.equal(card.amount, 0);
   assert.equal(card.status, "Active");
   assert.equal(card.code, "");
+});
+
+// --- Promo codes -----------------------------------------------------------
+
+const activePromo = (over = {}) => ({
+  codeId: "PC-1", code: "SAVE20", type: "percent" as const, value: 20,
+  minAmount: 0, maxRedemptions: 0, timesRedeemed: 0, expiresAt: "",
+  createdAt: "2026-01-01T00:00:00.000Z", status: "Active" as const, ...over,
+});
+
+test("generatePromoCode produces 6-char uppercase alphanumeric", () => {
+  const code = generatePromoCode();
+  assert.equal(code.length, 6);
+  assert.match(code, /^[A-Z2-9]+$/);
+});
+
+test("percent promo computes the right discount and final amount", () => {
+  const r = validatePromo(activePromo({ value: 20 }), 10000);
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.discount, 2000);
+    assert.equal(r.finalAmount, 8000);
+    assert.match(r.label, /20% off/);
+  }
+});
+
+test("flat promo never discounts more than the order total", () => {
+  const r = validatePromo(activePromo({ type: "flat", value: 5000 }), 3000);
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.discount, 3000); // capped at the order amount
+    assert.equal(r.finalAmount, 0);
+  }
+});
+
+test("promo below minimum amount is rejected", () => {
+  const r = validatePromo(activePromo({ minAmount: 8000 }), 5000);
+  assert.equal(r.ok, false);
+});
+
+test("expired promo is rejected", () => {
+  const r = validatePromo(activePromo({ expiresAt: "2020-01-01" }), 5000);
+  assert.equal(r.ok, false);
+});
+
+test("promo at its redemption limit is rejected", () => {
+  const r = validatePromo(activePromo({ maxRedemptions: 5, timesRedeemed: 5 }), 5000);
+  assert.equal(r.ok, false);
+});
+
+test("deactivated promo is rejected", () => {
+  const r = validatePromo(activePromo({ status: "Deactivated" }), 5000);
+  assert.equal(r.ok, false);
+});
+
+test("missing promo is rejected, not thrown", () => {
+  const r = validatePromo(undefined, 5000);
+  assert.equal(r.ok, false);
+});
+
+test("parsePromoCode round-trips through promoCodeToRow", () => {
+  const promo = activePromo({ minAmount: 3000, maxRedemptions: 10, timesRedeemed: 2, expiresAt: "2026-12-31" });
+  assert.deepEqual(parsePromoCode(promoCodeToRow(promo)), promo);
+});
+
+// --- Prepaid packages ------------------------------------------------------
+
+const activePackage = (over = {}) => ({
+  packageId: "PKG-1", clientWhatsApp: "919999", clientName: "Priya",
+  name: "5 Sessions", totalSessions: 5, usedSessions: 0, price: 20000,
+  purchasedAt: "2026-01-01T00:00:00.000Z", expiresAt: "", status: "Active" as const, ...over,
+});
+
+test("remainingSessions reflects used count and never goes negative", () => {
+  assert.equal(remainingSessions(activePackage({ totalSessions: 5, usedSessions: 2 })), 3);
+  assert.equal(remainingSessions(activePackage({ totalSessions: 5, usedSessions: 9 })), 0);
+});
+
+test("a package with sessions left is redeemable", () => {
+  assert.equal(isRedeemable(activePackage({ usedSessions: 4, totalSessions: 5 })).ok, true);
+});
+
+test("a fully-used package is not redeemable", () => {
+  assert.equal(isRedeemable(activePackage({ usedSessions: 5, totalSessions: 5 })).ok, false);
+});
+
+test("an expired package is not redeemable", () => {
+  assert.equal(isRedeemable(activePackage({ expiresAt: "2020-01-01" })).ok, false);
+});
+
+test("a cancelled package is not redeemable", () => {
+  assert.equal(isRedeemable(activePackage({ status: "Cancelled" })).ok, false);
+});
+
+test("parseClientPackage round-trips through clientPackageToRow", () => {
+  const pkg = activePackage({ usedSessions: 2, expiresAt: "2026-12-31" });
+  assert.deepEqual(parseClientPackage(clientPackageToRow(pkg)), pkg);
 });

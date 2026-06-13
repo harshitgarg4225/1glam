@@ -147,5 +147,6 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     smtpFrom: "",
     recurringEnabled: "No",
     serviceVariantsJson: "{}",
+    promoCodesEnabled: "No",
   };
 }

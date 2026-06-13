@@ -158,6 +158,8 @@ export const workspaceConfigSchema = z.object({
   recurringEnabled: z.string().optional().default("No"),
   // Service variants JSON
   serviceVariantsJson: z.string().optional().default("{}"),
+  // Promo codes
+  promoCodesEnabled: z.string().optional().default("No"),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

@@ -73,6 +73,10 @@ import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import { loadClientNotes, saveClientNotes } from "./services/client-notes.js";
+import { ensureSheetTab } from "./services/sheets-util.js";
+import { generatePromoCode, parsePromoCode, promoCodeToRow, promoCodeHeaders, validatePromo, type PromoCode } from "./services/promo-codes.js";
+import { parseClientPackage, clientPackageToRow, packageHeaders, remainingSessions, isRedeemable, type ClientPackage } from "./services/packages.js";
+import { parseClientPhoto, clientPhotoToRow, clientPhotoHeaders, type ClientPhoto } from "./services/client-photos.js";
 import { addDeviceToken, addPushSubscription, pushConfigured, removeDeviceToken, removePushSubscription, sendPushToWorkspace } from "./services/push.js";
 import { fcmConfigured } from "./services/fcm.js";
 import { createMobileLoginToken, redeemMobileLoginToken } from "./services/mobile-auth.js";
@@ -4343,9 +4347,75 @@ app.get("/api/analytics", async (req, res, next) => {
     const conversionRate = totalLeads > 0 ? Math.round((totalBookings / totalLeads) * 100) : 0;
     const avgBookingValue = totalBookings > 0 ? Math.round(totalRevenue / totalBookings) : 0;
 
+    // ---- Client-level intelligence (retention, CLV, busiest times) ----
+    const realBookings = bookings.filter((b) => b.status !== "Cancelled");
+    const byClient = new Map<string, { name: string; count: number; revenue: number; firstAt: string; lastAt: string }>();
+    for (const b of realBookings) {
+      const phone = String(b.clientWhatsApp || "").replace(/\D/g, "");
+      if (!phone) continue;
+      const when = b.eventDate || b.bookedAt || "";
+      const existing = byClient.get(phone);
+      if (existing) {
+        existing.count += 1;
+        existing.revenue += Number(b.finalPrice) || 0;
+        if (when && when < existing.firstAt) existing.firstAt = when;
+        if (when && when > existing.lastAt) existing.lastAt = when;
+        if (b.clientName) existing.name = b.clientName;
+      } else {
+        byClient.set(phone, {
+          name: b.clientName || "Client",
+          count: 1,
+          revenue: Number(b.finalPrice) || 0,
+          firstAt: when,
+          lastAt: when,
+        });
+      }
+    }
+    const uniqueClients = byClient.size;
+    const repeatClients = [...byClient.values()].filter((c) => c.count > 1).length;
+    const repeatClientRate = uniqueClients > 0 ? Math.round((repeatClients / uniqueClients) * 100) : 0;
+    const avgClientValue = uniqueClients > 0 ? Math.round(totalRevenue / uniqueClients) : 0;
+
+    // Lapsed = no booking in 90+ days. Active = booked within 90 days.
+    const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    let activeClients = 0;
+    let lapsedClients = 0;
+    for (const c of byClient.values()) {
+      if (c.lastAt && c.lastAt >= cutoff) activeClients += 1;
+      else lapsedClients += 1;
+    }
+
+    // Top clients by lifetime value.
+    const topClients = [...byClient.entries()]
+      .map(([phone, c]) => ({ phone, name: c.name, bookings: c.count, revenue: c.revenue }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+
+    // Busiest day-of-week and time-of-day, from confirmed event dates/times.
+    const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const byWeekday = Object.fromEntries(WEEKDAYS.map((d) => [d, 0])) as Record<string, number>;
+    const byHour: Record<string, number> = {};
+    for (const b of realBookings) {
+      if (b.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(b.eventDate)) {
+        const wd = WEEKDAYS[new Date(`${b.eventDate}T00:00:00Z`).getUTCDay()];
+        byWeekday[wd] += 1;
+      }
+      const hm = String(b.eventTime || "").match(/^(\d{1,2}):/);
+      if (hm) {
+        const hour = `${hm[1].padStart(2, "0")}:00`;
+        byHour[hour] = (byHour[hour] || 0) + 1;
+      }
+    }
+    const busiestDay = Object.entries(byWeekday).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+    const busiestHour = Object.entries(byHour).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+
     res.json({
       ok: true,
-      summary: { totalRevenue, totalExpenses, totalProfit, totalBookings, totalLeads, conversionRate, avgBookingValue },
+      summary: {
+        totalRevenue, totalExpenses, totalProfit, totalBookings, totalLeads, conversionRate, avgBookingValue,
+        uniqueClients, repeatClients, repeatClientRate, avgClientValue, activeClients, lapsedClients,
+        busiestDay, busiestHour,
+      },
       months: months.map((m) => ({
         ...m,
         revenue: revenueByMonth[m.key],
@@ -4354,6 +4424,9 @@ app.get("/api/analytics", async (req, res, next) => {
       })),
       bySource: Object.entries(sourceCount).sort((a, b) => b[1] - a[1]).map(([source, count]) => ({ source, count })),
       byEventType: Object.entries(eventTypeRevenue).sort((a, b) => b[1] - a[1]).map(([type, revenue]) => ({ type, revenue })),
+      topClients,
+      byWeekday: WEEKDAYS.map((d) => ({ day: d, count: byWeekday[d] })),
+      byHour: Object.entries(byHour).sort((a, b) => a[0].localeCompare(b[0])).map(([hour, count]) => ({ hour, count })),
     });
   } catch (error) {
     next(error);
@@ -4664,6 +4737,432 @@ app.get("/api/public/:workspaceId/gift-cards/:code", publicReadLimiter, async (r
     const card = parseGiftCard(row);
     if (card.status !== "Active") return res.json({ ok: false, error: "Gift card already used or deactivated" });
     res.json({ ok: true, amount: card.amount, message: card.message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Promo codes ----
+// Discount codes the owner creates and clients enter on the booking page.
+// Backed by a lazily-created PromoCodes sheet tab.
+
+app.get("/api/promo-codes", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A2:J`,
+    });
+    const codes = (got.data.values ?? []).map(parsePromoCode);
+    res.json({ ok: true, codes });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/promo-codes", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const type = req.body?.type === "flat" ? "flat" : "percent";
+    const value = Number(req.body?.value);
+    if (!value || value <= 0) return res.status(400).json({ error: "A discount value is required." });
+    if (type === "percent" && value > 90) return res.status(400).json({ error: "Percentage discount can't exceed 90%." });
+
+    const promo: PromoCode = {
+      codeId: `PC-${Date.now()}`,
+      code: String(req.body?.code || "").trim().toUpperCase() || generatePromoCode(),
+      type,
+      value,
+      minAmount: Math.max(0, Number(req.body?.minAmount) || 0),
+      maxRedemptions: Math.max(0, Number(req.body?.maxRedemptions) || 0),
+      timesRedeemed: 0,
+      expiresAt: typeof req.body?.expiresAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.expiresAt) ? req.body.expiresAt : "",
+      createdAt: new Date().toISOString(),
+      status: "Active",
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    // Reject a duplicate code so two codes can't collide at redemption.
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A2:J`,
+    });
+    if ((existing.data.values ?? []).some((r) => String(r[1] || "").toUpperCase() === promo.code)) {
+      return res.status(400).json({ error: `Code "${promo.code}" already exists.` });
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A:J`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [promoCodeToRow(promo)] },
+    });
+    res.json({ ok: true, promo });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/promo-codes/:code/deactivate", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A2:J`,
+    });
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => String(r[1] || "").toUpperCase() === String(req.params.code).toUpperCase());
+    if (idx < 0) return res.status(404).json({ error: "Promo code not found" });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!J${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [["Deactivated"]] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public: validate a promo code against an order amount before booking.
+app.get("/api/public/:workspaceId/promo/:code", publicReadLimiter, async (req, res, next) => {
+  try {
+    const code = String(req.params.code).toUpperCase();
+    const amount = Number(req.query.amount) || 0;
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace || workspace.config.promoCodesEnabled !== "Yes") {
+      return res.status(404).json({ error: "Promo codes not available" });
+    }
+    const tokens = await getWorkspaceCredentials(workspace.email).catch(() => null);
+    if (!tokens) return res.status(503).json({ error: "Service unavailable" });
+    const { sheets } = createGoogleClients(tokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A2:J`,
+    });
+    const row = (got.data.values ?? []).find((r) => String(r[1] || "").toUpperCase() === code);
+    const result = validatePromo(row ? parsePromoCode(row) : undefined, amount);
+    if (!result.ok) return res.json({ ok: false, error: result.reason });
+    res.json({ ok: true, discount: result.discount, finalAmount: result.finalAmount, label: result.label, code });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Prepaid packages / memberships ----
+// A client buys a bundle of sessions; each redemption decrements the balance.
+
+app.get("/api/packages", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A2:J`,
+    });
+    const packages = (got.data.values ?? []).map(parseClientPackage).map((p) => ({ ...p, remaining: remainingSessions(p) }));
+    res.json({ ok: true, packages });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/clients/:phone/packages", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A2:J`,
+    });
+    const packages = (got.data.values ?? [])
+      .map(parseClientPackage)
+      .filter((p) => p.clientWhatsApp.replace(/\D/g, "") === phone)
+      .map((p) => ({ ...p, remaining: remainingSessions(p) }));
+    res.json({ ok: true, packages });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/packages", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const clientWhatsApp = String(req.body?.clientWhatsApp || "").trim();
+    const name = String(req.body?.name || "").trim();
+    const totalSessions = Number(req.body?.totalSessions);
+    if (!clientWhatsApp || !name || !totalSessions || totalSessions < 1) {
+      return res.status(400).json({ error: "Client, package name, and session count are required." });
+    }
+    const pkg: ClientPackage = {
+      packageId: `PKG-${Date.now()}`,
+      clientWhatsApp,
+      clientName: String(req.body?.clientName || ""),
+      name,
+      totalSessions: Math.round(totalSessions),
+      usedSessions: 0,
+      price: Math.max(0, Number(req.body?.price) || 0),
+      purchasedAt: new Date().toISOString(),
+      expiresAt: typeof req.body?.expiresAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.expiresAt) ? req.body.expiresAt : "",
+      status: "Active",
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A:J`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [clientPackageToRow(pkg)] },
+    });
+    res.json({ ok: true, package: pkg });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Redeem one session against a package (decrements remaining; marks Completed at 0).
+app.post("/api/packages/:packageId/redeem", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A2:J`,
+    });
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => r[0] === req.params.packageId);
+    if (idx < 0) return res.status(404).json({ error: "Package not found" });
+    const pkg = parseClientPackage(rows[idx]);
+    const usable = isRedeemable(pkg);
+    if (!usable.ok) return res.status(400).json({ error: usable.reason });
+    pkg.usedSessions += 1;
+    if (remainingSessions(pkg) <= 0) pkg.status = "Completed";
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A${idx + 2}:J${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [clientPackageToRow(pkg)] },
+    });
+    res.json({ ok: true, package: { ...pkg, remaining: remainingSessions(pkg) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/packages/:packageId/cancel", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A2:J`,
+    });
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => r[0] === req.params.packageId);
+    if (idx < 0) return res.status(404).json({ error: "Package not found" });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!J${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [["Cancelled"]] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Per-client photos (before/after gallery) ----
+
+app.get("/api/clients/:phone/photos", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPhotos, clientPhotoHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPhotos}!A2:G`,
+    });
+    const photos = (got.data.values ?? [])
+      .map(parseClientPhoto)
+      .filter((p) => p.clientWhatsApp.replace(/\D/g, "") === phone)
+      .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+    res.json({ ok: true, photos });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post(
+  "/api/clients/:phone/photos",
+  (req, res, next) => {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
+  async (req, res, next) => {
+    try {
+      if (!req.session.profile || !req.session.googleTokens) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      const workspace = await getWorkspaceByEmail(req.session.profile.email);
+      if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+      const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+      if (!phone) return res.status(400).json({ error: "Invalid client" });
+
+      const uploaded = await uploadPublicImage(req.session.profile.email, req.session.googleTokens, {
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      });
+      const kindRaw = String(req.body?.kind || "look");
+      const photo: ClientPhoto = {
+        photoId: `PH-${Date.now()}`,
+        clientWhatsApp: phone,
+        bookingId: String(req.body?.bookingId || ""),
+        url: uploaded.imageUrl,
+        caption: String(req.body?.caption || ""),
+        kind: kindRaw === "before" || kindRaw === "after" ? kindRaw : "look",
+        uploadedAt: new Date().toISOString(),
+      };
+      const { sheets } = createGoogleClients(req.session.googleTokens);
+      await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPhotos, clientPhotoHeaders);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: workspace.spreadsheetId,
+        range: `${sheetNames.clientPhotos}!A:G`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [clientPhotoToRow(photo)] },
+      });
+      res.json({ ok: true, photo });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.delete("/api/clients/:phone/photos/:photoId", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPhotos, clientPhotoHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPhotos}!A2:G`,
+    });
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => r[0] === req.params.photoId);
+    if (idx < 0) return res.status(404).json({ error: "Photo not found" });
+    // Soft-delete by blanking the row's URL/caption (Sheets has no cheap row delete here).
+    const cleared = parseClientPhoto(rows[idx]);
+    cleared.url = "";
+    cleared.caption = "(deleted)";
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPhotos}!A${idx + 2}:G${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [clientPhotoToRow(cleared)] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Client win-back ----
+// Lapsed clients (no completed booking in N days) with the data needed to
+// re-engage them: last seen, lifetime value, and a ready-to-send message.
+app.get("/api/winback", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const days = Math.max(30, Number(req.query.days) || 90);
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const byClient = new Map<string, { name: string; phone: string; lastAt: string; bookings: number; revenue: number }>();
+    for (const b of bookings) {
+      if (b.status === "Cancelled" || b.status === "No Show") continue;
+      const phone = String(b.clientWhatsApp || "").replace(/\D/g, "");
+      if (!phone) continue;
+      const when = b.eventDate || b.bookedAt || "";
+      const existing = byClient.get(phone);
+      if (existing) {
+        existing.bookings += 1;
+        existing.revenue += Number(b.finalPrice) || 0;
+        if (when > existing.lastAt) existing.lastAt = when;
+        if (b.clientName) existing.name = b.clientName;
+      } else {
+        byClient.set(phone, { name: b.clientName || "Client", phone, lastAt: when, bookings: 1, revenue: Number(b.finalPrice) || 0 });
+      }
+    }
+    const lapsed = [...byClient.values()]
+      .filter((c) => c.lastAt && c.lastAt < cutoff)
+      .map((c) => ({
+        ...c,
+        daysSince: c.lastAt ? Math.floor((Date.now() - new Date(`${c.lastAt}T00:00:00Z`).getTime()) / (24 * 60 * 60 * 1000)) : null,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    res.json({ ok: true, cutoffDays: days, count: lapsed.length, clients: lapsed });
   } catch (error) {
     next(error);
   }

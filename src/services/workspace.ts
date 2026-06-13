@@ -470,6 +470,7 @@ async function seedSpreadsheet(
     ["smtp_from", config.smtpFrom, "From address shown to recipients (e.g. hello@glowbyaisha.com)"],
     ["recurring_enabled", config.recurringEnabled, "Allow recurring appointment setup (Yes/No)"],
     ["service_variants_json", config.serviceVariantsJson, "Service package tiers per service type (JSON)"],
+    ["promo_codes_enabled", config.promoCodesEnabled, "Show a promo code field on the booking page (Yes/No)"],
   ];
 
   const artistsRows = [[
@@ -765,6 +766,7 @@ async function loadConfigFromSpreadsheet(
       smtpFrom: String(values.smtp_from ?? base.smtpFrom),
       recurringEnabled: String(values.recurring_enabled ?? base.recurringEnabled),
       serviceVariantsJson: String(values.service_variants_json ?? base.serviceVariantsJson),
+      promoCodesEnabled: String(values.promo_codes_enabled ?? base.promoCodesEnabled),
     });
 
     return parsed.success ? parsed.data : base;
