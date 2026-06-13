@@ -1281,6 +1281,72 @@
           </div>
           <div id="clients-list" style="margin-top:14px;"></div>
         </div>
+
+        <!-- Win-back: lapsed clients worth re-engaging -->
+        <div class="panel section" style="margin-top:20px;">
+          <details>
+            <summary class="more-summary" style="font-size:15px;font-weight:600;color:var(--text);">💤 Win back lapsed clients</summary>
+            <div style="margin-top:12px;">
+              <p class="muted" style="margin:0 0 12px;font-size:13.5px;">Clients who haven't booked in a while, ranked by how much they've spent with you. A warm "we miss you" message — maybe with a promo code — brings the best ones back.</p>
+              <div class="filter-bar" style="margin-bottom:12px;">
+                <label class="muted" style="font-size:13px;">Lapsed for</label>
+                <select id="winback-days" style="font-size:13px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;">
+                  <option value="60">60+ days</option>
+                  <option value="90" selected>90+ days</option>
+                  <option value="180">6+ months</option>
+                  <option value="365">1+ year</option>
+                </select>
+                <button class="button small secondary" type="button" id="winback-refresh">Show</button>
+              </div>
+              <div id="winback-list"><p class="muted" style="font-size:13px;">Tap "Show" to see who's slipping away.</p></div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Promo codes -->
+        <div class="panel section" style="margin-top:20px;">
+          <details id="promo-codes-details">
+            <summary class="more-summary" style="font-size:15px;font-weight:600;color:var(--text);">🏷️ Promo codes</summary>
+            <div style="margin-top:12px;">
+              <p class="muted" style="margin:0 0 12px;font-size:13.5px;">Create discount codes clients enter on your booking page. Turn on the promo field in <strong>Settings → Promo codes</strong> so it shows up.</p>
+              <div class="form-grid" style="margin-bottom:10px;">
+                <div><label>Code (blank = auto)</label><input id="promo-code-input" placeholder="DIWALI20" maxlength="40" /></div>
+                <div>
+                  <label>Type</label>
+                  <select id="promo-type"><option value="percent">% off</option><option value="flat">₹ off</option></select>
+                </div>
+                <div><label>Value</label><input id="promo-value" type="number" min="1" placeholder="20" /></div>
+                <div><label>Min order ₹ (optional)</label><input id="promo-min" type="number" min="0" placeholder="0" /></div>
+                <div><label>Max uses (0 = ∞)</label><input id="promo-max" type="number" min="0" placeholder="0" /></div>
+                <div><label>Expires (optional)</label><input id="promo-expires" type="date" /></div>
+              </div>
+              <div class="action-row"><button class="button" type="button" id="promo-create">Create code</button></div>
+              <div class="status" id="promo-status"></div>
+              <div id="promo-list" style="margin-top:14px;"></div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Prepaid packages -->
+        <div class="panel section" style="margin-top:20px;">
+          <details id="packages-details">
+            <summary class="more-summary" style="font-size:15px;font-weight:600;color:var(--text);">📦 Prepaid packages &amp; memberships</summary>
+            <div style="margin-top:12px;">
+              <p class="muted" style="margin:0 0 12px;font-size:13.5px;">Sell a client a bundle of sessions up front (e.g. a bridal package, or "5 party looks"). Redeem one each visit from their profile — the balance tracks itself.</p>
+              <div class="form-grid" style="margin-bottom:10px;">
+                <div><label>Client name</label><input id="pkg-client-name" placeholder="Priya Sharma" /></div>
+                <div><label>Client WhatsApp</label><input id="pkg-client-wa" placeholder="+91…" /></div>
+                <div><label>Package name</label><input id="pkg-name" placeholder="Bridal package" /></div>
+                <div><label>Total sessions</label><input id="pkg-sessions" type="number" min="1" placeholder="3" /></div>
+                <div><label>Price ₹ (optional)</label><input id="pkg-price" type="number" min="0" placeholder="45000" /></div>
+                <div><label>Expires (optional)</label><input id="pkg-expires" type="date" /></div>
+              </div>
+              <div class="action-row"><button class="button" type="button" id="pkg-create">Sell package</button></div>
+              <div class="status" id="pkg-status"></div>
+              <div id="pkg-list" style="margin-top:14px;"></div>
+            </div>
+          </details>
+        </div>
       </section>
 
       <!-- Calendar -->
@@ -1818,6 +1884,9 @@
                 <div id="chart-event-type"></div>
               </div>
             </div>
+            <h3 style="margin:28px 0 8px;font-size:16px;">Busiest days of the week</h3>
+            <p class="muted" style="margin:0 0 12px;font-size:13px;">When your clients actually book — useful for planning availability and last-minute deals.</p>
+            <div id="chart-weekday" style="margin-bottom:8px;max-width:480px;"></div>
             <h3 style="margin:28px 0 4px;font-size:16px;">Your repeat clients</h3>
             <p class="muted" style="margin:0 0 12px;font-size:13px;">Clients who book again are your most profitable — they cost nothing to win and they refer friends.</p>
             <div id="chart-repeats"></div>
@@ -2281,6 +2350,24 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
+          <details class="collapse" id="promo-codes-settings-section">
+            <summary>🏷️ Promo codes</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:14px;font-size:14px;">
+                Show a "Have a promo code?" field on your booking page so clients can redeem discount codes. Create and manage codes from the <strong>Clients</strong> tab.
+              </p>
+              <div class="form-grid">
+                <div>
+                  <label for="promoCodesEnabled">Enable promo codes</label>
+                  <select id="promoCodesEnabled" name="promoCodesEnabled">
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </details>
+
           <details class="collapse" id="no-show-settings-section">
             <summary>🚫 No-show protection</summary>
             <div class="collapse-body">
@@ -2659,6 +2746,30 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <span class="muted" id="cp-notes-status" style="font-size:12px;"></span>
           </div>
         </div>
+        <!-- Prepaid packages for this client -->
+        <div id="cp-packages-wrap" style="margin-bottom:14px;display:none;">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Packages</div>
+          <div id="cp-packages"></div>
+        </div>
+
+        <!-- Before/after photo gallery -->
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+            <div style="font-size:13px;font-weight:600;">Photos <span class="muted" style="font-weight:400;">(before / after looks)</span></div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select id="cp-photo-kind" style="font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;">
+                <option value="look">Look</option>
+                <option value="before">Before</option>
+                <option value="after">After</option>
+              </select>
+              <button class="button small secondary" type="button" id="cp-photo-upload-btn">📷 Add</button>
+              <input type="file" id="cp-photo-input" accept="image/*" style="display:none;" />
+            </div>
+          </div>
+          <div id="cp-photos" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+          <div class="muted" id="cp-photo-status" style="font-size:12px;margin-top:4px;"></div>
+        </div>
+
         <div>
           <div style="font-size:13px;font-weight:600;margin-bottom:6px;">History</div>
           <div id="cp-history" style="max-height:260px;overflow:auto;"></div>
@@ -5793,12 +5904,36 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           { label: "Confirmed Bookings", value: summary.totalBookings },
           { label: "Conversion Rate", value: summary.conversionRate + "%" },
           { label: "Avg Booking Value", value: formatMoney(summary.avgBookingValue) },
+          ...(summary.uniqueClients ? [
+            { label: "Unique Clients", value: summary.uniqueClients },
+            { label: "Repeat Client Rate", value: (summary.repeatClientRate ?? 0) + "%" },
+            { label: "Avg Client Value", value: formatMoney(summary.avgClientValue || 0) },
+            { label: "Active Clients", value: summary.activeClients ?? 0 },
+            ...(summary.lapsedClients ? [{ label: "Lapsed (90d+)", value: summary.lapsedClients }] : []),
+            ...(summary.busiestDay && summary.busiestDay !== "—" ? [{ label: "Busiest Day", value: summary.busiestDay }] : []),
+            ...(summary.busiestHour && summary.busiestHour !== "—" ? [{ label: "Busiest Time", value: summary.busiestHour }] : []),
+          ] : []),
         ];
         document.getElementById("analytics-summary").innerHTML = cards.map((c) =>
           `<div class="analytics-metric">
             <div class="analytics-metric-label">${escapeHtml(c.label)}</div>
             <div class="analytics-metric-value">${escapeHtml(String(c.value))}</div>
           </div>`).join("");
+
+        // Busiest day-of-week mini bar chart
+        const wdEl = document.getElementById("chart-weekday");
+        if (wdEl && Array.isArray(payload.byWeekday)) {
+          const maxWd = Math.max(1, ...payload.byWeekday.map((d) => d.count));
+          wdEl.innerHTML =
+            `<div style="display:flex;align-items:flex-end;gap:6px;height:90px;border-bottom:1px solid var(--line);">` +
+            payload.byWeekday.map((d) => {
+              const pct = Math.round((d.count / maxWd) * 100);
+              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;" title="${escapeHtml(d.day)}: ${d.count}">
+                <div style="width:100%;height:${pct}%;background:var(--accent);border-radius:4px 4px 0 0;min-height:${d.count > 0 ? 3 : 0}px;"></div>
+                <div style="font-size:10px;color:var(--muted);">${escapeHtml(d.day)}</div>
+              </div>`;
+            }).join("") + `</div>`;
+        }
 
         // Revenue bar chart
         const maxRev = Math.max(1, ...months.map((m) => m.revenue));
@@ -7404,7 +7539,97 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         } catch {
           document.getElementById("cp-notes-status").textContent = "";
         }
+        // Photos and packages load independently — they don't block the modal.
+        loadClientPhotos(digits);
+        loadClientPackages(digits);
       }
+
+      // ─── Per-client before/after photos ───
+      async function loadClientPhotos(phone) {
+        const box = document.getElementById("cp-photos");
+        if (!box) return;
+        box.innerHTML = `<span class="muted" style="font-size:12px;">Loading…</span>`;
+        try {
+          const payload = await getJson(`/api/clients/${encodeURIComponent(phone || "unknown")}/photos`);
+          const photos = (payload?.photos || []).filter((p) => p.url);
+          if (!photos.length) { box.innerHTML = `<span class="muted" style="font-size:12px;">No photos yet. Add before/after looks to build her history.</span>`; return; }
+          box.innerHTML = photos.map((p) => `
+            <div style="position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--line);">
+              <a href="${escapeHtml(p.url)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.kind)}" style="width:100%;height:100%;object-fit:cover;" /></a>
+              <span style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.55);color:#fff;font-size:9px;text-align:center;padding:1px 0;text-transform:capitalize;">${escapeHtml(p.kind)}</span>
+              <button type="button" data-del-photo="${escapeHtml(p.photoId)}" title="Delete" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer;">×</button>
+            </div>`).join("");
+        } catch {
+          box.innerHTML = `<span class="muted" style="font-size:12px;">Couldn't load photos.</span>`;
+        }
+      }
+      document.getElementById("cp-photo-upload-btn")?.addEventListener("click", () => document.getElementById("cp-photo-input").click());
+      document.getElementById("cp-photo-input")?.addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const statusEl = document.getElementById("cp-photo-status");
+        statusEl.textContent = "Uploading…";
+        try {
+          const fd = new FormData();
+          fd.append("image", file);
+          fd.append("kind", document.getElementById("cp-photo-kind").value);
+          const res = await fetch(`/api/clients/${encodeURIComponent(clientProfilePhone || "unknown")}/photos`, { method: "POST", body: fd });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed");
+          statusEl.textContent = "✓ Added";
+          loadClientPhotos(clientProfilePhone);
+          setTimeout(() => { statusEl.textContent = ""; }, 1500);
+        } catch (err) {
+          statusEl.textContent = err.message;
+        } finally {
+          e.target.value = "";
+        }
+      });
+      document.getElementById("cp-photos")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-del-photo]");
+        if (!btn) return;
+        if (!(await showConfirm("Delete this photo?"))) return;
+        try {
+          await fetch(`/api/clients/${encodeURIComponent(clientProfilePhone || "unknown")}/photos/${encodeURIComponent(btn.getAttribute("data-del-photo"))}`, { method: "DELETE" });
+          loadClientPhotos(clientProfilePhone);
+        } catch { /* non-critical */ }
+      });
+
+      // ─── Prepaid packages for this client ───
+      async function loadClientPackages(phone) {
+        const wrap = document.getElementById("cp-packages-wrap");
+        const box = document.getElementById("cp-packages");
+        if (!wrap || !box) return;
+        try {
+          const payload = await getJson(`/api/clients/${encodeURIComponent(phone || "unknown")}/packages`);
+          const packages = (payload?.packages || []).filter((p) => p.status === "Active");
+          if (!packages.length) { wrap.style.display = "none"; return; }
+          wrap.style.display = "";
+          box.innerHTML = packages.map((p) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;">
+              <div>
+                <div style="font-size:13px;font-weight:600;">${escapeHtml(p.name)}</div>
+                <div class="muted" style="font-size:12px;">${p.remaining} of ${p.totalSessions} sessions left</div>
+              </div>
+              <button class="button tiny" type="button" data-redeem-pkg="${escapeHtml(p.packageId)}" ${p.remaining <= 0 ? "disabled" : ""}>Use one</button>
+            </div>`).join("");
+        } catch { wrap.style.display = "none"; }
+      }
+      document.getElementById("cp-packages")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-redeem-pkg]");
+        if (!btn) return;
+        setLoading(btn, "…");
+        try {
+          const payload = await postJson(`/api/packages/${encodeURIComponent(btn.getAttribute("data-redeem-pkg"))}/redeem`, {});
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          toast("Session redeemed ✓", "success");
+          loadClientPackages(clientProfilePhone);
+        } catch (err) {
+          toast(err.message, "error");
+          clearLoading(btn, "Use one");
+        }
+      });
+
       document.getElementById("client-profile-close")?.addEventListener("click", () => clientProfileModal.classList.remove("open"));
       clientProfileModal?.addEventListener("click", (e) => { if (e.target === clientProfileModal) clientProfileModal.classList.remove("open"); });
       document.getElementById("cp-notes-save")?.addEventListener("click", async (e) => {
@@ -8096,6 +8321,165 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           toast(err.message, "error");
         } finally { clearLoading(btn); }
       });
+
+      // ─── Win-back: lapsed clients ───
+      async function loadWinback() {
+        const box = document.getElementById("winback-list");
+        if (!box) return;
+        const days = document.getElementById("winback-days")?.value || "90";
+        box.innerHTML = `<p class="muted" style="font-size:13px;">Loading…</p>`;
+        try {
+          const payload = await getJson(`/api/winback?days=${encodeURIComponent(days)}`);
+          const clients = payload?.clients || [];
+          if (!clients.length) { box.innerHTML = `<p class="muted" style="font-size:13px;">No lapsed clients in this window 🎉</p>`; return; }
+          box.innerHTML = `<p class="muted" style="font-size:12.5px;margin:0 0 8px;">${clients.length} client${clients.length === 1 ? "" : "s"}, highest spenders first.</p>` +
+            clients.map((c) => {
+              const wa = String(c.phone || "").replace(/\D/g, "");
+              const msg = `Hi ${c.name}! It's been a while — we'd love to see you again. Reply here to book your next look. 💕`;
+              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);">
+                <div style="min-width:0;">
+                  <div style="font-size:14px;font-weight:600;">${escapeHtml(c.name)}</div>
+                  <div class="muted" style="font-size:12px;">${formatMoney(c.revenue)} lifetime · ${c.bookings} booking${c.bookings === 1 ? "" : "s"} · last seen ${c.daysSince != null ? c.daysSince + " days ago" : "—"}</div>
+                </div>
+                <a class="button tiny" style="text-decoration:none;flex-shrink:0;" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}" target="_blank" rel="noreferrer">💬 Win back</a>
+              </div>`;
+            }).join("");
+        } catch (err) {
+          box.innerHTML = `<p class="muted" style="font-size:13px;">${escapeHtml(err.message)}</p>`;
+        }
+      }
+      document.getElementById("winback-refresh")?.addEventListener("click", loadWinback);
+      document.getElementById("winback-days")?.addEventListener("change", loadWinback);
+
+      // ─── Promo codes ───
+      async function loadPromoCodes() {
+        const box = document.getElementById("promo-list");
+        if (!box) return;
+        box.innerHTML = `<p class="muted" style="font-size:13px;">Loading…</p>`;
+        try {
+          const payload = await getJson("/api/promo-codes");
+          const codes = payload?.codes || [];
+          if (!codes.length) { box.innerHTML = `<p class="muted" style="font-size:13px;">No promo codes yet.</p>`; return; }
+          box.innerHTML = codes.map((p) => {
+            const val = p.type === "percent" ? `${p.value}% off` : `${formatMoney(p.value)} off`;
+            const limits = [
+              p.minAmount > 0 ? `min ${formatMoney(p.minAmount)}` : "",
+              p.maxRedemptions > 0 ? `${p.timesRedeemed}/${p.maxRedemptions} used` : `${p.timesRedeemed} used`,
+              p.expiresAt ? `exp ${escapeHtml(p.expiresAt)}` : "",
+            ].filter(Boolean).join(" · ");
+            const dead = p.status !== "Active";
+            return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);${dead ? "opacity:0.5;" : ""}">
+              <div style="min-width:0;">
+                <div style="font-size:14px;font-weight:600;"><code>${escapeHtml(p.code)}</code> — ${escapeHtml(val)} ${dead ? `<span class="pill" style="font-size:10px;">${escapeHtml(p.status)}</span>` : ""}</div>
+                <div class="muted" style="font-size:12px;">${escapeHtml(limits)}</div>
+              </div>
+              <div style="display:flex;gap:6px;flex-shrink:0;">
+                <button class="button tiny secondary" type="button" data-copy-promo="${escapeHtml(p.code)}">Copy</button>
+                ${dead ? "" : `<button class="button tiny secondary" type="button" data-deactivate-promo="${escapeHtml(p.code)}">Stop</button>`}
+              </div>
+            </div>`;
+          }).join("");
+        } catch (err) {
+          box.innerHTML = `<p class="muted" style="font-size:13px;">${escapeHtml(err.message)}</p>`;
+        }
+      }
+      document.getElementById("promo-create")?.addEventListener("click", async () => {
+        const btn = document.getElementById("promo-create");
+        const statusEl = document.getElementById("promo-status");
+        const value = Number(document.getElementById("promo-value").value);
+        if (!value || value <= 0) { statusEl.textContent = "Enter a discount value."; return; }
+        statusEl.textContent = "";
+        setLoading(btn, "Creating…");
+        try {
+          const payload = await postJson("/api/promo-codes", {
+            code: document.getElementById("promo-code-input").value.trim(),
+            type: document.getElementById("promo-type").value,
+            value,
+            minAmount: Number(document.getElementById("promo-min").value) || 0,
+            maxRedemptions: Number(document.getElementById("promo-max").value) || 0,
+            expiresAt: document.getElementById("promo-expires").value || "",
+          });
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          toast(`Code ${payload.promo.code} created`, "success");
+          ["promo-code-input","promo-value","promo-min","promo-max","promo-expires"].forEach((id) => { document.getElementById(id).value = ""; });
+          loadPromoCodes();
+        } catch (err) {
+          statusEl.textContent = err.message;
+        } finally { clearLoading(btn, "Create code"); }
+      });
+      document.getElementById("promo-list")?.addEventListener("click", async (e) => {
+        const copyBtn = e.target.closest("[data-copy-promo]");
+        if (copyBtn) { copyToClipboard(copyBtn.getAttribute("data-copy-promo"), copyBtn); return; }
+        const stopBtn = e.target.closest("[data-deactivate-promo]");
+        if (stopBtn) {
+          if (!(await showConfirm("Stop this code?", "Clients won't be able to use it anymore."))) return;
+          try {
+            await postJson(`/api/promo-codes/${encodeURIComponent(stopBtn.getAttribute("data-deactivate-promo"))}/deactivate`, {});
+            loadPromoCodes();
+          } catch (err) { toast(err.message, "error"); }
+        }
+      });
+      document.getElementById("promo-codes-details")?.addEventListener("toggle", (e) => { if (e.target.open) loadPromoCodes(); });
+
+      // ─── Prepaid packages ───
+      async function loadPackages() {
+        const box = document.getElementById("pkg-list");
+        if (!box) return;
+        box.innerHTML = `<p class="muted" style="font-size:13px;">Loading…</p>`;
+        try {
+          const payload = await getJson("/api/packages");
+          const packages = (payload?.packages || []).filter((p) => p.status !== "Cancelled");
+          if (!packages.length) { box.innerHTML = `<p class="muted" style="font-size:13px;">No packages sold yet.</p>`; return; }
+          box.innerHTML = packages.map((p) => {
+            const done = p.status === "Completed";
+            return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);${done ? "opacity:0.6;" : ""}">
+              <div style="min-width:0;">
+                <div style="font-size:14px;font-weight:600;">${escapeHtml(p.name)} — ${escapeHtml(p.clientName || p.clientWhatsApp)}</div>
+                <div class="muted" style="font-size:12px;">${p.remaining} of ${p.totalSessions} left${p.price > 0 ? " · " + formatMoney(p.price) : ""}${done ? " · ✓ Complete" : ""}</div>
+              </div>
+              ${done ? "" : `<button class="button tiny" type="button" data-redeem-pkg-list="${escapeHtml(p.packageId)}" ${p.remaining <= 0 ? "disabled" : ""}>Use one</button>`}
+            </div>`;
+          }).join("");
+        } catch (err) {
+          box.innerHTML = `<p class="muted" style="font-size:13px;">${escapeHtml(err.message)}</p>`;
+        }
+      }
+      document.getElementById("pkg-create")?.addEventListener("click", async () => {
+        const btn = document.getElementById("pkg-create");
+        const statusEl = document.getElementById("pkg-status");
+        const clientWhatsApp = document.getElementById("pkg-client-wa").value.trim();
+        const name = document.getElementById("pkg-name").value.trim();
+        const totalSessions = Number(document.getElementById("pkg-sessions").value);
+        if (!clientWhatsApp || !name || !totalSessions) { statusEl.textContent = "Client WhatsApp, package name, and sessions are required."; return; }
+        statusEl.textContent = "";
+        setLoading(btn, "Saving…");
+        try {
+          const payload = await postJson("/api/packages", {
+            clientWhatsApp, name, totalSessions,
+            clientName: document.getElementById("pkg-client-name").value.trim(),
+            price: Number(document.getElementById("pkg-price").value) || 0,
+            expiresAt: document.getElementById("pkg-expires").value || "",
+          });
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          toast("Package sold ✓", "success");
+          ["pkg-client-name","pkg-client-wa","pkg-name","pkg-sessions","pkg-price","pkg-expires"].forEach((id) => { document.getElementById(id).value = ""; });
+          loadPackages();
+        } catch (err) {
+          statusEl.textContent = err.message;
+        } finally { clearLoading(btn, "Sell package"); }
+      });
+      document.getElementById("pkg-list")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-redeem-pkg-list]");
+        if (!btn) return;
+        setLoading(btn, "…");
+        try {
+          const payload = await postJson(`/api/packages/${encodeURIComponent(btn.getAttribute("data-redeem-pkg-list"))}/redeem`, {});
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          toast("Session redeemed ✓", "success");
+          loadPackages();
+        } catch (err) { toast(err.message, "error"); clearLoading(btn, "Use one"); }
+      });
+      document.getElementById("packages-details")?.addEventListener("toggle", (e) => { if (e.target.open) loadPackages(); });
 
       // ─── Monthly recap ───────────────────────────────────────────────────────
       async function loadMonthlyRecap() {

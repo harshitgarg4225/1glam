@@ -212,6 +212,15 @@
           <label for="notes">Anything else? (optional)</label>
           <textarea id="notes" placeholder="Number of people, look references, timings…"></textarea>
 
+          <div id="promo-wrap" style="display:none;">
+            <label for="promo-code">Promo code (optional)</label>
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <input type="text" id="promo-code" placeholder="Enter code" maxlength="40" style="flex:1;text-transform:uppercase;" />
+              <button type="button" class="button" id="promo-apply" style="white-space:nowrap;width:auto;padding-left:18px;padding-right:18px;">Apply</button>
+            </div>
+            <p id="promo-feedback" style="font-size:13px;margin:6px 0 0;"></p>
+          </div>
+
           <button type="submit" class="button" id="submit">Request booking</button>
           <div class="status" id="status"></div>
         </form>
@@ -236,6 +245,7 @@
       let availability = null;
       let ownerWhatsApp = "";
       let eventTypesData = [];
+      let appliedPromoCode = "";
       const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
       const el = (id) => document.getElementById(id);
@@ -336,6 +346,7 @@
         renderGallery(profile.portfolioImages || []);
 
         eventTypesData = profile.eventTypes || [];
+        if (profile.promoCodesEnabled) { el("promo-wrap").style.display = ""; }
         const container = el("services");
         container.innerHTML = "";
         profile.eventTypes.forEach((type) => {
@@ -607,11 +618,45 @@
         return "";
       }
 
-      // Variant selection highlight
+      // Variant selection highlight; clears any applied promo since price changed.
       el("variants-list").addEventListener("change", (e) => {
         document.querySelectorAll("#variants-list .variant-item").forEach((item) => item.classList.remove("selected"));
         const radio = e.target.closest("input[type=radio]");
         if (radio) radio.closest(".variant-item")?.classList.add("selected");
+        resetPromo();
+      });
+
+      // Current order amount = selected variant price, else the service's starting price.
+      function currentOrderAmount() {
+        const variant = document.querySelector("#variants-list input[name='serviceVariant']:checked");
+        if (variant) return Number(variant.dataset.price) || 0;
+        const type = eventTypesData.find((t) => t.key === selectedEventType);
+        return type ? Number(type.startingPrice) || 0 : 0;
+      }
+      function resetPromo() {
+        appliedPromoCode = "";
+        const fb = el("promo-feedback");
+        if (fb) { fb.textContent = ""; }
+      }
+      el("promo-apply")?.addEventListener("click", async () => {
+        const fb = el("promo-feedback");
+        const code = el("promo-code").value.trim().toUpperCase();
+        if (!code) { fb.style.color = ""; fb.textContent = "Enter a code first."; return; }
+        if (!selectedEventType) { fb.style.color = "#b91c1c"; fb.textContent = "Choose a service first."; return; }
+        const amount = currentOrderAmount();
+        fb.style.color = ""; fb.textContent = "Checking…";
+        try {
+          const res = await fetch("/api/public/" + encodeURIComponent(workspaceId) + "/promo/" + encodeURIComponent(code) + "?amount=" + amount);
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "That code isn't valid.");
+          appliedPromoCode = data.code;
+          fb.style.color = "#15803d";
+          fb.textContent = "✓ " + data.label + " applied — you save ₹" + Number(data.discount).toLocaleString("en-IN") + ". Final: ₹" + Number(data.finalAmount).toLocaleString("en-IN") + ".";
+        } catch (err) {
+          appliedPromoCode = "";
+          fb.style.color = "#b91c1c";
+          fb.textContent = err.message;
+        }
       });
 
       el("form").addEventListener("submit", async (event) => {
@@ -666,6 +711,7 @@
           clientWhatsApp: el("clientWhatsApp").value.trim(),
           clientInstagram: el("clientInstagram").value.trim() || undefined,
           notes: [el("notes").value.trim(), variantNote, intakeNote].filter(Boolean).join("\n") || undefined,
+          promoCode: appliedPromoCode || undefined,
         };
 
         const submitBtn = el("submit");

@@ -62,6 +62,8 @@ export type PublicBusinessProfile = {
   googleRating: number;
   googleReviewCount: number;
   googleReviewLink: string;
+  // Whether to show the "Have a promo code?" field on the booking page.
+  promoCodesEnabled: boolean;
 };
 
 export type PublicPaymentDetails = {
@@ -256,6 +258,7 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
     googleRating: Math.min(5, Math.max(0, Number(config.googleRating) || 0)),
     googleReviewCount: Math.max(0, Math.round(Number(config.googleReviewCount) || 0)),
     googleReviewLink: sanitizeUrl(config.googleReviewLink),
+    promoCodesEnabled: config.promoCodesEnabled === "Yes",
   };
 }
 
