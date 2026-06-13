@@ -2164,6 +2164,7 @@
                 </div>
                 <div><label for="reminderDaysBefore">Remind clients this many days before</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
                 <div><label for="reviewRequestDaysAfter">Ask for a review this many days after</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
+                <div><label for="rebookNudgeDaysAfter">Auto "time to rebook" nudge this many days after</label><input id="rebookNudgeDaysAfter" name="rebookNudgeDaysAfter" placeholder="90 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Sends a friendly WhatsApp once, asking the client to book again. Needs the rebook template (create it under WhatsApp &amp; Instagram).</p></div>
                 <div><label for="cancellationWindowDays">Late cancellation window (days)</label><input id="cancellationWindowDays" name="cancellationWindowDays" type="number" min="0" max="60" placeholder="7" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Cancellations inside this many days before the event will prompt you to charge a fee.</p></div>
                 <div><label for="cancellationFeePercent">Cancellation fee (%)</label><input id="cancellationFeePercent" name="cancellationFeePercent" type="number" min="0" max="100" placeholder="50" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Percentage of the booking price charged for late cancellations.</p></div>
                 <div>
@@ -2277,6 +2278,8 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
                 <div><label for="reminderTemplateLang">Language</label><input id="reminderTemplateLang" name="reminderTemplateLang" placeholder="en" /></div>
                 <div><label for="reviewTemplate">Review request template</label><input id="reviewTemplate" name="reviewTemplate" placeholder="review_request" /></div>
                 <div><label for="reviewTemplateLang">Language</label><input id="reviewTemplateLang" name="reviewTemplateLang" placeholder="en" /></div>
+                <div><label for="rebookTemplate">Rebook nudge template</label><input id="rebookTemplate" name="rebookTemplate" placeholder="busydays_rebook_nudge" /></div>
+                <div><label for="rebookTemplateLang">Language</label><input id="rebookTemplateLang" name="rebookTemplateLang" placeholder="en" /></div>
                 <div><label for="waitlistOfferTemplate">Waitlist offer template</label><input id="waitlistOfferTemplate" name="waitlistOfferTemplate" placeholder="waitlist_offer" /></div>
                 <div><label for="waitlistOfferTemplateLang">Language</label><input id="waitlistOfferTemplateLang" name="waitlistOfferTemplateLang" placeholder="en" /></div>
               </div>

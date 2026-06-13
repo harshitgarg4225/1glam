@@ -274,3 +274,16 @@ test("parseProductSale round-trips through productSaleToRow", () => {
   };
   assert.deepEqual(parseProductSale(productSaleToRow(sale)), sale);
 });
+
+// --- Config plumbing for new features --------------------------------------
+
+test("buildDefaultConfig exposes the new parity config fields", () => {
+  const cfg = baseConfig();
+  // Promo codes, rebook automation, and service variants must be present with
+  // safe defaults so older workspaces load without throwing.
+  assert.equal(cfg.promoCodesEnabled, "No");
+  assert.equal(cfg.rebookNudgeDaysAfter, "");
+  assert.equal(cfg.rebookTemplate, "");
+  assert.equal(cfg.rebookTemplateLang, "en");
+  assert.equal(cfg.serviceVariantsJson, "{}");
+});

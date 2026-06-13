@@ -13,6 +13,7 @@ const REMINDER_LOCK_KEY = 918_273_001;
 const REVIEW_LOCK_KEY = 918_273_002;
 const PAYMENT_LOCK_KEY = 918_273_003;
 const DIGEST_LOCK_KEY = 918_273_004;
+const REBOOK_LOCK_KEY = 918_273_005;
 
 // Spread per-workspace Sheets reads across time so a large fleet doesn't
 // burst the Google Sheets API all at once at 8 UTC. 200 ms × 500 workspaces
@@ -43,6 +44,9 @@ export function startReminderScheduler() {
     withDistributedLock(PAYMENT_LOCK_KEY, runPaymentReminderJob)
       .then((r) => { if (!r.ran) logger.info("[payments] skipped — another instance holds the lock"); })
       .catch((err) => captureException(err, { job: "payments" }));
+    withDistributedLock(REBOOK_LOCK_KEY, runRebookNudgeJob)
+      .then((r) => { if (!r.ran) logger.info("[rebook] skipped — another instance holds the lock"); })
+      .catch((err) => captureException(err, { job: "rebook" }));
     setTimeout(tick, 24 * 60 * 60 * 1000);
   };
 
@@ -230,6 +234,75 @@ async function runReviewRequestJob() {
             actor: recipientPhone,
             message: `Automated review request template "${templateName}" sent`,
             aiSummary: `Automated post-event review request (T+${daysAfter})`,
+          });
+        } catch (err) {
+          captureException(err, { bookingId: booking.bookingId });
+        }
+      }
+    } catch (err) {
+      captureException(err, { workspace: workspace.email });
+    }
+  }
+}
+
+// Automated rebook nudge: N days (rebookNudgeDaysAfter) after an event, send
+// the rebook template once to bring the client back. Modelled on the review
+// job and deduplicated via the booking's remindersSent "rebook" marker, so a
+// client is nudged at most once per booking.
+async function runRebookNudgeJob() {
+  const REBOOK_MARKER = "rebook";
+  const workspaces = await listWorkspaces();
+
+  for (let i = 0; i < workspaces.length; i++) {
+    await stagger(i);
+    const workspace = workspaces[i];
+    const daysAfter = parseFirstPositiveInt(workspace.config.rebookNudgeDaysAfter);
+    if (daysAfter === null) continue;
+
+    const templateName = String(workspace.config.rebookTemplate || "").trim();
+    if (!templateName) continue;
+
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    const connectionCanSend =
+      whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    if (!connectionCanSend && !envCanSend) continue;
+
+    const targetDate = addDaysToIso(-daysAfter);
+
+    try {
+      const tokens = await getWorkspaceCredentials(workspace.email);
+      const bookings = await listActiveBookings(workspace.email, tokens);
+
+      for (const booking of bookings) {
+        if (!booking.clientWhatsApp || booking.eventDate !== targetDate) continue;
+
+        const alreadySent = (booking.remindersSent || "")
+          .split(",")
+          .map((s) => s.trim())
+          .includes(REBOOK_MARKER);
+        if (alreadySent) continue;
+
+        const recipientPhone = booking.clientWhatsApp.replace(/[^\d]/g, "");
+
+        try {
+          await sendWhatsAppTemplate(
+            { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+            recipientPhone,
+            templateName,
+            String(workspace.config.rebookTemplateLang || "en"),
+            [booking.clientName, workspace.config.businessName || workspace.name],
+          );
+
+          await markBookingReminderSent(workspace.email, tokens, booking.bookingId, REBOOK_MARKER);
+
+          await logInteractionForWorkspace(workspace.email, tokens, {
+            leadId: booking.leadId,
+            direction: "Outbound",
+            channel: "WhatsApp",
+            actor: recipientPhone,
+            message: `Automated rebook nudge template "${templateName}" sent`,
+            aiSummary: `Automated rebook nudge (T+${daysAfter})`,
           });
         } catch (err) {
           captureException(err, { bookingId: booking.bookingId });

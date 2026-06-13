@@ -103,6 +103,10 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reviewRequestDaysAfter: string;
   reviewTemplate: string;
   reviewTemplateLang: string;
+  // Automated rebook nudge: WhatsApp template sent N days after an event.
+  rebookNudgeDaysAfter: string;
+  rebookTemplate: string;
+  rebookTemplateLang: string;
   documentTemplate: string;
   quoteIntro: string;
   cancellationPolicy: string;
