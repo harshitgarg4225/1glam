@@ -931,6 +931,7 @@
           <div class="tab-more-menu" id="tab-more-menu">
             <button class="tab-more-item" type="button" data-tab="wallet">💳 Wallet &amp; credits</button>
             <button class="tab-more-item" type="button" data-tab="analytics">📊 Insights</button>
+            <button class="tab-more-item" type="button" data-tab="shop">🛍️ Shop &amp; inventory</button>
             <button class="tab-more-item" type="button" data-tab="team">👥 Team</button>
             <button class="tab-more-item" type="button" data-tab="channels">🔗 WhatsApp &amp; Instagram</button>
             <button class="tab-more-item" type="button" data-tab="setup">⚙️ Settings</button>
@@ -1895,6 +1896,49 @@
       </div>
       </section>
 
+      <!-- Shop & inventory -->
+      <section class="tab-panel" data-panel="shop">
+        <div class="panel section">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="kicker">🛍️ Retail</div>
+              <h2>Shop &amp; inventory</h2>
+              <p class="muted" style="margin:4px 0 0;font-size:13.5px;">Sell products alongside your services — lipsticks, skincare, kits. Stock and retail revenue track automatically.</p>
+            </div>
+            <button class="button" type="button" id="product-add-toggle">+ Add product</button>
+          </div>
+          <div id="shop-summary" class="mini-grid" style="margin-top:16px;"></div>
+
+          <!-- Add / edit product form -->
+          <div id="product-form" style="display:none;margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;">
+            <h3 style="margin:0 0 12px;font-size:15px;" id="product-form-title">New product</h3>
+            <input type="hidden" id="product-edit-id" />
+            <div class="form-grid">
+              <div><label>Name</label><input id="product-name" placeholder="Matte Lipstick — Rose" /></div>
+              <div><label>SKU (optional)</label><input id="product-sku" placeholder="LIP-01" /></div>
+              <div><label>Category (optional)</label><input id="product-category" placeholder="Lips" /></div>
+              <div><label>Retail price ₹</label><input id="product-price" type="number" min="0" placeholder="1200" /></div>
+              <div><label>Cost ₹ (optional)</label><input id="product-cost" type="number" min="0" placeholder="400" /></div>
+              <div><label>Stock</label><input id="product-stock" type="number" min="0" placeholder="10" /></div>
+              <div><label>Low-stock alert at</label><input id="product-low" type="number" min="0" placeholder="3" /></div>
+            </div>
+            <div class="action-row" style="margin-top:12px;">
+              <button class="button" type="button" id="product-save">Save product</button>
+              <button class="button secondary" type="button" id="product-cancel">Cancel</button>
+            </div>
+            <div class="status" id="product-status"></div>
+          </div>
+
+          <div id="products-list" style="margin-top:18px;"><p class="muted" style="font-size:13px;">Loading…</p></div>
+        </div>
+
+        <div class="panel section" style="margin-top:20px;">
+          <div class="kicker">Recent sales</div>
+          <h3 style="margin:4px 0 12px;font-size:16px;">What's been selling</h3>
+          <div id="product-sales-list"><p class="muted" style="font-size:13px;">No sales yet.</p></div>
+        </div>
+      </section>
+
       <!-- Channels -->
       <section class="tab-panel" data-panel="channels">
         <div class="panel section">
@@ -2646,11 +2690,34 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           <button class="bnav-sheet-item" type="button" data-tab="myai"><span>🤖</span>My AI</button>
           <button class="bnav-sheet-item" type="button" data-tab="reviews"><span>⭐</span>Reviews</button>
           <button class="bnav-sheet-item" type="button" data-tab="analytics"><span>📊</span>Insights</button>
+          <button class="bnav-sheet-item" type="button" data-tab="shop"><span>🛍️</span>Shop</button>
           <button class="bnav-sheet-item" type="button" data-tab="team"><span>🧑‍🤝‍🧑</span>Team</button>
           <button class="bnav-sheet-item" type="button" data-tab="wallet"><span>💳</span>Wallet</button>
           <button class="bnav-sheet-item" type="button" data-tab="channels"><span>🔗</span>WhatsApp &amp; Insta</button>
           <button class="bnav-sheet-item" type="button" data-tab="setup"><span>⚙️</span>Settings</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Sell a retail product -->
+    <div class="modal-overlay" id="sell-modal">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-head">
+          <h3 style="margin:0;" id="sell-title">Sell product</h3>
+          <button class="modal-close" type="button" id="sell-close" aria-label="Close">×</button>
+        </div>
+        <input type="hidden" id="sell-product-id" />
+        <div class="form-grid">
+          <div><label>Quantity</label><input id="sell-qty" type="number" min="1" value="1" /></div>
+          <div><label>Unit price ₹</label><input id="sell-price" type="number" min="0" /></div>
+          <div class="wide"><label>Client WhatsApp (optional)</label><input id="sell-client" placeholder="+91…" /></div>
+        </div>
+        <p class="muted" id="sell-stock-note" style="font-size:12.5px;margin:8px 0 0;"></p>
+        <div class="action-row" style="margin-top:12px;">
+          <button class="button" type="button" id="sell-confirm">Record sale</button>
+          <button class="button secondary" type="button" id="sell-cancel">Cancel</button>
+        </div>
+        <div class="status" id="sell-status"></div>
       </div>
     </div>
 
@@ -3231,6 +3298,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (name === "team") { loadTeam(); loadCommissionReport().then(renderTeamEarnings); }
         if (name === "reviews") { loadReviews(); loadLoyalty(); loadGiftCards(); }
         if (name === "analytics") { loadAnalytics(); loadMonthlyRecap(); loadGstReport(); }
+        if (name === "shop") loadShop();
         if (name === "mypage") loadMyPage();
         if (name === "wallet") loadWallet();
       }
@@ -8480,6 +8548,148 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         } catch (err) { toast(err.message, "error"); clearLoading(btn, "Use one"); }
       });
       document.getElementById("packages-details")?.addEventListener("toggle", (e) => { if (e.target.open) loadPackages(); });
+
+      // ─── Shop & inventory ───
+      async function loadShop() {
+        const list = document.getElementById("products-list");
+        const salesEl = document.getElementById("product-sales-list");
+        const summaryEl = document.getElementById("shop-summary");
+        if (!list) return;
+        list.innerHTML = `<p class="muted" style="font-size:13px;">Loading…</p>`;
+        try {
+          const payload = await getJson("/api/products");
+          const products = (payload?.products || []).filter((p) => p.status !== "Archived");
+          const s = payload?.summary || {};
+          summaryEl.innerHTML = [
+            `<div class="mini-card" style="text-align:center;"><div class="kicker">Retail revenue</div><div style="font-size:24px;font-weight:700;color:var(--primary);">${formatMoney(s.retailRevenue || 0)}</div></div>`,
+            `<div class="mini-card" style="text-align:center;"><div class="kicker">Units sold</div><div style="font-size:24px;font-weight:700;">${s.unitsSold || 0}</div></div>`,
+            `<div class="mini-card" style="text-align:center;"><div class="kicker">Products</div><div style="font-size:24px;font-weight:700;">${products.length}</div></div>`,
+            ...(s.lowStockCount ? [`<div class="mini-card" style="text-align:center;"><div class="kicker">Low stock</div><div style="font-size:24px;font-weight:700;color:var(--danger);">${s.lowStockCount}</div></div>`] : []),
+          ].join("");
+
+          if (!products.length) {
+            list.innerHTML = `<p class="muted" style="font-size:13px;">No products yet. Add your first retail item above.</p>`;
+          } else {
+            list.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Product</th><th>Price</th><th>Stock</th><th>Actions</th></tr></thead><tbody>` +
+              products.map((p) => `
+                <tr ${p.lowStock ? 'style="background:#fff7ed;"' : ""}>
+                  <td><strong>${escapeHtml(p.name)}</strong>${p.sku ? ` <span class="muted" style="font-size:11px;">${escapeHtml(p.sku)}</span>` : ""}${p.category ? `<br><span class="muted" style="font-size:11px;">${escapeHtml(p.category)}</span>` : ""}</td>
+                  <td>${formatMoney(p.price)}</td>
+                  <td>${p.stock}${p.lowStock ? ` <span class="pill warning" style="font-size:10px;">Low</span>` : ""}</td>
+                  <td>
+                    <button class="button tiny" type="button" data-sell-product='${escapeHtml(JSON.stringify({ id: p.productId, name: p.name, price: p.price, stock: p.stock }))}' ${p.stock <= 0 ? "disabled" : ""}>Sell</button>
+                    <button class="button tiny secondary" type="button" data-edit-product='${escapeHtml(JSON.stringify(p))}'>Edit</button>
+                    <button class="button tiny secondary" type="button" data-archive-product="${escapeHtml(p.productId)}">Archive</button>
+                  </td>
+                </tr>`).join("") + `</tbody></table></div>`;
+          }
+
+          const sales = payload?.recentSales || [];
+          salesEl.innerHTML = sales.length
+            ? sales.map((x) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;">
+                <span>${escapeHtml(x.productName)} <span class="muted" style="font-size:12px;">×${x.quantity}</span></span>
+                <span style="font-weight:600;">${formatMoney(x.total)}</span>
+              </div>`).join("")
+            : `<p class="muted" style="font-size:13px;">No sales yet.</p>`;
+        } catch (err) {
+          list.innerHTML = `<p class="muted" style="font-size:13px;">${escapeHtml(err.message)}</p>`;
+        }
+      }
+      function openProductForm(p) {
+        const form = document.getElementById("product-form");
+        document.getElementById("product-form-title").textContent = p ? "Edit product" : "New product";
+        document.getElementById("product-edit-id").value = p?.productId || "";
+        document.getElementById("product-name").value = p?.name || "";
+        document.getElementById("product-sku").value = p?.sku || "";
+        document.getElementById("product-category").value = p?.category || "";
+        document.getElementById("product-price").value = p?.price || "";
+        document.getElementById("product-cost").value = p?.cost || "";
+        document.getElementById("product-stock").value = p?.stock ?? "";
+        document.getElementById("product-low").value = p?.lowStockThreshold || "";
+        document.getElementById("product-status").textContent = "";
+        form.style.display = "";
+      }
+      document.getElementById("product-add-toggle")?.addEventListener("click", () => {
+        const form = document.getElementById("product-form");
+        if (form.style.display === "none") openProductForm(null); else form.style.display = "none";
+      });
+      document.getElementById("product-cancel")?.addEventListener("click", () => { document.getElementById("product-form").style.display = "none"; });
+      document.getElementById("product-save")?.addEventListener("click", async () => {
+        const btn = document.getElementById("product-save");
+        const statusEl = document.getElementById("product-status");
+        const name = document.getElementById("product-name").value.trim();
+        if (!name) { statusEl.textContent = "Product name is required."; return; }
+        const body = {
+          name,
+          sku: document.getElementById("product-sku").value.trim(),
+          category: document.getElementById("product-category").value.trim(),
+          price: Number(document.getElementById("product-price").value) || 0,
+          cost: Number(document.getElementById("product-cost").value) || 0,
+          stock: Number(document.getElementById("product-stock").value) || 0,
+          lowStockThreshold: Number(document.getElementById("product-low").value) || 0,
+        };
+        const editId = document.getElementById("product-edit-id").value;
+        statusEl.textContent = "";
+        setLoading(btn, "Saving…");
+        try {
+          const payload = editId
+            ? await postJson(`/api/products/${encodeURIComponent(editId)}/update`, body)
+            : await postJson("/api/products", body);
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          toast("Product saved ✓", "success");
+          document.getElementById("product-form").style.display = "none";
+          loadShop();
+        } catch (err) { statusEl.textContent = err.message; }
+        finally { clearLoading(btn, "Save product"); }
+      });
+      document.getElementById("products-list")?.addEventListener("click", async (e) => {
+        const editBtn = e.target.closest("[data-edit-product]");
+        if (editBtn) { openProductForm(JSON.parse(editBtn.getAttribute("data-edit-product"))); document.getElementById("product-form").scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
+        const sellBtn = e.target.closest("[data-sell-product]");
+        if (sellBtn) { openSellModal(JSON.parse(sellBtn.getAttribute("data-sell-product"))); return; }
+        const archiveBtn = e.target.closest("[data-archive-product]");
+        if (archiveBtn) {
+          if (!(await showConfirm("Archive this product?", "It won't show in your shop anymore. Past sales are kept."))) return;
+          try { await postJson(`/api/products/${encodeURIComponent(archiveBtn.getAttribute("data-archive-product"))}/archive`, {}); loadShop(); }
+          catch (err) { toast(err.message, "error"); }
+        }
+      });
+      // Sell modal
+      const sellModal = document.getElementById("sell-modal");
+      function openSellModal(p) {
+        document.getElementById("sell-product-id").value = p.id;
+        document.getElementById("sell-title").textContent = "Sell " + p.name;
+        document.getElementById("sell-qty").value = "1";
+        document.getElementById("sell-qty").max = p.stock;
+        document.getElementById("sell-price").value = p.price;
+        document.getElementById("sell-client").value = "";
+        document.getElementById("sell-stock-note").textContent = `${p.stock} in stock`;
+        document.getElementById("sell-status").textContent = "";
+        sellModal.classList.add("open");
+      }
+      document.getElementById("sell-close")?.addEventListener("click", () => sellModal.classList.remove("open"));
+      document.getElementById("sell-cancel")?.addEventListener("click", () => sellModal.classList.remove("open"));
+      sellModal?.addEventListener("click", (e) => { if (e.target === sellModal) sellModal.classList.remove("open"); });
+      document.getElementById("sell-confirm")?.addEventListener("click", async () => {
+        const btn = document.getElementById("sell-confirm");
+        const statusEl = document.getElementById("sell-status");
+        const qty = Number(document.getElementById("sell-qty").value) || 0;
+        if (qty <= 0) { statusEl.textContent = "Quantity must be at least 1."; return; }
+        statusEl.textContent = "";
+        setLoading(btn, "Recording…");
+        try {
+          const payload = await postJson(`/api/products/${encodeURIComponent(document.getElementById("sell-product-id").value)}/sell`, {
+            quantity: qty,
+            unitPrice: Number(document.getElementById("sell-price").value) || 0,
+            clientWhatsApp: document.getElementById("sell-client").value.trim() || undefined,
+          });
+          if (!payload?.ok) throw new Error(payload?.error || "Failed");
+          toast("Sale recorded ✓", "success");
+          sellModal.classList.remove("open");
+          loadShop();
+        } catch (err) { statusEl.textContent = err.message; }
+        finally { clearLoading(btn, "Record sale"); }
+      });
 
       // ─── Monthly recap ───────────────────────────────────────────────────────
       async function loadMonthlyRecap() {

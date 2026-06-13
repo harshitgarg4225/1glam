@@ -77,6 +77,7 @@ import { ensureSheetTab } from "./services/sheets-util.js";
 import { generatePromoCode, parsePromoCode, promoCodeToRow, promoCodeHeaders, validatePromo, type PromoCode } from "./services/promo-codes.js";
 import { parseClientPackage, clientPackageToRow, packageHeaders, remainingSessions, isRedeemable, type ClientPackage } from "./services/packages.js";
 import { parseClientPhoto, clientPhotoToRow, clientPhotoHeaders, type ClientPhoto } from "./services/client-photos.js";
+import { parseProduct, productToRow, productHeaders, isLowStock, parseProductSale, productSaleToRow, productSaleHeaders, type Product, type ProductSale } from "./services/inventory.js";
 import { addDeviceToken, addPushSubscription, pushConfigured, removeDeviceToken, removePushSubscription, sendPushToWorkspace } from "./services/push.js";
 import { fcmConfigured } from "./services/fcm.js";
 import { createMobileLoginToken, redeemMobileLoginToken } from "./services/mobile-auth.js";
@@ -5119,6 +5120,206 @@ app.delete("/api/clients/:phone/photos/:photoId", async (req, res, next) => {
       requestBody: { values: [clientPhotoToRow(cleared)] },
     });
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Retail inventory ----
+// Products the artist sells alongside services, with stock and sales tracking.
+
+app.get("/api/products", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.products, productHeaders);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.productSales, productSaleHeaders);
+    const [prodRes, salesRes] = await Promise.all([
+      sheets.spreadsheets.values.get({ spreadsheetId: workspace.spreadsheetId, range: `${sheetNames.products}!A2:J` }),
+      sheets.spreadsheets.values.get({ spreadsheetId: workspace.spreadsheetId, range: `${sheetNames.productSales}!A2:H` }),
+    ]);
+    const products = (prodRes.data.values ?? []).map(parseProduct).map((p) => ({ ...p, lowStock: isLowStock(p) }));
+    const sales = (salesRes.data.values ?? []).map(parseProductSale);
+    const retailRevenue = sales.reduce((s, x) => s + (x.total || 0), 0);
+    const unitsSold = sales.reduce((s, x) => s + (x.quantity || 0), 0);
+    res.json({
+      ok: true,
+      products,
+      summary: { retailRevenue, unitsSold, lowStockCount: products.filter((p) => p.lowStock).length },
+      recentSales: sales.sort((a, b) => b.soldAt.localeCompare(a.soldAt)).slice(0, 20),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/products", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const name = String(req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Product name is required." });
+    const product: Product = {
+      productId: `PRD-${Date.now()}`,
+      name,
+      sku: String(req.body?.sku || "").trim(),
+      price: Math.max(0, Number(req.body?.price) || 0),
+      cost: Math.max(0, Number(req.body?.cost) || 0),
+      stock: Math.max(0, Math.round(Number(req.body?.stock) || 0)),
+      lowStockThreshold: Math.max(0, Math.round(Number(req.body?.lowStockThreshold) || 0)),
+      category: String(req.body?.category || "").trim(),
+      status: "Active",
+      createdAt: new Date().toISOString(),
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.products, productHeaders);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.products}!A:J`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [productToRow(product)] },
+    });
+    res.json({ ok: true, product });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Loads a product row by id, mutates it, and writes it back. Shared by the
+// edit / restock / sell / archive endpoints so the read-modify-write is in one place.
+async function withProductRow(
+  email: string,
+  tokens: import("google-auth-library").Credentials,
+  spreadsheetId: string,
+  productId: string,
+  mutate: (p: Product) => Product | { error: string },
+): Promise<{ ok: true; product: Product } | { ok: false; status: number; error: string }> {
+  const { sheets } = createGoogleClients(tokens);
+  await ensureSheetTab(sheets, spreadsheetId, sheetNames.products, productHeaders);
+  const got = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetNames.products}!A2:J` });
+  const rows = got.data.values ?? [];
+  const idx = rows.findIndex((r) => r[0] === productId);
+  if (idx < 0) return { ok: false, status: 404, error: "Product not found" };
+  const result = mutate(parseProduct(rows[idx]));
+  if ("error" in result) return { ok: false, status: 400, error: result.error };
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetNames.products}!A${idx + 2}:J${idx + 2}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [productToRow(result)] },
+  });
+  return { ok: true, product: result };
+}
+
+app.post("/api/products/:productId/update", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
+      ...p,
+      name: req.body?.name !== undefined ? String(req.body.name).trim() || p.name : p.name,
+      sku: req.body?.sku !== undefined ? String(req.body.sku).trim() : p.sku,
+      price: req.body?.price !== undefined ? Math.max(0, Number(req.body.price) || 0) : p.price,
+      cost: req.body?.cost !== undefined ? Math.max(0, Number(req.body.cost) || 0) : p.cost,
+      stock: req.body?.stock !== undefined ? Math.max(0, Math.round(Number(req.body.stock) || 0)) : p.stock,
+      lowStockThreshold: req.body?.lowStockThreshold !== undefined ? Math.max(0, Math.round(Number(req.body.lowStockThreshold) || 0)) : p.lowStockThreshold,
+      category: req.body?.category !== undefined ? String(req.body.category).trim() : p.category,
+    }));
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true, product: { ...r.product, lowStock: isLowStock(r.product) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/products/:productId/restock", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const qty = Math.round(Number(req.body?.quantity) || 0);
+    if (!qty || qty <= 0) return res.status(400).json({ error: "Restock quantity must be positive." });
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
+      ...p,
+      stock: p.stock + qty,
+    }));
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true, product: { ...r.product, lowStock: isLowStock(r.product) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/products/:productId/archive", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
+      ...p,
+      status: "Archived" as const,
+    }));
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Record a retail sale: decrement stock and log it to ProductSales.
+app.post("/api/products/:productId/sell", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const qty = Math.round(Number(req.body?.quantity) || 1);
+    if (qty <= 0) return res.status(400).json({ error: "Quantity must be positive." });
+
+    let soldProduct: Product | null = null;
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => {
+      if (p.status !== "Active") return { error: "This product is archived." };
+      if (p.stock < qty) return { error: `Only ${p.stock} in stock.` };
+      soldProduct = p;
+      return { ...p, stock: p.stock - qty };
+    });
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+
+    const unitPrice = req.body?.unitPrice !== undefined ? Math.max(0, Number(req.body.unitPrice) || 0) : r.product.price;
+    const sale: ProductSale = {
+      saleId: `SALE-${Date.now()}`,
+      productId: r.product.productId,
+      productName: r.product.name,
+      quantity: qty,
+      unitPrice,
+      total: unitPrice * qty,
+      clientWhatsApp: String(req.body?.clientWhatsApp || "").replace(/\D/g, ""),
+      soldAt: new Date().toISOString(),
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.productSales, productSaleHeaders);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.productSales}!A:H`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [productSaleToRow(sale)] },
+    });
+    res.json({ ok: true, sale, product: { ...r.product, lowStock: isLowStock(r.product) } });
   } catch (error) {
     next(error);
   }

@@ -7,6 +7,7 @@ const { computeLoyaltyStatuses, loyaltyForPhone } = await import("../src/service
 const { generateGiftCode, parseGiftCard, giftCardToRow } = await import("../src/services/gift-cards.ts");
 const { generatePromoCode, parsePromoCode, promoCodeToRow, validatePromo } = await import("../src/services/promo-codes.ts");
 const { parseClientPackage, clientPackageToRow, remainingSessions, isRedeemable } = await import("../src/services/packages.ts");
+const { parseProduct, productToRow, isLowStock, parseProductSale, productSaleToRow } = await import("../src/services/inventory.ts");
 const { buildDefaultConfig } = await import("../src/defaults.ts");
 
 const baseConfig = () =>
@@ -232,4 +233,44 @@ test("a cancelled package is not redeemable", () => {
 test("parseClientPackage round-trips through clientPackageToRow", () => {
   const pkg = activePackage({ usedSessions: 2, expiresAt: "2026-12-31" });
   assert.deepEqual(parseClientPackage(clientPackageToRow(pkg)), pkg);
+});
+
+// --- Inventory -------------------------------------------------------------
+
+const product = (over = {}) => ({
+  productId: "PRD-1", name: "Matte Lipstick", sku: "LIP-01", price: 1200, cost: 400,
+  stock: 10, lowStockThreshold: 3, category: "Lips", status: "Active" as const,
+  createdAt: "2026-01-01T00:00:00.000Z", ...over,
+});
+
+test("isLowStock flags only at/below threshold for active products", () => {
+  assert.equal(isLowStock(product({ stock: 3, lowStockThreshold: 3 })), true);
+  assert.equal(isLowStock(product({ stock: 2, lowStockThreshold: 3 })), true);
+  assert.equal(isLowStock(product({ stock: 4, lowStockThreshold: 3 })), false);
+});
+
+test("isLowStock ignores archived products and zero threshold", () => {
+  assert.equal(isLowStock(product({ stock: 0, status: "Archived" })), false);
+  assert.equal(isLowStock(product({ stock: 0, lowStockThreshold: 0 })), false);
+});
+
+test("parseProduct round-trips through productToRow", () => {
+  const p = product({ stock: 7, category: "Skincare" });
+  assert.deepEqual(parseProduct(productToRow(p)), p);
+});
+
+test("parseProduct handles empty rows gracefully", () => {
+  const p = parseProduct([]);
+  assert.equal(p.price, 0);
+  assert.equal(p.stock, 0);
+  assert.equal(p.status, "Active");
+});
+
+test("parseProductSale round-trips through productSaleToRow", () => {
+  const sale = {
+    saleId: "SALE-1", productId: "PRD-1", productName: "Matte Lipstick",
+    quantity: 2, unitPrice: 1200, total: 2400, clientWhatsApp: "919999",
+    soldAt: "2026-06-01T00:00:00.000Z",
+  };
+  assert.deepEqual(parseProductSale(productSaleToRow(sale)), sale);
 });

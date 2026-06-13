@@ -10,6 +10,8 @@ export const sheetNames = {
   promoCodes: "PromoCodes",
   clientPackages: "Packages",
   clientPhotos: "ClientPhotos",
+  products: "Products",
+  productSales: "ProductSales",
 } as const;
 
 export const leadHeaders = [
