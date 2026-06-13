@@ -151,5 +151,8 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     recurringEnabled: "No",
     serviceVariantsJson: "{}",
     promoCodesEnabled: "No",
+    receiptTemplate: "",
+    receiptTemplateLang: "en",
+    invoiceDueDays: 0,
   };
 }

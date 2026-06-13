@@ -820,6 +820,10 @@
       .stale-dot.cold { background: var(--danger); }
       .card-last-contact { font-size: 11px; color: var(--muted); margin-top: 4px; }
       .card-last-contact.cold { color: var(--danger); font-weight: 600; }
+      /* Urgent lead highlight */
+      .card.card-urgent { border-left: 3px solid #b45309 !important; }
+      /* Overdue invoice badge */
+      .overdue-badge { display: inline-block; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 4px; font-size: 10.5px; font-weight: 600; padding: 1px 5px; }
 
       /* ─── "Needs attention" section ─── */
       .attention-item {
@@ -4329,6 +4333,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           days <= 14 ? `<span class="pill warning" style="font-size:11px;">${days}d</span>` :
           `<span style="font-size:11px;color:var(--muted);">${days}d</span>`;
 
+        // Age of the lead (how long it's been in the pipeline)
+        const leadAgeDays = daysSince(lead.createdAt);
+        const leadAgeBadge = leadAgeDays !== null && leadAgeDays > 0
+          ? `<span title="Lead created ${leadAgeDays}d ago" style="font-size:10.5px;color:var(--muted);background:#f3f0ec;padding:1px 5px;border-radius:4px;flex-shrink:0;">${leadAgeDays < 7 ? leadAgeDays + "d" : Math.floor(leadAgeDays/7) + "w"}</span>`
+          : "";
+
+        // Urgency flag toggle
+        const isUrgent = lead.urgencyFlag === "Urgent";
+        const urgencyBtn = !["Lost","Completed"].includes(lead.status)
+          ? `<button class="card-urgency-btn" data-flag-lead="${lead.leadId}" title="${isUrgent ? "Remove urgent flag" : "Flag as urgent"}" type="button" style="background:none;border:none;cursor:pointer;font-size:15px;line-height:1;padding:2px;">${isUrgent ? "🚨" : "⭐"}</button>`
+          : "";
+
         const wa = lead.clientWhatsApp ? lead.clientWhatsApp.replace(/\D/g, "") : "";
         const waBtn = wa
           ? `<a href="https://wa.me/${wa}" target="_blank" rel="noreferrer" class="button tiny secondary" style="text-decoration:none;margin-top:6px;width:100%;justify-content:center;">💬 WhatsApp</a>`
@@ -4368,13 +4384,20 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const initial = (lead.clientName || "?")[0].toUpperCase();
 
         return `
-          <div class="card" draggable="true" data-card-lead-id="${lead.leadId}">
+          <div class="card${isUrgent ? " card-urgent" : ""}" draggable="true" data-card-lead-id="${lead.leadId}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:8px;">
               <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
                 <div class="lead-avatar" style="width:32px;height:32px;font-size:13px;flex-shrink:0;">${escapeHtml(initial)}</div>
-                <span class="card-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(lead.clientName)}</span>
+                <div style="min-width:0;flex:1;">
+                  <div style="display:flex;align-items:center;gap:4px;min-width:0;">
+                    <span class="card-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(lead.clientName)}</span>
+                    ${leadAgeBadge}
+                  </div>
+                  ${isUrgent ? `<div style="font-size:11px;color:#b45309;font-weight:600;">🚨 Urgent</div>` : ""}
+                </div>
               </div>
               <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+                ${urgencyBtn}
                 ${urgencyPill}
                 <div class="card-menu-wrap">
                   <button class="card-menu-trigger" data-menu-for="${lead.leadId}" title="More options" type="button">⋮</button>
@@ -4397,6 +4420,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                     <button class="card-menu-item" data-action="send-quote" data-lead-id="${lead.leadId}" type="button">📤 Send quote</button>
                     ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer" class="card-menu-item">🔗 Open quote</a>` : ""}
                     <div class="card-menu-sep"></div>
+                    <button class="card-menu-item" data-action="flag" data-lead-id="${lead.leadId}" type="button">${isUrgent ? "⭐ Remove urgent flag" : "🚨 Flag as urgent"}</button>
                     <button class="card-menu-item danger" data-action="no" data-lead-id="${lead.leadId}" type="button">✕ Decline request</button>
                   </div>
                 </div>
@@ -4608,6 +4632,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             : booking.paymentStatus === "Advance Paid"
               ? `<span class="pay-pill partial">Advance in · ${formatMoney(owed)} due</span>`
               : `<span class="pay-pill due">Advance unpaid</span>`;
+          const isOverdueInvoice = booking.invoiceDueDate && booking.paymentStatus !== "Paid in Full"
+            && new Date(booking.invoiceDueDate) < new Date();
+          const overdueBadge = isOverdueInvoice
+            ? `<span class="overdue-badge">⚠️ Overdue</span> `
+            : "";
+          const dueDateLabel = booking.invoiceDueDate && !isOverdueInvoice && booking.paymentStatus !== "Paid in Full"
+            ? `<span class="muted" style="font-size:11px;">Due ${formatDate(booking.invoiceDueDate)}</span>`
+            : "";
           const waNumber = String(booking.clientWhatsApp || "").replace(/\D/g, "");
           const ledger = parseLedger(booking.paymentsLog);
           return `
@@ -4619,9 +4651,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             </td>
             <td data-label="Event">${escapeHtml(booking.eventType)}<br><span class="muted">${escapeHtml(formatDay(booking.eventDate))}${booking.eventTime ? " at " + escapeHtml(booking.eventTime) : ""}</span><br><span class="muted">${escapeHtml(booking.venue)}</span>${travelBadgeHtml(booking)}</td>
             <td data-label="Payment">
-              <strong>${formatMoney(booking.finalPrice)}</strong><br>
+              <strong>${overdueBadge}${formatMoney(booking.finalPrice)}</strong><br>
               ${payPill}<br>
               <span class="muted" style="font-size:12px;">${paid > 0 ? `Received ${formatMoney(paid)}` : `Advance: ${formatMoney(booking.advanceAmount)}`}${ledger.length ? ` · ${ledger.length} payment${ledger.length > 1 ? "s" : ""}` : ""}</span>
+              ${dueDateLabel ? `<br>${dueDateLabel}` : ""}
             </td>
             <td data-label="Status">
               ${booking.status === "Cancelled" ? `<span class="pill danger">Cancelled</span><br>` : ""}
@@ -6686,6 +6719,36 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         });
       }
 
+      // Shows a compact inline modal for picking the reason a lead was declined.
+      // Returns the selected reason string, or null if the user cancelled.
+      function pickLostReason(clientName) {
+        const REASONS = ["Date full", "Budget mismatch", "Out of service area", "Client cancelled", "Competition", "Duplicate lead", "Other"];
+        return new Promise((resolve) => {
+          const overlay = document.createElement("div");
+          overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;";
+          const card = document.createElement("div");
+          card.style.cssText = "background:#fff;border-radius:14px;padding:24px;max-width:340px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);";
+          card.innerHTML = `
+            <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;">Decline ${escapeHtml(clientName)}?</h3>
+            <p style="font-size:13px;color:#78716c;margin-bottom:14px;">Pick a reason (helps with win-rate reporting):</p>
+            <select id="lost-reason-select" style="width:100%;padding:9px 10px;border:1.5px solid #e7e5e4;border-radius:8px;font-size:14px;margin-bottom:16px;">
+              ${REASONS.map(r => `<option value="${r}">${r}</option>`).join("")}
+            </select>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+              <button id="lost-cancel-btn" type="button" style="padding:9px 16px;border:1.5px solid #e7e5e4;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;">Cancel</button>
+              <button id="lost-confirm-btn" type="button" style="padding:9px 16px;border:none;border-radius:8px;background:#b45309;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">Decline</button>
+            </div>
+          `;
+          overlay.appendChild(card);
+          document.body.appendChild(overlay);
+          const cleanup = (result) => { document.body.removeChild(overlay); resolve(result); };
+          card.querySelector("#lost-confirm-btn").addEventListener("click", () => cleanup(card.querySelector("#lost-reason-select").value));
+          card.querySelector("#lost-cancel-btn").addEventListener("click", () => cleanup(null));
+          overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(null); });
+          setTimeout(() => card.querySelector("#lost-reason-select").focus(), 40);
+        });
+      }
+
       configForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const btn = e.submitter || configForm.querySelector("[type=submit]");
@@ -6765,8 +6828,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               { label: "Send quote now →", onClick: () => runLeadAction("send-quote", leadId, null) });
           }
           else if (action === "no") {
-            await postJson(`/api/leads/${leadId}/decision`, { decision: "NO" });
+            if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
+            const reason = await pickLostReason(who);
+            if (reason === null) return; // user cancelled
+            await postJson(`/api/leads/${leadId}/decision`, { decision: "NO", lostReason: reason });
             toast(`Marked as didn't book. You can still find ${who} in the Clients tab.`, "info");
+          }
+          else if (action === "flag") {
+            await postJson(`/api/leads/${leadId}/flag`, {});
+            const isNowUrgent = (sessionState?.dashboard?.leads || []).find(l => l.leadId === leadId)?.urgencyFlag !== "Urgent";
+            toast(isNowUrgent ? `🚨 Marked as urgent` : `⭐ Urgency flag removed`, "info");
           }
           else if (action === "edit") {
             const i = document.querySelector(`[data-drawer-edit-price]`) || document.querySelector(`[data-edit-input="${leadId}"]`);
@@ -6977,7 +7048,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${lead.profileTier ? `<div class="drawer-row"><span class="drawer-row-label">Client type</span><span class="drawer-row-value">${lead.profileTier === "High" ? "VIP / celebrity" : lead.profileTier === "Mid" ? "Premium" : "Regular"}</span></div>` : ""}
             ${lead.assignedArtist ? `<div class="drawer-row"><span class="drawer-row-label">Assigned to</span><span class="drawer-row-value">${escapeHtml(lead.assignedArtist)}</span></div>` : ""}
             ${lead.clientTags ? `<div class="drawer-row"><span class="drawer-row-label">Notes / tags</span><span class="drawer-row-value">${escapeHtml(lead.clientTags)}</span></div>` : ""}
+            ${lead.lostReason ? `<div class="drawer-row"><span class="drawer-row-label">Lost reason</span><span class="drawer-row-value" style="color:var(--danger);">${escapeHtml(lead.lostReason)}</span></div>` : ""}
           </div>
+          ${lead.clientNote ? `<div class="drawer-section"><div class="drawer-section-title">Client note</div><div style="font-size:14px;line-height:1.55;color:var(--text);">${escapeHtml(lead.clientNote)}</div></div>` : ""}
           ${lead.aiInsight ? `<div class="drawer-section"><div class="drawer-section-title">AI insight</div><div class="drawer-insight">${escapeHtml(lead.aiInsight)}</div></div>` : ""}
           ${orderEditorHtml(lead)}
           <div class="drawer-section">
@@ -7009,6 +7082,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <button class="button secondary small" data-drawer-edit-details="${lead.leadId}">✏️ Edit details</button>
             <button class="button secondary small" data-drawer-action="quote" data-drawer-lead-id="${lead.leadId}">Generate quote</button>
             <button class="button secondary small" data-drawer-action="send-quote" data-drawer-lead-id="${lead.leadId}">Send quote</button>
+            ${lead.status !== "Lost" && lead.status !== "Completed" ? `<button class="button secondary small${lead.urgencyFlag === "Urgent" ? " danger" : ""}" data-flag-lead="${lead.leadId}" title="${lead.urgencyFlag === "Urgent" ? "Remove urgent flag" : "Flag as urgent"}">${lead.urgencyFlag === "Urgent" ? "🚨 Urgent" : "⭐ Flag urgent"}</button>` : ""}
             ${lead.status !== "Lost" && lead.status !== "Completed" ? `<button class="button secondary small danger" data-drawer-action="no" data-drawer-lead-id="${lead.leadId}">Decline</button>` : ""}
           </div>`;
 
@@ -7097,13 +7171,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           if (lead) openLeadEdit(lead);
           return;
         }
+        const flagBtn = e.target.closest("[data-flag-lead]");
+        if (flagBtn) {
+          runLeadAction("flag", flagBtn.getAttribute("data-flag-lead"), flagBtn);
+          return;
+        }
         const btn = e.target.closest("[data-drawer-action]");
         if (!btn) return;
         const action = btn.getAttribute("data-drawer-action");
         const leadId = btn.getAttribute("data-drawer-lead-id");
         if (action === "no") {
-          const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
-          if (!(await showConfirm(`Decline ${lead?.clientName || "this request"}?`, "They'll be moved to Lost.", "Decline"))) return;
+          // pickLostReason handles confirmation; runLeadAction will call it again.
+          // We don't need an extra showConfirm here.
         }
         runLeadAction(action, leadId, btn);
       });
@@ -7112,6 +7191,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         // Copy booking link from empty state
         const share = e.target.closest("[data-share]");
         if (share) { copyToClipboard(share.getAttribute("data-share"), share); return; }
+
+        // Urgency flag toggle (the ⭐/🚨 icon on the card)
+        const flagBtn = e.target.closest("[data-flag-lead]");
+        if (flagBtn) {
+          e.stopPropagation();
+          runLeadAction("flag", flagBtn.getAttribute("data-flag-lead"), flagBtn);
+          return;
+        }
 
         // Toggle card action menu (⋮ button)
         const menuTrigger = e.target.closest("[data-menu-for]");
@@ -7135,11 +7222,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (b) {
           const action = b.getAttribute("data-action");
           const leadId = b.getAttribute("data-lead-id");
-          // Declining a lead is destructive — confirm so a mis-tap doesn't lose a client.
-          if (action === "no") {
-            const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
-            const who = lead ? lead.clientName : "this request";
-            if (!(await showConfirm(`Decline ${who}?`, "They'll be moved to Lost. This can't be undone from here.", "Decline"))) return;
+          // Flag button on the card itself (the ⭐/🚨 icon)
+          const flagBtn = e.target.closest("[data-flag-lead]");
+          if (flagBtn) {
+            const fid = flagBtn.getAttribute("data-flag-lead");
+            runLeadAction("flag", fid, flagBtn);
+            return;
           }
           runLeadAction(action, leadId, b);
           return;
@@ -7211,15 +7299,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         };
         const action = map[target];
         if (!action) { toast(`Can't move directly to "${target}".`, "error"); renderLeads(); return; }
-        // Mis-drops happen, especially on touch — confirm before writing
-        // someone off as "didn't book".
+        // Mis-drops to "Lost" — ask for a reason via the inline modal.
         if (action === "no") {
-          const ok = await showConfirm(
-            `Mark ${lead.clientName} as didn't book?`,
-            "They'll move out of your pipeline but stay in your Clients list — you can always book them later.",
-            "Yes, didn't book",
-          );
-          if (!ok) { renderLeads(); return; }
+          const reason = await pickLostReason(lead.clientName);
+          if (reason === null) { renderLeads(); return; }
+          // Directly post with reason so runLeadAction doesn't open a second modal.
+          try {
+            await postJson(`/api/leads/${id}/decision`, { decision: "NO", lostReason: reason });
+            toast(`Marked as didn't book. You can still find ${lead.clientName} in the Clients tab.`, "info");
+            await refreshSession();
+          } catch (err) { toast(err.message, "error"); renderLeads(); }
+          return;
         }
         await runLeadAction(action, id, null);
       });

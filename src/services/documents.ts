@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont, type PDFPage } 
 import { fetchWithTimeout, isPublicHttpUrl } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
-import { buildPublicDocumentUrl, buildQuoteViewUrl } from "./document-links.js";
+import { buildPublicDocumentUrl, buildInvoicePageUrl, buildQuoteViewUrl } from "./document-links.js";
 import { getDocumentTheme, type DocumentTheme } from "./document-themes.js";
 import type { WorkspaceRecord } from "../types.js";
 import { parsePaymentsLog, paymentsTotal, type BookingRecord, type LeadRecord } from "./booking.js";
@@ -406,7 +406,9 @@ export async function buildInvoicePdfBytes(
   return pdf.save();
 }
 
-// Produces the client-facing invoice link, served by the app (no Drive).
+// Produces the client-facing invoice link. Points to the branded invoice page
+// (/i/:wid/:bid) which embeds the PDF and shows a Pay Now button, giving
+// clients a much better experience than a bare PDF URL.
 export async function generateInvoiceDocument(
   workspace: WorkspaceRecord,
   _tokens: Credentials,
@@ -416,7 +418,7 @@ export async function generateInvoiceDocument(
   return {
     fileId: "",
     fileName: `${safeName(workspace.config.businessName || workspace.name)}-${invoiceNumber}.pdf`,
-    fileUrl: buildPublicDocumentUrl("invoice", workspace.workspaceId, booking.bookingId),
+    fileUrl: buildInvoicePageUrl(workspace.workspaceId, booking.bookingId),
   };
 }
 

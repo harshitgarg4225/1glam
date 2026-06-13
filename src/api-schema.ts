@@ -65,6 +65,7 @@ export const ownerDecisionSchema = z.object({
   decision: z.enum(["YES", "NO", "EDIT"]),
   approvedPrice: z.coerce.number().optional(),
   ownerNotes: z.string().optional(),
+  lostReason: z.string().max(100).optional(),
 });
 
 export const paymentStatusSchema = z.object({

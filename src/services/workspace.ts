@@ -474,6 +474,12 @@ async function seedSpreadsheet(
     ["recurring_enabled", config.recurringEnabled, "Allow recurring appointment setup (Yes/No)"],
     ["service_variants_json", config.serviceVariantsJson, "Service package tiers per service type (JSON)"],
     ["promo_codes_enabled", config.promoCodesEnabled, "Show a promo code field on the booking page (Yes/No)"],
+    ["rebook_nudge_days_after", config.rebookNudgeDaysAfter, "Days after event to send rebook nudge (blank = off)"],
+    ["rebook_template", config.rebookTemplate, "WhatsApp template name for rebook nudge"],
+    ["rebook_template_lang", config.rebookTemplateLang, "Language code for rebook template"],
+    ["receipt_template", config.receiptTemplate, "WhatsApp template sent to client after payment is recorded"],
+    ["receipt_template_lang", config.receiptTemplateLang, "Language code for receipt template"],
+    ["invoice_due_days", config.invoiceDueDays, "Days after event date when invoice becomes due (0 = due on receipt)"],
   ];
 
   const artistsRows = [[
@@ -773,6 +779,9 @@ async function loadConfigFromSpreadsheet(
       recurringEnabled: String(values.recurring_enabled ?? base.recurringEnabled),
       serviceVariantsJson: String(values.service_variants_json ?? base.serviceVariantsJson),
       promoCodesEnabled: String(values.promo_codes_enabled ?? base.promoCodesEnabled),
+      receiptTemplate: String(values.receipt_template ?? base.receiptTemplate),
+      receiptTemplateLang: String(values.receipt_template_lang ?? base.receiptTemplateLang),
+      invoiceDueDays: Number(values.invoice_due_days ?? base.invoiceDueDays) || 0,
     });
 
     return parsed.success ? parsed.data : base;

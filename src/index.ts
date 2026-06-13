@@ -28,9 +28,12 @@ import {
   getDashboardData,
   getMonthlyRecap,
   importClients,
+  listActiveBookings,
   parsePaymentsLog,
+  paymentsTotal,
   recordBookingPayment,
   rescheduleBooking,
+  toggleLeadUrgency,
   updateBookingRecord,
   type BookingRecord,
   type LeadRecord,
@@ -1918,6 +1921,24 @@ app.post("/api/leads/:leadId/assign", async (req, res, next) => {
   }
 });
 
+// Toggle the urgency flag on a lead (Urgent ↔ normal) — lets the owner star
+// high-priority enquiries so they don't get buried in a long pipeline.
+app.post("/api/leads/:leadId/flag", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const updated = await toggleLeadUrgency(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+    );
+    res.json({ ok: true, lead: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/leads", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
@@ -1956,6 +1977,7 @@ app.post("/api/leads/:leadId/decision", async (req, res, next) => {
       parsed.decision,
       parsed.approvedPrice,
       parsed.ownerNotes,
+      parsed.lostReason,
     );
 
     res.json({ ok: true, ...result });
@@ -2313,17 +2335,73 @@ app.post("/api/bookings/:bookingId/payments", async (req, res, next) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
     const parsed = recordPaymentSchema.parse(req.body);
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
     const booking = await recordBookingPayment(
       req.session.profile.email,
       req.session.googleTokens,
       req.params.bookingId,
       parsed,
     );
+    // Fire-and-forget: send payment receipt to the client on WhatsApp and email.
+    if (workspace && parsed.type !== "refund") {
+      sendPaymentReceipt(workspace, req.session.googleTokens, booking, parsed.amount).catch(() => undefined);
+    }
     res.json({ ok: true, booking });
   } catch (error) {
     next(error);
   }
 });
+
+// Sends a payment receipt to the client via WhatsApp template (if configured)
+// and email (if SMTP is set up). Fire-and-forget from the payments endpoint.
+async function sendPaymentReceipt(
+  workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>,
+  tokens: Credentials,
+  booking: BookingRecord,
+  paidAmount: number,
+) {
+  const templateName = String(workspace.config.receiptTemplate || "").trim();
+  const clientPhone = String(booking.clientWhatsApp || "").replace(/[^\d]/g, "");
+  if (templateName && clientPhone) {
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    try {
+      await sendWhatsAppTemplate(
+        { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+        clientPhone,
+        templateName,
+        String(workspace.config.receiptTemplateLang || "en"),
+        [booking.clientName, `Rs. ${Math.round(paidAmount).toLocaleString("en-IN")}`, booking.eventType, booking.eventDate],
+      );
+    } catch (err) {
+      logger.warn("Payment receipt WhatsApp send failed", { err: String(err), bookingId: booking.bookingId });
+    }
+  }
+  if (emailEnabled(workspace.config) && booking.clientWhatsApp) {
+    try {
+      const payments = parsePaymentsLog(booking.paymentsLog);
+      const totalPaid = paymentsTotal(payments);
+      await sendEmail(workspace.config, {
+        to: String(workspace.config.smtpFrom || workspace.config.smtpUser),
+        subject: `Payment received: ${booking.clientName} — ${booking.eventType}`,
+        html: wrapEmailHtml(
+          workspace.config,
+          `<h2>Payment Received</h2>
+           <p>Hi ${esc(booking.clientName)},</p>
+           <p>We've received your payment of <strong>Rs. ${Math.round(paidAmount).toLocaleString("en-IN")}</strong> for your ${esc(booking.eventType)} booking on ${esc(booking.eventDate)}.</p>
+           <p>Total received so far: <strong>Rs. ${Math.round(totalPaid).toLocaleString("en-IN")}</strong> of Rs. ${Math.round(booking.finalPrice).toLocaleString("en-IN")}.</p>
+           <p>Balance due: <strong>Rs. ${Math.round(Math.max(0, booking.balanceDue)).toLocaleString("en-IN")}</strong></p>
+           <p>Thank you — ${esc(workspace.config.businessName || workspace.config.ownerName)}</p>`,
+        ),
+      });
+    } catch (err) {
+      logger.warn("Payment receipt email failed", { err: String(err), bookingId: booking.bookingId });
+    }
+  }
+}
+
+function esc(v: string) {
+  return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 // ---- Push notifications (web push for PWA, FCM for the native app) ----
 app.get("/api/push/config", (req, res) => {
@@ -3124,6 +3202,10 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
 
     booking = await ensureInvoiceNumber(req.session.profile.email, req.session.googleTokens, booking);
     const invoice = await generateInvoiceDocument(workspace, req.session.googleTokens, booking);
+    const dueDays = Number(workspace.config.invoiceDueDays) || 0;
+    const invoiceDueDate = booking.invoiceDueDate || (dueDays > 0
+      ? new Date(Date.now() + dueDays * 86400000).toISOString().slice(0, 10)
+      : "");
     const updatedBooking = await updateBookingRecord(
       req.session.profile.email,
       req.session.googleTokens,
@@ -3132,10 +3214,31 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
         ...current,
         invoiceUrl: invoice.fileUrl,
         invoiceGeneratedAt: new Date().toISOString(),
+        invoiceDueDate: current.invoiceDueDate || invoiceDueDate,
       }),
     );
 
     res.json({ ok: true, booking: updatedBooking, invoice });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Set or update the invoice due date independently of regenerating the invoice.
+app.post("/api/bookings/:bookingId/due-date", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const dueDate = String(req.body?.dueDate ?? "").trim();
+    if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      return res.status(400).json({ error: "dueDate must be YYYY-MM-DD" });
+    }
+    const updated = await updateBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      (current) => ({ ...current, invoiceDueDate: dueDate }),
+    );
+    res.json({ ok: true, booking: updated });
   } catch (error) {
     next(error);
   }
@@ -3221,6 +3324,22 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
       messagePreview: message,
       status: "Sent",
     });
+
+    // Also send via email when SMTP is configured — client gets both channels.
+    if (emailEnabled(workspace.config)) {
+      sendEmail(workspace.config, {
+        to: String(lead.clientInstagram || lead.clientWhatsApp || ""),
+        subject: `Your invoice from ${workspace.config.businessName || workspace.config.ownerName} — ${currentBooking.invoiceNumber || ""}`,
+        html: wrapEmailHtml(workspace.config, `
+          <h2>Your Invoice</h2>
+          <p>Hi ${esc(currentBooking.clientName)},</p>
+          <p>Please find your invoice for your <strong>${esc(currentBooking.eventType)}</strong> booking on <strong>${esc(currentBooking.eventDate)}</strong>.</p>
+          <p style="margin:16px 0;"><a href="${esc(currentBooking.invoiceUrl || "")}" style="background:${workspace.config.brandColor || "#C26B45"};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">View & Pay Invoice</a></p>
+          <p>Amount due: <strong>Rs. ${Math.round(currentBooking.balanceDue).toLocaleString("en-IN")}</strong></p>
+          <p>Thank you — ${esc(workspace.config.businessName || workspace.config.ownerName)}</p>
+        `),
+      }).catch(() => undefined);
+    }
 
     res.json({ ok: true, booking: currentBooking });
   } catch (error) {
@@ -3760,6 +3879,12 @@ app.get("/q/:workspaceId/:leadId", async (req, res, next) => {
         ? `₹${Math.round(quoteAdj.priceRangeLow).toLocaleString("en-IN")} – ₹${Math.round(quoteAdj.priceRangeHigh).toLocaleString("en-IN")}`
         : `₹${Math.round(quoteAdj.amountOverride || amount).toLocaleString("en-IN")}`;
 
+    // Link to the pay.html page for deposit capture — only shown when Razorpay keys are configured.
+    const hasRazorpay = Boolean(workspace.config.razorpayKeyId && workspace.config.razorpayKeySecret);
+    const payUrl = hasRazorpay && !accepted && !voided
+      ? `/pay/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}`
+      : undefined;
+
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(renderQuotePage({
       brand,
@@ -3768,7 +3893,9 @@ app.get("/q/:workspaceId/:leadId", async (req, res, next) => {
       eventType: lead.eventType,
       eventDate: lead.eventDate,
       amountLabel,
+      holdExpiresAt: lead.holdExpiresAt || undefined,
       pdfUrl,
+      payUrl,
       accepted,
       voided,
       acceptUrl: `/api/public/quote/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}/accept?sig=${encodeURIComponent(sig)}`,
@@ -3796,17 +3923,19 @@ app.post("/api/public/quote/:workspaceId/:leadId/accept", publicWriteLimiter, as
     if (!lead || !lead.quoteUrl) return res.status(410).json({ error: "This quote is no longer available" });
     if (lead.quoteVoidedAt) return res.status(410).json({ error: "This quote has been withdrawn" });
 
+    const clientNote = typeof req.body?.clientNote === "string" ? req.body.clientNote.slice(0, 500).trim() : "";
     if (!lead.quoteAcceptedAt) {
       await updateLeadRecord(workspace.email, workspace.googleTokens, leadId, (current) => ({
         ...current,
         quoteAcceptedAt: current.quoteAcceptedAt || new Date().toISOString(),
+        clientNote: current.clientNote || clientNote,
       }));
       await logInteractionForWorkspace(workspace.email, workspace.googleTokens, {
         leadId,
         direction: "Inbound",
         channel: "WhatsApp",
         actor: lead.clientWhatsApp || lead.clientName || "client",
-        message: `${lead.clientName || "Client"} accepted the quote for ${lead.eventType} on ${lead.eventDate}.`,
+        message: `${lead.clientName || "Client"} accepted the quote for ${lead.eventType} on ${lead.eventDate}.${clientNote ? ` Client note: "${clientNote}"` : ""}`,
         aiSummary: "Quote accepted via public quote page",
       }).catch(() => undefined);
       notifyOwnerQuoteAccepted(workspace, lead).catch(() => undefined);
@@ -3847,25 +3976,46 @@ function renderQuotePage(input: {
   eventType: string;
   eventDate: string;
   amountLabel: string;
+  holdExpiresAt?: string;
   pdfUrl: string;
+  payUrl?: string;
   accepted: boolean;
   voided: boolean;
   acceptUrl: string;
   ownerWhatsApp: string;
 }): string {
-  const esc = (v: string) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
-  const title = `Quote from ${esc(input.brand)}`;
-  const desc = `${esc(input.eventType)} on ${esc(input.eventDate)} — ${esc(input.amountLabel)}`;
-  const acceptedBlock = `<div class="accepted">💚 You've accepted this quote. ${esc(input.brand)} will be in touch to confirm your booking!</div>`;
-  const voidedBlock = `<div class="voided">This quote has been updated — please ask ${esc(input.brand)} for the latest version.</div>`;
+  const escQ = (v: string) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+  const title = `Quote from ${escQ(input.brand)}`;
+  const desc = `${escQ(input.eventType)} on ${escQ(input.eventDate)} — ${escQ(input.amountLabel)}`;
+  let expiryBlock = "";
+  if (input.holdExpiresAt) {
+    try {
+      const exp = new Date(input.holdExpiresAt);
+      if (!Number.isNaN(exp.getTime())) {
+        const formatted = exp.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+        const isExpired = exp < new Date();
+        expiryBlock = isExpired
+          ? `<div class="expiry expired">⏰ This quote expired on ${escQ(formatted)}</div>`
+          : `<div class="expiry">🕐 Valid until ${escQ(formatted)}</div>`;
+      }
+    } catch { /* ignore */ }
+  }
+  const noteField = `<textarea id="client-note" placeholder="Any questions or special requests? (optional)" rows="3" style="width:100%;margin-top:12px;padding:10px 12px;border:1.5px solid #eee3da;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;"></textarea>`;
+  const payBtn = input.payUrl
+    ? `<a href="${escQ(input.payUrl)}" class="pay-btn">💳 Pay Deposit Now</a>`
+    : "";
+  const acceptedBlock = `<div class="accepted">💚 You've accepted this quote. ${escQ(input.brand)} will be in touch to confirm your booking!</div>`;
+  const voidedBlock = `<div class="voided">This quote has been updated — please ask ${escQ(input.brand)} for the latest version.</div>`;
   const actionBlock = input.voided
     ? voidedBlock
     : input.accepted
       ? acceptedBlock
-      : `<button id="accept-btn" type="button">💖 Looks perfect — I accept</button>
-         <p class="hint">Accepting lets ${esc(input.brand)} know you're ready. She'll confirm your date right after.</p>`;
+      : `${noteField}
+         <button id="accept-btn" type="button">💖 Looks perfect — I accept</button>
+         ${payBtn}
+         <p class="hint">Accepting lets ${escQ(input.brand)} know you're ready. She'll confirm your date right after.</p>`;
   const waLink = input.ownerWhatsApp
-    ? `<a class="wa" href="https://wa.me/${esc(input.ownerWhatsApp)}" target="_blank" rel="noreferrer">💬 Questions? WhatsApp ${esc(input.brand)}</a>`
+    ? `<a class="wa" href="https://wa.me/${escQ(input.ownerWhatsApp)}" target="_blank" rel="noreferrer">💬 Questions? WhatsApp ${escQ(input.brand)}</a>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -3889,9 +4039,12 @@ function renderQuotePage(input: {
   .summary .row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14.5px; }
   .summary .row b { font-weight: 600; }
   .amount { font-size: 18px; color: var(--brand); font-weight: 700; }
+  .expiry { background: #fff8ef; border: 1px solid #f5d9a8; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #7a5c20; margin-bottom: 14px; }
+  .expiry.expired { background: #fdf1ef; border-color: #f3cdc5; color: #9a3c2e; }
   iframe { width: 100%; height: 70vh; border: 1px solid #eee3da; border-radius: 12px; background: #fff; }
-  #accept-btn { display: block; width: 100%; margin-top: 16px; padding: 15px; font-size: 16.5px; font-weight: 600; color: #fff; background: var(--brand); border: 0; border-radius: 12px; cursor: pointer; }
+  #accept-btn { display: block; width: 100%; margin-top: 12px; padding: 15px; font-size: 16.5px; font-weight: 600; color: #fff; background: var(--brand); border: 0; border-radius: 12px; cursor: pointer; }
   #accept-btn:disabled { opacity: .6; }
+  .pay-btn { display: block; width: 100%; margin-top: 10px; padding: 13px; font-size: 15px; font-weight: 600; color: var(--brand); background: #fff; border: 2px solid var(--brand); border-radius: 12px; cursor: pointer; text-align: center; text-decoration: none; }
   .hint { text-align: center; font-size: 12.5px; color: #8a7f78; margin-top: 8px; }
   .accepted, .voided { margin-top: 16px; padding: 15px; border-radius: 12px; text-align: center; font-size: 15px; }
   .accepted { background: #e8f7ee; color: #1e6b3a; border: 1px solid #bfe6cd; }
@@ -3903,15 +4056,16 @@ function renderQuotePage(input: {
 <body>
 <header>
   <h1>${title}</h1>
-  <p>Hi ${esc(input.clientName || "there")} — here's your personalised quote ✨</p>
+  <p>Hi ${escQ(input.clientName || "there")} — here's your personalised quote ✨</p>
 </header>
 <main>
   <div class="summary">
-    <div class="row"><span>Occasion</span><b>${esc(input.eventType)}</b></div>
-    <div class="row"><span>Date</span><b>${esc(input.eventDate)}</b></div>
-    <div class="row"><span>Quoted amount</span><b class="amount">${esc(input.amountLabel)}</b></div>
+    <div class="row"><span>Occasion</span><b>${escQ(input.eventType)}</b></div>
+    <div class="row"><span>Date</span><b>${escQ(input.eventDate)}</b></div>
+    <div class="row"><span>Quoted amount</span><b class="amount">${escQ(input.amountLabel)}</b></div>
   </div>
-  <iframe src="${esc(input.pdfUrl)}" title="Quote PDF"></iframe>
+  ${expiryBlock}
+  <iframe src="${escQ(input.pdfUrl)}" title="Quote PDF"></iframe>
   <div id="action-area">${actionBlock}</div>
   ${waLink}
 </main>
@@ -3920,10 +4074,15 @@ function renderQuotePage(input: {
   const btn = document.getElementById("accept-btn");
   if (btn) btn.addEventListener("click", async () => {
     btn.disabled = true; btn.textContent = "Sending…";
+    const note = document.getElementById("client-note")?.value || "";
     try {
-      const res = await fetch(${JSON.stringify(input.acceptUrl)}, { method: "POST" });
+      const res = await fetch(${JSON.stringify(input.acceptUrl)}, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientNote: note }),
+      });
       if (!res.ok) throw new Error();
-      document.getElementById("action-area").innerHTML = '<div class="accepted">💚 Accepted! ${esc(input.brand)} has been notified and will confirm your booking shortly.</div>';
+      document.getElementById("action-area").innerHTML = '<div class="accepted">💚 Accepted! ${escQ(input.brand)} has been notified and will confirm your booking shortly.</div>';
     } catch {
       btn.disabled = false; btn.textContent = "💖 Looks perfect — I accept";
       alert("Couldn't send just now — please try again in a moment.");
@@ -3933,6 +4092,142 @@ function renderQuotePage(input: {
 </body>
 </html>`;
 }
+
+// ---- Public invoice page (/i/:wid/:bid) ----
+// Branded HTML page: shows the invoice PDF + payment summary + "Pay Now" button.
+// This is the link we send to clients instead of the raw PDF URL.
+app.get("/i/:workspaceId/:bookingId", async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const bookingId = String(req.params.bookingId ?? "");
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace || !workspace.googleTokens) return res.status(404).send("Invoice not found.");
+    const booking = await getBookingRecord(workspace.email, workspace.googleTokens, bookingId);
+    if (!booking || !booking.invoiceUrl) return res.status(410).send("This invoice is no longer available.");
+
+    const sig = signDocumentToken("invoice", workspaceId, bookingId);
+    const pdfUrl = `/d/invoice/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}?sig=${encodeURIComponent(sig)}`;
+    const brand = workspace.config.businessName || workspace.config.ownerName || "Your artist";
+    const brandColor = /^#[0-9a-fA-F]{3,6}$/.test(workspace.config.brandColor) ? workspace.config.brandColor : "#C26B45";
+    const payments = parsePaymentsLog(booking.paymentsLog);
+    const totalPaid = paymentsTotal(payments);
+    const balanceDue = Math.max(0, booking.balanceDue);
+    const isPaid = booking.paymentStatus === "Paid in Full" || balanceDue === 0;
+    const isVoided = Boolean(booking.invoiceVoidedAt);
+    const hasRazorpay = Boolean(workspace.config.razorpayKeyId && workspace.config.razorpayKeySecret);
+    const payOrderUrl = hasRazorpay && !isPaid && !isVoided ? `/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(booking.leadId)}/order` : "";
+
+    const escI = (v: string) => String(v || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+    const fmtInr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+    const title = `Invoice from ${escI(brand)}`;
+
+    const paymentRows = payments.map(p =>
+      `<div class="pay-row"><span>Received${p.method ? ` via ${escI(p.method)}` : ""}</span><span class="green">${fmtInr(p.amount)}</span></div>`
+    ).join("");
+
+    const dueDateRow = booking.invoiceDueDate
+      ? `<div class="pay-row"><span>Due Date</span><span>${escI(booking.invoiceDueDate)}</span></div>`
+      : "";
+
+    const isOverdue = booking.invoiceDueDate && !isPaid && new Date(booking.invoiceDueDate) < new Date();
+    const overdueTag = isOverdue ? `<div class="overdue-tag">⚠️ Overdue</div>` : "";
+
+    const paidBlock = `<div class="paid-block">✅ Paid in full — thank you, ${escI(booking.clientName)}!</div>`;
+    const payBlock = payOrderUrl
+      ? `<button id="pay-btn" class="pay-btn-primary" type="button">💳 Pay ${fmtInr(balanceDue)} Now</button>
+         <p class="hint">Secure online payment via Razorpay</p>`
+      : workspace.config.upiId
+        ? `<div class="upi-block">Pay via UPI: <b>${escI(workspace.config.upiId)}</b></div>`
+        : "";
+
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${title}</title>
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${escI(booking.eventType)} on ${escI(booking.eventDate)}" />
+<meta name="robots" content="noindex" />
+<style>
+  :root { --brand: ${brandColor}; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #faf7f4; color: #2a2421; }
+  header { background: var(--brand); color: #fff; padding: 20px 18px; text-align: center; }
+  header h1 { font-size: 19px; font-weight: 600; }
+  header p { font-size: 13px; opacity: .92; margin-top: 4px; }
+  main { max-width: 680px; margin: 0 auto; padding: 18px; }
+  .card { background: #fff; border: 1px solid #eee3da; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  .pay-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f5f0eb; }
+  .pay-row:last-child { border: none; }
+  .pay-row b, .total-row { font-weight: 700; }
+  .total-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; padding-top: 10px; color: var(--brand); }
+  .green { color: #1e6b3a; }
+  .overdue-tag { background: #fdf1ef; color: #9a3c2e; border: 1px solid #f3cdc5; border-radius: 8px; padding: 6px 12px; font-size: 13px; margin-bottom: 12px; }
+  iframe { width: 100%; height: 65vh; border: 1px solid #eee3da; border-radius: 12px; background: #fff; margin-top: 4px; }
+  .pay-btn-primary { display: block; width: 100%; margin-top: 16px; padding: 15px; font-size: 16px; font-weight: 600; color: #fff; background: var(--brand); border: 0; border-radius: 12px; cursor: pointer; }
+  .pay-btn-primary:disabled { opacity: .6; }
+  .upi-block { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 14px; font-size: 14px; margin-top: 14px; }
+  .paid-block { background: #e8f7ee; color: #1e6b3a; border: 1px solid #bfe6cd; border-radius: 12px; padding: 14px; text-align: center; font-size: 15px; margin-top: 14px; }
+  .hint { text-align: center; font-size: 12px; color: #8a7f78; margin-top: 6px; }
+  footer { text-align: center; font-size: 12px; color: #a79c94; padding: 18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>${title}</h1>
+  <p>Hi ${escI(booking.clientName)} — your invoice for ${escI(booking.eventType)}</p>
+</header>
+<main>
+  ${overdueTag}
+  <div class="card">
+    <div class="pay-row"><span>Event</span><b>${escI(booking.eventType)}</b></div>
+    <div class="pay-row"><span>Date</span><b>${escI(booking.eventDate)}</b></div>
+    <div class="pay-row"><span>Artist</span><b>${escI(booking.assignedArtist || brand)}</b></div>
+    ${dueDateRow}
+    <div class="pay-row"><span>Booking Value</span><b>${fmtInr(booking.finalPrice)}</b></div>
+    ${paymentRows}
+    <div class="pay-row"><span>Total Paid</span><span class="green">${fmtInr(totalPaid)}</span></div>
+    <div class="total-row"><span>Balance Due</span><span>${fmtInr(balanceDue)}</span></div>
+  </div>
+  <iframe src="${escI(pdfUrl)}" title="Invoice PDF"></iframe>
+  ${isPaid || isVoided ? paidBlock : payBlock}
+</main>
+<footer>Powered by BusyDays</footer>
+${payOrderUrl ? `<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+  document.getElementById("pay-btn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("pay-btn");
+    btn.disabled = true; btn.textContent = "Loading…";
+    try {
+      const r = await fetch(${JSON.stringify(payOrderUrl)}, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "Could not create order");
+      const rzp = new Razorpay({
+        key: d.keyId,
+        order_id: d.orderId,
+        amount: d.amountPaise,
+        currency: "INR",
+        name: ${JSON.stringify(brand)},
+        description: ${JSON.stringify(`${booking.eventType} · ${booking.eventDate}`)},
+        handler: () => { document.getElementById("pay-btn").replaceWith(Object.assign(document.createElement("div"), { className: "paid-block", textContent: "✅ Payment received! Thank you." })); },
+        modal: { ondismiss: () => { btn.disabled = false; btn.textContent = "💳 Pay " + ${JSON.stringify(fmtInr(balanceDue))} + " Now"; } },
+      });
+      rzp.open();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "💳 Pay ${fmtInr(balanceDue)} Now";
+      alert(err.message || "Payment error — please try again.");
+    }
+  });
+</script>` : ""}
+</body>
+</html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
   try {

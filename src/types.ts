@@ -168,6 +168,11 @@ export type WorkspaceConfig = PricingRuleConfig & {
   serviceVariantsJson: string;
   // Promo codes: show the "Have a promo code?" field on the public booking page.
   promoCodesEnabled: string;
+  // Payment receipt WhatsApp template sent to client after a payment is recorded.
+  receiptTemplate: string;
+  receiptTemplateLang: string;
+  // Days after booking date that the invoice becomes due (shown on invoice PDF and client page).
+  invoiceDueDays: number;
 };
 
 export type WalletLedgerEntry = {

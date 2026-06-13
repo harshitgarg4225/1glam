@@ -124,6 +124,12 @@ export type LeadRecord = {
   quoteAcceptedAt: string;
   // Who referred this client (name or WhatsApp number of referrer).
   referredBy: string;
+  // Structured reason owner selects when declining a lead (e.g. "Date full", "Budget mismatch").
+  lostReason: string;
+  // "Urgent" when owner flags a lead as priority; empty otherwise.
+  urgencyFlag: string;
+  // Optional message the client leaves when accepting the quote.
+  clientNote: string;
 };
 
 export type BookingRecord = {
@@ -165,6 +171,8 @@ export type BookingRecord = {
   paymentsLog: string;
   invoiceViewedAt: string;
   contractViewedAt: string;
+  // Date the invoice payment is due (ISO date string, e.g. "2026-07-15").
+  invoiceDueDate: string;
 };
 
 export type DashboardData = {
@@ -277,6 +285,9 @@ export async function createLeadForWorkspace(
     quoteViewedAt: "",
     quoteAcceptedAt: "",
     referredBy: input.referredBy ?? "",
+    lostReason: "",
+    urgencyFlag: "",
+    clientNote: "",
   };
 
   await sheets.spreadsheets.values.append({
@@ -347,6 +358,7 @@ export async function applyOwnerDecision(
   decision: "YES" | "NO" | "EDIT",
   approvedPrice?: number,
   ownerNotes?: string,
+  lostReason?: string,
 ) {
   const workspace = await getRequiredWorkspace(email);
   const lead = await findLeadById(workspace, tokens, leadId);
@@ -359,6 +371,7 @@ export async function applyOwnerDecision(
       ...lead.record,
       ownerDecision: "NO",
       ownerNotes: ownerNotes ?? "",
+      lostReason: lostReason ?? lead.record.lostReason,
       status: "Lost",
       lastContactedAt: new Date().toISOString(),
     };
@@ -492,6 +505,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     paymentsLog: "",
     invoiceViewedAt: "",
     contractViewedAt: "",
+    invoiceDueDate: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -723,6 +737,7 @@ function leadFromBooking(booking: BookingRecord): LeadRecord {
     bookingId: booking.bookingId, paymentStatus: booking.paymentStatus, quoteUrl: "",
     quoteGeneratedAt: "", quoteVoidedAt: "", quoteAdjustments: "", orderItems: booking.orderItems,
     quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "", referredBy: "",
+    lostReason: "", urgencyFlag: "", clientNote: "",
   };
 }
 
@@ -859,6 +874,17 @@ export type ImportClientRow = {
   clientTags?: string;
 };
 
+export async function toggleLeadUrgency(
+  email: string,
+  tokens: Credentials,
+  leadId: string,
+): Promise<LeadRecord> {
+  return updateLeadRecord(email, tokens, leadId, (lead) => ({
+    ...lead,
+    urgencyFlag: lead.urgencyFlag === "Urgent" ? "" : "Urgent",
+  }));
+}
+
 export async function importClients(
   email: string,
   tokens: Credentials,
@@ -924,6 +950,9 @@ export async function importClients(
       quoteViewedAt: "",
       quoteAcceptedAt: "",
       referredBy: "",
+      lostReason: "",
+      urgencyFlag: "",
+      clientNote: "",
     });
   }
 
@@ -1670,6 +1699,9 @@ function leadToRow(lead: LeadRecord) {
     lead.quoteViewedAt,
     lead.quoteAcceptedAt,
     lead.referredBy,
+    lead.lostReason,
+    lead.urgencyFlag,
+    lead.clientNote,
   ];
 }
 
@@ -1717,6 +1749,9 @@ function rowToLead(row: string[]): LeadRecord {
     quoteViewedAt: row[39] ?? "",
     quoteAcceptedAt: row[40] ?? "",
     referredBy: row[41] ?? "",
+    lostReason: row[42] ?? "",
+    urgencyFlag: row[43] ?? "",
+    clientNote: row[44] ?? "",
   };
 }
 
@@ -1757,6 +1792,7 @@ function bookingToRow(booking: BookingRecord) {
     booking.paymentsLog,
     booking.invoiceViewedAt,
     booking.contractViewedAt,
+    booking.invoiceDueDate,
   ];
 }
 
@@ -1797,6 +1833,7 @@ function rowToBooking(row: string[]): BookingRecord {
     paymentsLog: row[32] ?? "",
     invoiceViewedAt: row[33] ?? "",
     contractViewedAt: row[34] ?? "",
+    invoiceDueDate: row[35] ?? "",
   };
 }
 

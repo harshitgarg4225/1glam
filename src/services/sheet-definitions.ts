@@ -57,6 +57,9 @@ export const leadHeaders = [
   "Quote Viewed At",
   "Quote Accepted At",
   "Referred By",
+  "Lost Reason",
+  "Urgency Flag",
+  "Client Note",
 ] as const;
 
 export const bookingHeaders = [
@@ -95,6 +98,7 @@ export const bookingHeaders = [
   "Payments Log",
   "Invoice Viewed At",
   "Contract Viewed At",
+  "Invoice Due Date",
 ] as const;
 
 export const artistHeaders = [

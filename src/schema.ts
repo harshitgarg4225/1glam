@@ -163,6 +163,11 @@ export const workspaceConfigSchema = z.object({
   serviceVariantsJson: z.string().optional().default("{}"),
   // Promo codes
   promoCodesEnabled: z.string().optional().default("No"),
+  // Payment receipt template sent to client after payment is recorded
+  receiptTemplate: z.string().optional().default(""),
+  receiptTemplateLang: z.string().optional().default("en"),
+  // Invoice due days (0 = due on receipt)
+  invoiceDueDays: numberFromForm.optional().default(0),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;
