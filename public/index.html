@@ -2203,9 +2203,9 @@
                 <div class="template-grid" id="template-grid"></div>
                 <p class="muted" style="margin:12px 0 6px;font-size:13px;">See exactly what your clients will receive — with sample data, your logo, and your terms. <strong>Save settings first</strong> to preview unsaved changes.</p>
                 <div class="action-row" style="flex-wrap:wrap;gap:6px;">
-                  <a class="button small secondary" href="/api/documents/sample/quote" target="_blank" rel="noreferrer">👁 Preview sample quote</a>
-                  <a class="button small secondary" href="/api/documents/sample/invoice" target="_blank" rel="noreferrer">👁 Preview sample invoice</a>
-                  <a class="button small secondary" href="/api/documents/sample/contract" target="_blank" rel="noreferrer">👁 Preview sample contract</a>
+                  <button type="button" class="button small secondary" data-doc-url="/api/documents/sample/quote" data-doc-title="Sample quote" data-doc-pdf="1">👁 Preview sample quote</button>
+                  <button type="button" class="button small secondary" data-doc-url="/api/documents/sample/invoice" data-doc-title="Sample invoice" data-doc-pdf="1">👁 Preview sample invoice</button>
+                  <button type="button" class="button small secondary" data-doc-url="/api/documents/sample/contract" data-doc-title="Sample contract" data-doc-pdf="1">👁 Preview sample contract</button>
                 </div>
               </div>
               <div class="section-grid" style="margin-top:20px;">
@@ -3096,6 +3096,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       </div>
     </div>
 
+    <!-- Document viewer modal: full-width iframe so docs open inside the app -->
+    <div class="modal-overlay" id="doc-viewer-modal" style="z-index:9500;padding:0;">
+      <div style="background:var(--surface);border-radius:0;width:100vw;height:100dvh;display:flex;flex-direction:column;overflow:hidden;">
+        <div style="display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);gap:10px;flex-shrink:0;background:var(--surface);">
+          <span id="doc-viewer-title" style="flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
+          <a id="doc-viewer-download" href="#" download class="button small secondary" style="white-space:nowrap;">⬇ Download</a>
+          <a id="doc-viewer-newtab" href="#" target="_blank" rel="noreferrer" class="button small secondary" style="white-space:nowrap;">↗ New tab</a>
+          <button id="doc-viewer-close" type="button" class="button small secondary" aria-label="Close viewer">✕</button>
+        </div>
+        <iframe id="doc-viewer-iframe" style="flex:1;border:none;background:#f5f4f2;width:100%;display:block;" title="Document preview"></iframe>
+      </div>
+    </div>
+
     <!-- Document edit modal: override amount, add line items, attach a note -->
     <div class="modal-overlay" id="doc-edit-modal">
       <div class="modal">
@@ -3370,6 +3383,48 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
       function setValue(form, name, value) { const f = form.elements.namedItem(name); if (f) f.value = value ?? ""; }
+
+      // Document viewer modal — opens any document (PDF or branded HTML page)
+      // inside the app rather than in a new browser tab.
+      function openDocModal(url, title, isPdf = true) {
+        const overlay = document.getElementById("doc-viewer-modal");
+        const iframe  = document.getElementById("doc-viewer-iframe");
+        const dl      = document.getElementById("doc-viewer-download");
+        const nt      = document.getElementById("doc-viewer-newtab");
+        document.getElementById("doc-viewer-title").textContent = title;
+        iframe.src = url;
+        nt.href = url;
+        if (isPdf) { dl.href = url; dl.style.display = ""; }
+        else        { dl.style.display = "none"; }
+        overlay.classList.add("open");
+        // mark as seen for setup-checklist tracking
+        if (url.includes("/documents/sample/") || url.includes("/quote/preview") || url.includes("/invoice/preview") || url.includes("/contract/preview")) {
+          localStorage.setItem("bd-doc-previewed", "1");
+        }
+      }
+      document.getElementById("doc-viewer-close").addEventListener("click", () => {
+        const overlay = document.getElementById("doc-viewer-modal");
+        overlay.classList.remove("open");
+        document.getElementById("doc-viewer-iframe").src = "";
+      });
+      document.getElementById("doc-viewer-modal").addEventListener("click", (e) => {
+        if (e.target === e.currentTarget) {
+          e.currentTarget.classList.remove("open");
+          document.getElementById("doc-viewer-iframe").src = "";
+        }
+      });
+
+      // Global delegated handler for [data-doc-url] — opens any doc in the viewer modal.
+      document.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-doc-url]");
+        if (!btn) return;
+        e.preventDefault();
+        openDocModal(
+          btn.getAttribute("data-doc-url"),
+          btn.getAttribute("data-doc-title") || "Document",
+          btn.getAttribute("data-doc-pdf") !== "0",
+        );
+      });
 
       // The six per-occasion duration inputs read from / write to the single
       // serviceDurations config string ("Bridal=4, Party=2").
@@ -3778,7 +3833,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const act = btn.getAttribute("data-doc-act");
         const kind = btn.getAttribute("data-kind");
         const id = btn.getAttribute("data-id");
-        if (act === "preview") { window.open(docPreviewUrl(kind, id), "_blank"); return; }
+        if (act === "preview") {
+          const labels = { quote: "Quote preview", invoice: "Invoice preview", contract: "Contract preview" };
+          openDocModal(docPreviewUrl(kind, id), labels[kind] || "Document preview", true);
+          return;
+        }
         if (act === "record-payment") { openPaymentModal(id); return; }
         if (act === "paylink") {
           const wsId = sessionState?.workspace?.workspaceId;
@@ -4015,14 +4074,6 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
       document.addEventListener("click", (e) => {
         if (e.target.closest("[data-open-doc-design]")) openDocDesign();
-        // Seeing a sample document completes the "see what your quote looks
-        // like" setup step.
-        if (e.target.closest('a[href^="/api/documents/sample/"]')) {
-          localStorage.setItem("bd-doc-previewed", "1");
-        }
-        if (e.target.closest('a[href*="/quote/preview"]')) {
-          localStorage.setItem("bd-doc-previewed", "1");
-        }
       });
 
       // How much money has actually landed for a booking: the payments ledger
@@ -4418,7 +4469,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                     <div class="card-menu-sep"></div>
                     <button class="card-menu-item" data-action="quote" data-lead-id="${lead.leadId}" type="button">📄 Generate quote</button>
                     <button class="card-menu-item" data-action="send-quote" data-lead-id="${lead.leadId}" type="button">📤 Send quote</button>
-                    ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer" class="card-menu-item">🔗 Open quote</a>` : ""}
+                    ${lead.quoteUrl ? `<button class="card-menu-item" type="button" data-doc-url="${escapeHtml(lead.quoteUrl)}" data-doc-title="Quote" data-doc-pdf="0">🔗 Open quote</button>` : ""}
                     <div class="card-menu-sep"></div>
                     <button class="card-menu-item" data-action="flag" data-lead-id="${lead.leadId}" type="button">${isUrgent ? "⭐ Remove urgent flag" : "🚨 Flag as urgent"}</button>
                     <button class="card-menu-item danger" data-action="no" data-lead-id="${lead.leadId}" type="button">✕ Decline request</button>
@@ -4677,17 +4728,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               <div class="action-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
                 <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Team</button>
                 ${booking.invoiceUrl
-                  ? `<a href="${escapeHtml(booking.invoiceUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Invoice</a>`
+                  ? `<button class="button small secondary" data-doc-url="${escapeHtml(booking.invoiceUrl)}" data-doc-title="Invoice" data-doc-pdf="${booking.invoiceUrl.startsWith('/d/') ? '1' : '0'}">Invoice</button>`
                   : `<button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Create invoice</button>`}
                 ${booking.contractUrl
-                  ? `<a href="${escapeHtml(booking.contractUrl)}" target="_blank" rel="noreferrer" class="button small secondary">Contract</a>`
+                  ? `<button class="button small secondary" data-doc-url="${escapeHtml(booking.contractUrl)}" data-doc-title="Contract" data-doc-pdf="1">Contract</button>`
                   : `<button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create contract</button>`}
               </div>
               <details style="margin-top:8px;">
                 <summary class="more-summary">More</summary>
                 <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:5px;">
-                  <a href="/api/bookings/${booking.bookingId}/invoice/preview" target="_blank" rel="noreferrer" class="button small secondary">👁 Invoice</a>
-                  <a href="/api/bookings/${booking.bookingId}/contract/preview" target="_blank" rel="noreferrer" class="button small secondary">👁 Contract</a>
+                  <button class="button small secondary" data-doc-url="/api/bookings/${booking.bookingId}/invoice/preview" data-doc-title="Invoice preview" data-doc-pdf="1">👁 Invoice</button>
+                  <button class="button small secondary" data-doc-url="/api/bookings/${booking.bookingId}/contract/preview" data-doc-title="Contract preview" data-doc-pdf="1">👁 Contract</button>
                   <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send invoice</button>
                   <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
                   <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync status</button>
@@ -7074,8 +7125,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         leadDrawerActions.innerHTML = `
           <div class="drawer-actions-row">
             ${primary ? `<button class="button" style="flex:1;" data-drawer-action="${primary.action}" data-drawer-lead-id="${lead.leadId}">${primary.label}</button>` : ""}
-            ${lead.quoteUrl ? `<a href="${escapeHtml(lead.quoteUrl)}" target="_blank" rel="noreferrer" class="button secondary">Open quote</a>` : ""}
-            <a href="/api/leads/${lead.leadId}/quote/preview" target="_blank" rel="noreferrer" class="button secondary">👁 Preview quote</a>
+            ${lead.quoteUrl ? `<button class="button secondary" data-doc-url="${escapeHtml(lead.quoteUrl)}" data-doc-title="Quote" data-doc-pdf="0">Open quote</button>` : ""}
+            <button class="button secondary" data-doc-url="/api/leads/${lead.leadId}/quote/preview" data-doc-title="Quote preview" data-doc-pdf="1">👁 Preview quote</button>
             <button class="button secondary" type="button" data-open-doc-design title="Pick the design, colours and logo of your documents">🎨 Change the look</button>
           </div>
           <div class="drawer-actions-row">
