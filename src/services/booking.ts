@@ -860,6 +860,44 @@ export async function recordBookingPayment(
   return booking;
 }
 
+// Removes a single mis-entered ledger line by its position. Entries have no IDs,
+// so the index (as shown in the modal, newest-first) is the handle. Recomputes
+// payment status and balance so a deleted advance correctly reopens the balance.
+export async function deleteBookingPaymentEntry(
+  email: string,
+  tokens: Credentials,
+  bookingId: string,
+  index: number,
+) {
+  let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
+  const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
+    const log = parsePaymentsLog(current.paymentsLog);
+    if (index < 0 || index >= log.length) {
+      throw new Error("That payment entry no longer exists — refresh and try again.");
+    }
+    log.splice(index, 1);
+    const paidTotal = paymentsTotal(log);
+    derived = derivePaymentStatus(current.finalPrice, current.advanceAmount, paidTotal);
+    return {
+      ...current,
+      paymentsLog: JSON.stringify(log),
+      paymentStatus: derived,
+      balanceDue: Math.max(0, current.finalPrice - paidTotal),
+    };
+  });
+
+  if (booking.leadId) {
+    await updateLeadRecord(email, tokens, booking.leadId, (lead) => ({
+      ...lead,
+      paymentStatus: derived,
+      status: derived === "Paid in Full" ? "Payment Received" : (lead.status === "Payment Received" ? "Confirmed" : lead.status),
+      lastContactedAt: new Date().toISOString(),
+    })).catch(() => undefined);
+  }
+
+  return booking;
+}
+
 // ---- Client import ----
 // Brings her existing client list in (from a notebook, Excel, or another app)
 // as completed past clients: they appear in the Clients directory and power

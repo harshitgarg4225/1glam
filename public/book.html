@@ -156,6 +156,8 @@
         <p id="about" class="about hidden"></p>
         <div id="gallery" class="gallery hidden"></div>
 
+        <div id="trust-strip" style="display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 18px;"></div>
+
         <h2>Choose a service</h2>
         <div class="services" id="services"></div>
         <div id="service-detail" class="hidden">
@@ -338,6 +340,18 @@
         if (profile.city) metaBits.push(profile.city);
         if (profile.instagramHandle) metaBits.push("@" + profile.instagramHandle.replace(/^@/, ""));
         el("biz-meta").textContent = metaBits.join("  ·  ");
+
+        // Trust floor: a few reassurances that are ALWAYS true, so a new artist's
+        // page (no Google rating, no portfolio yet) never looks bare or risky to a
+        // bride about to share her number. These cost nothing and always render.
+        const trust = [
+          ["🔒", "No payment to request — you only pay an advance once " + profile.businessName + " confirms"],
+          ["💬", "You'll get a reply on WhatsApp"],
+          ["🗓️", "Your date is held while " + profile.businessName + " reviews"],
+        ];
+        el("trust-strip").innerHTML = trust.map(([icon, text]) =>
+          `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface);font-size:12.5px;color:var(--text);">${icon} ${text.replace(/</g, "&lt;")}</span>`
+        ).join("");
 
         if (profile.aboutText) {
           el("about").textContent = profile.aboutText;
@@ -738,7 +752,7 @@
               "Thank you, " + payload.clientName + ". Your " + data.eventType +
               " request for " + data.eventDate + " has been sent to " + data.businessName +
               ". Your date is tentatively held — it's locked in once " + data.businessName +
-              " confirms and the advance is paid. You'll hear back on WhatsApp.";
+              " confirms and the advance is paid. You'll usually hear back on WhatsApp within a day.";
 
             if (ownerWhatsApp) {
               const text =

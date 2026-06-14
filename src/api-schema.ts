@@ -2,8 +2,8 @@ import { z } from "zod";
 
 export const createLeadSchema = z.object({
   source: z.string().min(1).default("Instagram"),
-  clientName: z.string().min(1),
-  clientWhatsApp: z.string().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
+  clientName: z.string().trim().min(1),
+  clientWhatsApp: z.string().trim().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
   clientInstagram: z.string().optional(),
   eventType: z.string().min(1),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
@@ -18,13 +18,15 @@ export const createLeadSchema = z.object({
 });
 
 export const publicBookingSchema = z.object({
-  clientName: z.string().min(1).max(120),
-  clientWhatsApp: z.string().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
+  // .trim() before .min(1) rejects whitespace-only input ("   ") that would
+  // otherwise pass length checks and create a junk lead with a blank name.
+  clientName: z.string().trim().min(1).max(120),
+  clientWhatsApp: z.string().trim().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
   clientInstagram: z.string().max(120).optional(),
-  eventType: z.string().min(1).max(40),
+  eventType: z.string().trim().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   eventTime: z.string().max(20).optional(),
-  locationText: z.string().min(1).max(200),
+  locationText: z.string().trim().min(1).max(200),
   addons: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
   promoCode: z.string().max(40).optional(),
@@ -34,9 +36,9 @@ export const publicBookingSchema = z.object({
 // call so the owner never has to walk the pipeline for a client she already
 // said yes to.
 export const quickBookingSchema = z.object({
-  clientName: z.string().min(1).max(120),
-  clientWhatsApp: z.string().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
-  eventType: z.string().min(1).max(40),
+  clientName: z.string().trim().min(1).max(120),
+  clientWhatsApp: z.string().trim().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
+  eventType: z.string().trim().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   eventTime: z.string().max(20).optional(),
   // Venue and price are optional — artists often block the date first and

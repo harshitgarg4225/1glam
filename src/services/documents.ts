@@ -238,12 +238,14 @@ export async function buildQuotePdfBytes(
     lead.clientInstagram ? `Instagram: ${lead.clientInstagram}` : "",
   ].filter(Boolean), y, bold, regular, theme);
 
+  // A blank field is omitted rather than printed as "To be confirmed" — an
+  // estimate with a missing line reads as professional; a placeholder does not.
   y = drawSection(page, "Event Details", [
     `Event: ${lead.eventType}`,
-    `Date: ${lead.eventDate || "To be confirmed"}`,
-    `Time: ${lead.eventTime || "To be confirmed"}`,
-    `Location: ${lead.locationText || "To be confirmed"}`,
-  ], y - 12, bold, regular, theme);
+    lead.eventDate ? `Date: ${lead.eventDate}` : "",
+    lead.eventTime ? `Time: ${lead.eventTime}` : "",
+    lead.locationText ? `Location: ${lead.locationText}` : "",
+  ].filter(Boolean), y - 12, bold, regular, theme);
 
   y = drawPricingBlock(page, {
     heading: "Quote Summary",
@@ -334,11 +336,11 @@ export async function buildInvoicePdfBytes(
 
   y = drawSection(page, "Booking Details", [
     `Event: ${booking.eventType}`,
-    `Date: ${booking.eventDate || "To be confirmed"}`,
-    `Time: ${booking.eventTime || "To be confirmed"}`,
-    `Venue: ${booking.venue || "To be confirmed"}`,
-    `Assigned Artist: ${booking.assignedArtist || "To be assigned"}`,
-  ], y - 12, bold, regular, theme);
+    booking.eventDate ? `Date: ${booking.eventDate}` : "",
+    booking.eventTime ? `Time: ${booking.eventTime}` : "",
+    booking.venue ? `Venue: ${booking.venue}` : "",
+    booking.assignedArtist ? `Assigned Artist: ${booking.assignedArtist}` : "",
+  ].filter(Boolean), y - 12, bold, regular, theme);
 
   // Payment history: each recorded instalment appears on the invoice so the
   // client sees exactly what's been received and what remains — no confusion
@@ -457,11 +459,11 @@ export async function generateContractPdfBytes(
   y = drawSection(page, "Booking Details", [
     `Booking ID: ${booking.bookingId}`,
     `Event: ${booking.eventType}`,
-    `Date: ${booking.eventDate || "To be confirmed"}`,
-    `Time: ${booking.eventTime || "To be confirmed"}`,
-    `Venue: ${booking.venue || "To be confirmed"}`,
+    booking.eventDate ? `Date: ${booking.eventDate}` : "",
+    booking.eventTime ? `Time: ${booking.eventTime}` : "",
+    booking.venue ? `Venue: ${booking.venue}` : "",
     `Artist: ${booking.assignedArtist || workspace.config.ownerName}`,
-  ], y - 12, bold, regular, theme);
+  ].filter(Boolean), y - 12, bold, regular, theme);
 
   y = drawPricingBlock(page, {
     heading: "Commercial Terms",

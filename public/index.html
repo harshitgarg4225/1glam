@@ -1818,6 +1818,13 @@
           <div id="wallet-packs" class="mini-grid"></div>
         </div>
 
+        <div class="panel section" style="margin-bottom:20px;" id="wallet-costs-panel">
+          <div class="kicker">What credits are spent on</div>
+          <h3 style="margin:4px 0 4px;font-size:16px;">Where your credits go</h3>
+          <p class="muted" id="wallet-costs-note" style="margin:0 0 12px;font-size:13px;">Each automated action uses a small number of credits. About 1 credit ≈ ₹1.</p>
+          <div id="wallet-costs"></div>
+        </div>
+
         <div class="panel section">
           <div class="kicker">History</div>
           <h3 style="margin:4px 0 14px;font-size:16px;">Recent activity</h3>
@@ -1885,7 +1892,7 @@
                 <div id="chart-source"></div>
               </div>
               <div>
-                <h3 style="margin-bottom:12px;font-size:16px;">Revenue by service type</h3>
+                <h3 style="margin-bottom:12px;font-size:16px;">Revenue by service type <span class="muted" style="font-weight:400;font-size:12px;">(all time)</span></h3>
                 <div id="chart-event-type"></div>
               </div>
             </div>
@@ -2019,6 +2026,7 @@
               <div class="kicker" style="text-align:left;">QR code</div>
               <p class="muted" style="margin:8px 0;font-size:13px;text-align:left;">Add to flyers, cards, or your story.</p>
               <img id="mypage-qr" class="qr-img" alt="Booking page QR code" />
+              <p id="mypage-qr-fallback" class="muted" style="display:none;margin:8px 0 0;font-size:12.5px;color:var(--danger);">Couldn't load the QR code right now. Your booking link above still works — share that instead.</p>
             </div>
           </div>
         </div>
@@ -2026,7 +2034,7 @@
         <form id="mypage-form" class="panel section">
           <div class="kicker">Make it yours</div>
           <h2>Branding &amp; intro</h2>
-          <p class="muted" style="margin:-4px 0 14px;font-size:13px;">Changes show instantly in the preview above — hit <strong>Save my page</strong> to publish.</p>
+          <p class="muted" style="margin:-4px 0 14px;font-size:13px;">Hit <strong>Save my page</strong> to publish — the preview above updates the moment you save.</p>
           <div class="section-grid">
             <div>
               <label for="mypage-headline">Headline</label>
@@ -2570,7 +2578,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
           </div>
           <div id="tone-profile-wrap" style="display:none;margin-top:12px;">
             <label for="aiToneProfile">Your AI voice profile (editable)</label>
-            <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">This is how the AI now understands your style. Tweak it freely — it's used on every reply.</p>
+            <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">This is how the AI now understands your style. Learning it saves automatically — but if you tweak it by hand, hit <strong>Save AI settings</strong> below to keep your edits.</p>
             <textarea id="aiToneProfile" name="aiToneProfile" form="config-form" rows="3"></textarea>
           </div>
         </div>
@@ -2614,6 +2622,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             <option value="No">Off — AI drafts replies, I send them myself</option>
             <option value="Yes">On — AI replies automatically (within guardrails)</option>
           </select>
+          <p id="autoreply-status" class="muted" style="margin:10px 0 0;font-size:12.5px;"></p>
           <div class="action-row" style="margin-top:16px;">
             <button class="button" type="submit" form="config-form">Save AI settings</button>
           </div>
@@ -3531,6 +3540,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         syncDurationField();
         renderTemplatePicker(config.documentTemplate);
         reflectToneProfile(config.aiToneProfile);
+        updateAutoReplyStatus(config.autoReplyEnabled);
         initVariantsEditor(config);
         const logoPreview = document.getElementById("logo-preview");
         if (logoPreview) {
@@ -3569,6 +3579,25 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (!wrap) return;
         wrap.style.display = profile && profile.trim() ? "block" : "none";
       }
+
+      // The auto-reply dropdown only takes effect once saved, so spell out the
+      // live (saved) state and flag when the current choice hasn't been saved yet.
+      function updateAutoReplyStatus(savedValue) {
+        const sel = document.getElementById("autoReplyEnabled");
+        const status = document.getElementById("autoreply-status");
+        if (!sel || !status) return;
+        if (savedValue !== undefined) sel.dataset.saved = String(savedValue || "No") === "Yes" ? "Yes" : "No";
+        const saved = sel.dataset.saved === "Yes";
+        const current = sel.value === "Yes";
+        if (current !== saved) {
+          status.innerHTML = `<span style="color:var(--warning);">Not saved yet — click <strong>Save AI settings</strong> to turn auto-reply ${current ? "ON" : "OFF"}.</span>`;
+        } else {
+          status.innerHTML = saved
+            ? `<span style="color:#1e7a3f;">● Auto-reply is ON — your AI is answering messages live.</span>`
+            : `● Auto-reply is OFF — your AI only drafts replies for you to send.`;
+        }
+      }
+      document.getElementById("autoReplyEnabled")?.addEventListener("change", () => updateAutoReplyStatus());
 
       // ---- Document design picker ----
       // Visual swatch colours mirror the server-side themes in document-themes.ts.
@@ -4468,7 +4497,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                     </div>
                     <div class="card-menu-sep"></div>
                     <button class="card-menu-item" data-action="quote" data-lead-id="${lead.leadId}" type="button">📄 Generate quote</button>
-                    <button class="card-menu-item" data-action="send-quote" data-lead-id="${lead.leadId}" type="button">📤 Send quote</button>
+                    ${lead.status !== "New" ? `<button class="card-menu-item" data-action="send-quote" data-lead-id="${lead.leadId}" type="button">📤 Send quote</button>` : ""}
                     ${lead.quoteUrl ? `<button class="card-menu-item" type="button" data-doc-url="${escapeHtml(lead.quoteUrl)}" data-doc-title="Quote" data-doc-pdf="0">🔗 Open quote</button>` : ""}
                     <div class="card-menu-sep"></div>
                     <button class="card-menu-item" data-action="flag" data-lead-id="${lead.leadId}" type="button">${isUrgent ? "⭐ Remove urgent flag" : "🚨 Flag as urgent"}</button>
@@ -5947,6 +5976,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const lowBanner = document.getElementById("wallet-low-banner");
           if (lowBanner) lowBanner.style.display = data.lowBalance ? "" : "none";
           renderWalletPacks(data.packs || [], data.configured);
+          renderWalletCosts(data.costs || [], data.enforced, data.balanceCredits);
           renderWalletLedger(data.ledger || []);
         } catch (error) {
           ledgerBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">${escapeHtml(error.message)}</td></tr>`;
@@ -5962,6 +5992,27 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${p.bonus ? `<div class="pill success" style="margin-bottom:8px;">${escapeHtml(p.bonus)}</div>` : ""}
             <button class="button ${configured ? "" : "secondary"}" type="button" data-buy-pack="${escapeHtml(p.id)}" ${configured ? "" : "disabled"} style="width:100%;margin-top:6px;">₹${p.amountInr.toLocaleString("en-IN")}</button>
           </div>`).join("");
+      }
+
+      // Shows what each automated action costs, and — when billing is enforced —
+      // what actually happens if she runs out, so credits never vanish unexplained.
+      function renderWalletCosts(costs, enforced, balance) {
+        const box = document.getElementById("wallet-costs");
+        if (!box) return;
+        if (!costs.length) { document.getElementById("wallet-costs-panel").style.display = "none"; return; }
+        box.innerHTML = costs.map((c) =>
+          `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;">
+            <span>${escapeHtml(c.label)}</span>
+            <span style="font-weight:600;">${c.credits} credit${c.credits === 1 ? "" : "s"}</span>
+          </div>`).join("");
+        const note = document.getElementById("wallet-costs-note");
+        if (note) {
+          note.textContent = enforced
+            ? (balance <= 0
+                ? "You're out of credits — automated messages, AI replies and documents are paused until you top up. Your bookings and calendar keep working."
+                : "Each automated action uses a few credits. When you hit zero, automations pause until you top up — your bookings and calendar keep working.")
+            : "Each automated action uses a few credits. About 1 credit ≈ ₹1. (Billing isn't enforced yet, so nothing is blocked.)";
+        }
       }
 
       function renderWalletLedger(ledger) {
@@ -6049,12 +6100,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         loading.style.display = "none";
         body.classList.remove("hidden");
 
-        // Summary cards
+        // Summary cards. Booked vs Collected are kept distinct so Insights never
+        // implies cash she hasn't actually received (cancelled jobs are excluded
+        // server-side). Outstanding only shows when there's money still to come.
         const cards = [
-          { label: "Total Revenue", value: formatMoney(summary.totalRevenue) },
+          { label: "Booked revenue", value: formatMoney(summary.totalRevenue) },
+          { label: "Collected", value: formatMoney(summary.totalCollected ?? 0), accent: "#1e7a3f" },
+          ...((summary.totalOutstanding ?? 0) > 0 ? [
+            { label: "Still to collect", value: formatMoney(summary.totalOutstanding), accent: "#b3422f" },
+          ] : []),
           ...(summary.totalExpenses > 0 ? [
             { label: "Expenses", value: formatMoney(summary.totalExpenses) },
-            { label: "Profit", value: formatMoney(summary.totalProfit) },
+            { label: "Profit (booked − costs)", value: formatMoney(summary.totalProfit) },
           ] : []),
           { label: "Confirmed Bookings", value: summary.totalBookings },
           { label: "Conversion Rate", value: summary.conversionRate + "%" },
@@ -6072,15 +6129,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("analytics-summary").innerHTML = cards.map((c) =>
           `<div class="analytics-metric">
             <div class="analytics-metric-label">${escapeHtml(c.label)}</div>
-            <div class="analytics-metric-value">${escapeHtml(String(c.value))}</div>
+            <div class="analytics-metric-value"${c.accent ? ` style="color:${c.accent};"` : ""}>${escapeHtml(String(c.value))}</div>
           </div>`).join("");
 
         // Busiest day-of-week mini bar chart
         const wdEl = document.getElementById("chart-weekday");
         if (wdEl && Array.isArray(payload.byWeekday)) {
+          const hasWeekday = payload.byWeekday.some((d) => d.count > 0);
           const maxWd = Math.max(1, ...payload.byWeekday.map((d) => d.count));
-          wdEl.innerHTML =
-            `<div style="display:flex;align-items:flex-end;gap:6px;height:90px;border-bottom:1px solid var(--line);">` +
+          wdEl.innerHTML = !hasWeekday
+            ? `<p style="color:var(--muted);font-size:14px;padding:16px 0;">Once you have confirmed bookings, your busiest days show up here.</p>`
+            : `<div style="display:flex;align-items:flex-end;gap:6px;height:90px;border-bottom:1px solid var(--line);">` +
             payload.byWeekday.map((d) => {
               const pct = Math.round((d.count / maxWd) * 100);
               return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;" title="${escapeHtml(d.day)}: ${d.count}">
@@ -6090,10 +6149,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             }).join("") + `</div>`;
         }
 
-        // Revenue bar chart
+        // Revenue bar chart. When every month is zero a bar chart would render as
+        // an invisible flat line that looks broken — show a plain empty state instead.
+        const hasRevenue = months.some((m) => m.revenue > 0);
         const maxRev = Math.max(1, ...months.map((m) => m.revenue));
-        document.getElementById("chart-revenue").innerHTML =
-          `<div style="display:flex;align-items:flex-end;gap:4px;height:120px;border-bottom:1px solid var(--line);">` +
+        document.getElementById("chart-revenue").innerHTML = !hasRevenue
+          ? `<p style="color:var(--muted);font-size:14px;padding:24px 0;text-align:center;">No revenue to chart yet — your confirmed bookings will appear here month by month.</p>`
+          : `<div style="display:flex;align-items:flex-end;gap:4px;height:120px;border-bottom:1px solid var(--line);">` +
           months.map((m) => {
             const pct = Math.round((m.revenue / maxRev) * 100);
             return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;" title="${escapeHtml(m.label)}: ${formatMoney(m.revenue)}">
@@ -6173,7 +6235,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const profileEl = document.getElementById("aiToneProfile");
           if (profileEl) profileEl.value = res.toneProfile || "";
           reflectToneProfile(res.toneProfile);
-          statusEl.textContent = "✓ Done — your AI now writes in your voice.";
+          statusEl.textContent = "✓ Saved — your AI now writes in your voice. Test it below.";
           await refreshSession();
         } catch (err) {
           statusEl.textContent = err.message || "Couldn't learn your tone. Try again.";
@@ -6288,7 +6350,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("mypage-link").value = bookingUrl;
         document.getElementById("preview-mypage-link").href = bookingUrl;
         document.getElementById("mypage-bio").value = bookingUrl;
-        document.getElementById("mypage-qr").src =
+        const qrImg = document.getElementById("mypage-qr");
+        const qrFallback = document.getElementById("mypage-qr-fallback");
+        // The QR is generated by an external service; if it's unreachable, say so
+        // and point her at the link instead of leaving a silently-broken image.
+        qrImg.onerror = () => { qrImg.style.display = "none"; if (qrFallback) qrFallback.style.display = "block"; };
+        qrImg.onload = () => { qrImg.style.display = ""; if (qrFallback) qrFallback.style.display = "none"; };
+        qrImg.src =
           `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=${encodeURIComponent(bookingUrl)}`;
         const previewFrame = document.getElementById("mypage-preview");
         if (previewFrame && previewFrame.dataset.src !== bookingUrl) {
@@ -6868,6 +6936,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       locationInput?.addEventListener("blur", autofillDistance);
 
       async function runLeadAction(action, leadId, btn) {
+        // Catch the two things the backend would reject anyway, but with guidance
+        // instead of a raw error: a quote needs a price, and a quote can only be
+        // sent once the price is approved.
+        const leadForAction = leadById(leadId);
+        if ((action === "quote" || action === "send-quote") && leadForAction
+            && !leadForAction.finalApprovedPrice && !leadForAction.initialAiPrice) {
+          toast("Add a price first — open the request and set an amount, or the quote will be blank.", "info");
+          return;
+        }
+        if (action === "send-quote" && leadForAction && leadForAction.status === "New") {
+          toast("Approve the price first, then send the quote.", "info");
+          return;
+        }
         if (btn) { btn.disabled = true; btn.classList.add("loading"); }
         // Every action answers two questions out loud: "did it work?" and
         // "what do I do next?" — silence after a tap reads as failure.
@@ -9090,9 +9171,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const ledger = parseLedger(b.paymentsLog);
         document.getElementById("payment-modal-ledger").innerHTML = ledger.length
           ? `<div style="background:var(--surface,#f8f5f2);border:1px solid var(--line,#eee);border-radius:8px;padding:8px 12px;font-size:12.5px;">` +
-            ledger.map((p) => {
+            ledger.map((p, i) => {
               const refund = p.kind === "refund";
-              return `<div style="display:flex;justify-content:space-between;padding:2px 0;${refund ? "color:#b3422f;" : ""}"><span>${refund ? "↩ Refund · " : ""}${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note ? " · " + escapeHtml(p.note) : ""}</span><strong>${refund ? "-" : ""}${formatMoney(p.amount)}</strong></div>`;
+              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;${refund ? "color:#b3422f;" : ""}"><span style="flex:1;">${refund ? "↩ Refund · " : ""}${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note ? " · " + escapeHtml(p.note) : ""}</span><strong>${refund ? "-" : ""}${formatMoney(p.amount)}</strong><button type="button" class="pay-del-btn" data-del-payment="${i}" title="Remove this entry" aria-label="Remove this entry" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;">✕</button></div>`;
             }).join("") +
             `</div>`
           : "";
@@ -9107,6 +9188,29 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       function closePaymentModal() { paymentModal.classList.remove("open"); }
+
+      // Remove a mis-entered payment line. Confirms first (it changes what the
+      // client owes), then refreshes so the ledger and balance reflect the fix.
+      document.getElementById("payment-modal-ledger")?.addEventListener("click", async (e) => {
+        const delBtn = e.target.closest("[data-del-payment]");
+        if (!delBtn) return;
+        const index = Number(delBtn.getAttribute("data-del-payment"));
+        const ok = await showConfirm("Remove this payment?", "This entry will be deleted and the balance recalculated. This can't be undone.", "Remove");
+        if (!ok) return;
+        delBtn.disabled = true;
+        try {
+          const res = await fetch(`/api/bookings/${encodeURIComponent(paymentModalBookingId)}/payments/${index}`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "Couldn't remove that entry.");
+          toast("Payment entry removed.", "success");
+          await refreshSession();
+          openPaymentModal(paymentModalBookingId);
+        } catch (error) {
+          toast(error.message || "Couldn't remove that entry.", "error");
+          delBtn.disabled = false;
+        }
+      });
+
       document.getElementById("pay-type")?.addEventListener("change", (e) => {
         document.getElementById("pay-amount-label").textContent =
           e.target.value === "refund" ? "Amount refunded (₹)" : "Amount received (₹)";

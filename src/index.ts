@@ -22,6 +22,7 @@ import {
   completeBooking,
   confirmLeadBooking,
   createLeadForWorkspace,
+  deleteBookingPaymentEntry,
   findLatestLeadByActor,
   getBookingRecord,
   getLeadRecord,
@@ -54,7 +55,7 @@ import {
   verifyCheckoutSignatureWithSecret,
   verifyWebhookSignature,
 } from "./services/razorpay.js";
-import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford } from "./services/wallet.js";
+import { CREDIT_PACKS, USAGE_COSTS, USAGE_LABELS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford, type UsageKind } from "./services/wallet.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   buildImageMarker,
@@ -1619,6 +1620,11 @@ app.get("/api/wallet", async (req, res, next) => {
       lowBalance: isLowBalance(wallet.balanceCredits),
       ledger: wallet.ledger.slice(0, 50),
       packs: CREDIT_PACKS,
+      // What each automated action costs, so the artist can see where credits go
+      // instead of running out without warning.
+      costs: (Object.keys(USAGE_COSTS) as UsageKind[]).map((k) => ({
+        label: USAGE_LABELS[k], credits: USAGE_COSTS[k],
+      })),
       configured: razorpayConfigured(),
       testMode: razorpayTestMode(),
       enforced: appConfig.billingEnforced,
@@ -2346,6 +2352,29 @@ app.post("/api/bookings/:bookingId/payments", async (req, res, next) => {
     if (workspace && parsed.type !== "refund") {
       sendPaymentReceipt(workspace, req.session.googleTokens, booking, parsed.amount).catch(() => undefined);
     }
+    res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Removes a mis-entered payment line. The index matches the modal's display
+// order, which the client converts back to the stored (chronological) position.
+app.delete("/api/bookings/:bookingId/payments/:index", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) {
+      return res.status(400).json({ error: "Invalid payment entry." });
+    }
+    const booking = await deleteBookingPaymentEntry(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      index,
+    );
     res.json({ ok: true, booking });
   } catch (error) {
     next(error);
@@ -4614,7 +4643,12 @@ app.get("/api/analytics", async (req, res, next) => {
     const bookingsByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
     const leadsByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
 
-    for (const b of bookings) {
+    // Cancelled bookings are not income. Every money figure below is computed
+    // over real (non-cancelled) bookings so Insights never overstates earnings,
+    // matching the dashboard's Booked-vs-Collected discipline.
+    const realBookings = bookings.filter((b) => b.status !== "Cancelled");
+
+    for (const b of realBookings) {
       const key = (b.bookedAt || "").slice(0, 7);
       if (key in revenueByMonth) revenueByMonth[key] += Number(b.finalPrice) || 0;
       if (key in bookingsByMonth) bookingsByMonth[key] += 1;
@@ -4631,21 +4665,28 @@ app.get("/api/analytics", async (req, res, next) => {
     }
 
     const eventTypeRevenue: Record<string, number> = {};
-    for (const b of bookings) {
+    for (const b of realBookings) {
       const t = b.eventType || "Unknown";
       eventTypeRevenue[t] = (eventTypeRevenue[t] || 0) + (Number(b.finalPrice) || 0);
     }
 
-    const totalRevenue = bookings.reduce((s, b) => s + (Number(b.finalPrice) || 0), 0);
-    const totalExpenses = bookings.reduce((s, b) => s + sumExpenses(b.expenses), 0);
+    // Booked = total value of confirmed (non-cancelled) work.
+    // Collected = rupees actually received (payments ledger, minus refunds).
+    const totalRevenue = realBookings.reduce((s, b) => s + (Number(b.finalPrice) || 0), 0);
+    const totalCollected = realBookings.reduce(
+      (s, b) => s + Math.max(0, paymentsTotal(parsePaymentsLog(b.paymentsLog))),
+      0,
+    );
+    const totalOutstanding = Math.max(0, totalRevenue - totalCollected);
+    const totalExpenses = realBookings.reduce((s, b) => s + sumExpenses(b.expenses), 0);
     const totalProfit = totalRevenue - totalExpenses;
-    const totalBookings = bookings.length;
+    const totalBookings = realBookings.length;
     const totalLeads = leads.length;
+    // Conversion = share of all enquiries that became real bookings.
     const conversionRate = totalLeads > 0 ? Math.round((totalBookings / totalLeads) * 100) : 0;
     const avgBookingValue = totalBookings > 0 ? Math.round(totalRevenue / totalBookings) : 0;
 
     // ---- Client-level intelligence (retention, CLV, busiest times) ----
-    const realBookings = bookings.filter((b) => b.status !== "Cancelled");
     const byClient = new Map<string, { name: string; count: number; revenue: number; firstAt: string; lastAt: string }>();
     for (const b of realBookings) {
       const phone = String(b.clientWhatsApp || "").replace(/\D/g, "");
@@ -4709,7 +4750,7 @@ app.get("/api/analytics", async (req, res, next) => {
     res.json({
       ok: true,
       summary: {
-        totalRevenue, totalExpenses, totalProfit, totalBookings, totalLeads, conversionRate, avgBookingValue,
+        totalRevenue, totalCollected, totalOutstanding, totalExpenses, totalProfit, totalBookings, totalLeads, conversionRate, avgBookingValue,
         uniqueClients, repeatClients, repeatClientRate, avgClientValue, activeClients, lapsedClients,
         busiestDay, busiestHour,
       },
