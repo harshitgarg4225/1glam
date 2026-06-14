@@ -1232,7 +1232,12 @@ function calculatePricing(
     Other: workspace.config.basePriceOther,
   };
 
-  const eventMonth = new Date(input.eventDate).getMonth();
+  // Parse the month straight from the YYYY-MM-DD string. new Date(...).getMonth()
+  // reads UTC-midnight in the server's local zone, which can land on the wrong
+  // month for dates near a boundary on a non-IST server. 1-based "MM" → 0-based.
+  const eventMonth = /^\d{4}-\d{2}-\d{2}$/.test(input.eventDate)
+    ? Number(input.eventDate.slice(5, 7)) - 1
+    : new Date(input.eventDate).getMonth();
   const seasonKeys = [
     workspace.config.multiplierJan,
     workspace.config.multiplierFeb,

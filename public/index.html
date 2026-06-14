@@ -530,6 +530,11 @@
       .tab-more-item { display: block; width: 100%; text-align: left; border: none; background: transparent; cursor: pointer; padding: 10px 16px; font: inherit; font-size: 14px; color: var(--text); transition: background 0.1s; }
       .tab-more-item:hover { background: var(--surface); }
       .tab-more-item.active { color: var(--accent); font-weight: 600; }
+      .tab-more-head { padding: 8px 16px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+      .tab-more-head:first-child { padding-top: 4px; }
+      @keyframes bd-spin { to { transform: rotate(360deg); } }
+      .bd-spinner { display: inline-block; width: 15px; height: 15px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: bd-spin .7s linear infinite; vertical-align: -3px; margin-right: 8px; }
+      @media (prefers-reduced-motion: reduce) { .bd-spinner { animation-duration: 2s; } }
       @media (max-width: 640px) { .tab-more-wrap { margin-left: 0; } }
       .button.primary-action { width: 100%; margin-top: 10px; }
       .gallery-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-top: 12px; }
@@ -768,6 +773,8 @@
       @keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
       .bnav-sheet-grab { width: 38px; height: 4px; border-radius: 4px; background: var(--line); margin: 4px auto 14px; }
       .bnav-sheet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .bnav-sheet-head { grid-column: 1 / -1; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 10px 2px 0; }
+      .bnav-sheet-head:first-child { margin-top: 0; }
       .bnav-sheet-item {
         background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
         cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text);
@@ -933,10 +940,13 @@
         <div class="tab-more-wrap">
           <button class="tab-button tab-more-trigger" type="button" id="tab-more-trigger">More ▾</button>
           <div class="tab-more-menu" id="tab-more-menu">
-            <button class="tab-more-item" type="button" data-tab="wallet">💳 Wallet &amp; credits</button>
+            <div class="tab-more-head">Grow &amp; get paid</div>
             <button class="tab-more-item" type="button" data-tab="analytics">📊 Insights</button>
+            <button class="tab-more-item" type="button" data-tab="wallet">💳 Wallet &amp; credits</button>
+            <div class="tab-more-head">Shop &amp; team</div>
             <button class="tab-more-item" type="button" data-tab="shop">🛍️ Shop &amp; inventory</button>
             <button class="tab-more-item" type="button" data-tab="team">👥 Team</button>
+            <div class="tab-more-head">Setup</div>
             <button class="tab-more-item" type="button" data-tab="channels">🔗 WhatsApp &amp; Instagram</button>
             <button class="tab-more-item" type="button" data-tab="setup">⚙️ Settings</button>
           </div>
@@ -1251,7 +1261,7 @@
               <thead>
                 <tr><th>Client</th><th>Event</th><th>Payment</th><th>Status</th><th>Actions</th></tr>
               </thead>
-              <tbody id="bookings-body"><tr><td colspan="5" class="muted">No bookings yet.</td></tr></tbody>
+              <tbody id="bookings-body"><tr><td colspan="5" class="muted" style="padding:24px;text-align:center;"><span class="bd-spinner"></span>Loading…</td></tr></tbody>
             </table>
           </div>
           <div class="status" id="document-status" style="margin-top:12px;"></div>
@@ -1881,7 +1891,7 @@
         <div class="panel section">
           <div class="kicker">Business Insights</div>
           <h2>Analytics</h2>
-          <div id="analytics-loading" style="color:var(--muted);padding:24px 0;">Loading…</div>
+          <div id="analytics-loading" style="color:var(--muted);padding:24px 0;"><span class="bd-spinner"></span>Loading…</div>
           <div id="analytics-body" class="hidden">
             <div id="analytics-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:28px;"></div>
             <h3 style="margin-bottom:14px;font-size:16px;">Revenue (last 12 months)</h3>
@@ -2675,7 +2685,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
               <thead>
                 <tr><th>Document</th><th>Client</th><th>Event</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
               </thead>
-              <tbody id="documents-body"><tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">Loading…</td></tr></tbody>
+              <tbody id="documents-body"><tr><td colspan="6" class="muted" style="padding:24px;text-align:center;"><span class="bd-spinner"></span>Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -2700,15 +2710,20 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       <div class="bnav-sheet-panel">
         <div class="bnav-sheet-grab"></div>
         <div class="bnav-sheet-grid">
+          <div class="bnav-sheet-head">Clients &amp; schedule</div>
           <button class="bnav-sheet-item" type="button" data-tab="clients"><span>👥</span>Clients</button>
           <button class="bnav-sheet-item" type="button" data-tab="calendar"><span>🗓️</span>Calendar</button>
+          <div class="bnav-sheet-head">Grow &amp; get paid</div>
+          <button class="bnav-sheet-item" type="button" data-tab="analytics"><span>📊</span>Insights</button>
+          <button class="bnav-sheet-item" type="button" data-tab="reviews"><span>⭐</span>Reviews</button>
+          <button class="bnav-sheet-item" type="button" data-tab="wallet"><span>💳</span>Wallet</button>
+          <div class="bnav-sheet-head">Your brand &amp; voice</div>
           <button class="bnav-sheet-item" type="button" data-tab="mypage"><span>✨</span>My Page</button>
           <button class="bnav-sheet-item" type="button" data-tab="myai"><span>🤖</span>My AI</button>
-          <button class="bnav-sheet-item" type="button" data-tab="reviews"><span>⭐</span>Reviews</button>
-          <button class="bnav-sheet-item" type="button" data-tab="analytics"><span>📊</span>Insights</button>
+          <div class="bnav-sheet-head">Shop &amp; team</div>
           <button class="bnav-sheet-item" type="button" data-tab="shop"><span>🛍️</span>Shop</button>
           <button class="bnav-sheet-item" type="button" data-tab="team"><span>🧑‍🤝‍🧑</span>Team</button>
-          <button class="bnav-sheet-item" type="button" data-tab="wallet"><span>💳</span>Wallet</button>
+          <div class="bnav-sheet-head">Setup</div>
           <button class="bnav-sheet-item" type="button" data-tab="channels"><span>🔗</span>WhatsApp &amp; Insta</button>
           <button class="bnav-sheet-item" type="button" data-tab="setup"><span>⚙️</span>Settings</button>
         </div>
@@ -3478,8 +3493,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               ${variants.length === 0 ? `<p class="muted" style="font-size:13px;margin:0;">No packages — uses base price. Add one above.</p>` :
                 variants.map((v, i) => `
                 <div class="filter-bar" style="margin-bottom:6px;" data-variant-row="${i}">
-                  <input type="text" placeholder="Name (e.g. Classic)" value="${escapeHtml(v.name)}" data-vfield="name" style="flex:1.5;" />
-                  <input type="number" placeholder="Price ₹" value="${v.price || ""}" data-vfield="price" style="flex:0.8;min-width:80px;" />
+                  <input type="text" aria-label="Package name" placeholder="Name (e.g. Classic)" value="${escapeHtml(v.name)}" data-vfield="name" style="flex:1.5;" />
+                  <input type="number" aria-label="Package price in rupees" placeholder="Price ₹" value="${v.price || ""}" data-vfield="price" style="flex:0.8;min-width:80px;" />
                   <input type="text" placeholder="What's included (optional)" value="${escapeHtml(v.description || "")}" data-vfield="description" style="flex:2;" />
                   <button class="button small secondary" type="button" data-remove-variant="${i}" style="padding:6px 10px;flex-shrink:0;">✕</button>
                 </div>`).join("")}
@@ -4795,6 +4810,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const log = JSON.parse(raw || "[]");
           return Array.isArray(log) ? log.filter((p) => Number(p.amount) > 0) : [];
         } catch { return []; }
+      }
+
+      // A spinning loader row for tables, so a slow network reads as "working",
+      // not "frozen". Used in place of plain "Loading…" text.
+      function loadingRow(cols, text = "Loading…") {
+        return `<tr><td colspan="${cols}" class="muted" style="padding:24px;text-align:center;"><span class="bd-spinner"></span>${escapeHtml(text)}</td></tr>`;
       }
 
       function renderDashboard(session) {
@@ -7045,9 +7066,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       function orderRowHtml(it) {
         it = it || {};
         return `<div class="order-row" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
-          <input data-oi-label type="text" placeholder="e.g. Bridal makeup" value="${escapeHtml(it.label || "")}" style="flex:2;min-width:0;" />
-          <input data-oi-qty type="number" min="0" step="1" placeholder="Qty" value="${it.quantity != null ? Number(it.quantity) : ""}" style="flex:0 0 52px;text-align:center;" />
-          <input data-oi-price type="number" min="0" step="1" placeholder="Price" value="${it.unitPrice != null ? Number(it.unitPrice) : ""}" style="flex:1;min-width:0;" />
+          <input data-oi-label type="text" aria-label="Line item name" placeholder="e.g. Bridal makeup" value="${escapeHtml(it.label || "")}" style="flex:2;min-width:0;" />
+          <input data-oi-qty type="number" min="0" step="1" aria-label="Quantity" placeholder="Qty" value="${it.quantity != null ? Number(it.quantity) : ""}" style="flex:0 0 52px;text-align:center;" />
+          <input data-oi-price type="number" min="0" step="1" aria-label="Unit price in rupees" placeholder="Price" value="${it.unitPrice != null ? Number(it.unitPrice) : ""}" style="flex:1;min-width:0;" />
           <span data-oi-total style="flex:0 0 72px;text-align:right;font-weight:600;font-size:13px;">₹0</span>
           <button type="button" class="button tiny secondary" data-oi-remove aria-label="Remove">×</button>
         </div>`;
