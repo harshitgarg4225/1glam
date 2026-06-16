@@ -9323,7 +9323,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               const tip = p.kind === "tip";
               const color = refund ? "color:#b3422f;" : tip ? "color:#1e7a3f;" : "";
               const prefix = refund ? "↩ Refund · " : tip ? "💛 Tip · " : "";
-              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;${color}"><span style="flex:1;">${prefix}${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note && !tip ? " · " + escapeHtml(p.note) : ""}</span><strong>${refund ? "-" : "+"}${formatMoney(p.amount)}</strong><button type="button" class="pay-del-btn" data-del-payment="${i}" title="Remove this entry" aria-label="Remove this entry" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;">✕</button></div>`;
+              const canRefund = p.ref && !refund;
+              const refundBtn = canRefund
+                ? `<button type="button" class="pay-refund-btn" data-refund-payment="${i}" title="Refund this online payment" aria-label="Refund this online payment" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;">↩</button>`
+                : "";
+              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;${color}"><span style="flex:1;">${prefix}${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note && !tip ? " · " + escapeHtml(p.note) : ""}</span><strong>${refund ? "-" : "+"}${formatMoney(p.amount)}</strong>${refundBtn}<button type="button" class="pay-del-btn" data-del-payment="${i}" title="Remove this entry" aria-label="Remove this entry" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;">✕</button></div>`;
             }).join("") +
             `</div>`
           : "";
@@ -9342,6 +9346,25 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // Remove a mis-entered payment line. Confirms first (it changes what the
       // client owes), then refreshes so the ledger and balance reflect the fix.
       document.getElementById("payment-modal-ledger")?.addEventListener("click", async (e) => {
+        const refundBtn = e.target.closest("[data-refund-payment]");
+        if (refundBtn) {
+          const index = Number(refundBtn.getAttribute("data-refund-payment"));
+          const ok = await showConfirm("Refund this online payment?", "The amount will be sent back to the client's card/UPI through Razorpay and recorded as a refund. This can't be undone.", "Refund");
+          if (!ok) return;
+          refundBtn.disabled = true;
+          try {
+            const res = await fetch(`/api/bookings/${encodeURIComponent(paymentModalBookingId)}/payments/${index}/refund`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Couldn't process the refund.");
+            toast(`Refund of ${formatMoney(data.amount)} started.`, "success");
+            await refreshSession();
+            openPaymentModal(paymentModalBookingId);
+          } catch (error) {
+            toast(error.message || "Couldn't process the refund.", "error");
+            refundBtn.disabled = false;
+          }
+          return;
+        }
         const delBtn = e.target.closest("[data-del-payment]");
         if (!delBtn) return;
         const index = Number(delBtn.getAttribute("data-del-payment"));

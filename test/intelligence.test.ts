@@ -109,6 +109,13 @@ test("tips are excluded from the paid total but summed separately", () => {
   assert.equal(tipsTotal(log), 500);
 });
 
+test("the gateway ref survives a ledger round-trip (needed for refunds)", () => {
+  const log = parsePaymentsLog(JSON.stringify([
+    { amount: 3000, method: "Razorpay", note: "Online advance payment", kind: "payment", ref: "pay_ABC123" },
+  ]));
+  assert.equal(log[0].ref, "pay_ABC123");
+});
+
 // --- Travel pricing ------------------------------------------------------------
 
 test("travel tiers respect configured boundaries (no hardcoded 25km)", () => {

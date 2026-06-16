@@ -49,6 +49,7 @@ import {
   createRazorpayOrder,
   fetchOrderWithKeys,
   fetchRazorpayOrder,
+  createRefundWithKeys,
   razorpayConfigured,
   razorpayTestMode,
   verifyCheckoutSignature,
@@ -636,6 +637,7 @@ app.post("/api/public/:workspaceId/payment/:leadId/verify", publicWriteLimiter, 
           amount: serviceInr,
           method: "Razorpay",
           note: `Online ${purpose} payment`,
+          ref: paymentId,
         }).catch(async () => {
           await updatePaymentStatus(workspace.email, tokens, leadId, targetStatus);
         });
@@ -650,6 +652,7 @@ app.post("/api/public/:workspaceId/payment/:leadId/verify", publicWriteLimiter, 
           method: "Razorpay",
           note: "Tip 💛",
           type: "tip",
+          ref: paymentId,
         }).catch(() => {});
       }
       await logInteractionForWorkspace(workspace.email, tokens, {
@@ -2395,6 +2398,57 @@ app.delete("/api/bookings/:bookingId/payments/:index", async (req, res, next) =>
       index,
     );
     res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Refund an online (Razorpay) payment entry back to the client's card/UPI.
+// Targets a ledger entry by index; the entry must carry a gateway ref. Records
+// the refund as a ledger line so the balance reopens correctly.
+app.post("/api/bookings/:bookingId/payments/:index/refund", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) {
+      return res.status(400).json({ error: "Invalid payment entry." });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { razorpayKeyId, razorpayKeySecret } = workspace.config;
+    if (!razorpayKeyId || !razorpayKeySecret) {
+      return res.status(400).json({ error: "Online payments aren't set up, so this can't be auto-refunded. Record a manual refund instead." });
+    }
+    const booking = await getBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    const ledger = parsePaymentsLog(booking.paymentsLog);
+    const entry = ledger[index];
+    if (!entry) return res.status(404).json({ error: "That payment entry no longer exists — refresh and try again." });
+    if (entry.kind === "refund") return res.status(400).json({ error: "That entry is already a refund." });
+    if (!entry.ref) return res.status(400).json({ error: "This entry has no online payment reference, so it can't be auto-refunded. Record a manual refund instead." });
+
+    // Optional partial amount; defaults to the full entry amount.
+    const requested = Number(req.body?.amount);
+    const amountInr = Number.isFinite(requested) && requested > 0
+      ? Math.min(Math.round(requested), entry.amount)
+      : entry.amount;
+
+    const refund = await createRefundWithKeys(
+      { keyId: razorpayKeyId, keySecret: razorpayKeySecret },
+      entry.ref,
+      amountInr,
+    );
+
+    const updated = await recordBookingPayment(req.session.profile.email, req.session.googleTokens, req.params.bookingId, {
+      amount: amountInr,
+      method: "Razorpay",
+      note: `Refund of ${entry.kind === "tip" ? "tip" : "payment"} (${refund.id})`,
+      type: "refund",
+      ref: refund.id,
+    });
+    res.json({ ok: true, booking: updated, refundId: refund.id, amount: amountInr, status: refund.status });
   } catch (error) {
     next(error);
   }

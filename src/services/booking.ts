@@ -786,6 +786,9 @@ export type PaymentEntry = {
   // service price, so they're tracked separately and never move the balance or
   // payment status. Everything else counts as a payment toward the booking.
   kind?: "payment" | "refund" | "tip";
+  // Gateway reference (e.g. Razorpay payment_id) for online entries, so the
+  // money can later be refunded through the gateway, not just on paper.
+  ref?: string;
 };
 
 // Tolerant parser: bad/empty JSON yields an empty ledger rather than throwing.
@@ -806,6 +809,7 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
             e.kind === "refund" ? ("refund" as const)
             : e.kind === "tip" ? ("tip" as const)
             : ("payment" as const),
+          ...(e.ref ? { ref: String(e.ref).slice(0, 60) } : {}),
         };
       })
       .filter((entry) => entry.amount > 0);
@@ -847,7 +851,7 @@ export async function recordBookingPayment(
   email: string,
   tokens: Credentials,
   bookingId: string,
-  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" | "tip" },
+  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" | "tip"; ref?: string },
 ) {
   let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
   const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
@@ -858,6 +862,7 @@ export async function recordBookingPayment(
       note: String(input.note ?? "").slice(0, 120),
       at: new Date().toISOString(),
       kind: input.type === "refund" ? "refund" : input.type === "tip" ? "tip" : "payment",
+      ...(input.ref ? { ref: String(input.ref).slice(0, 60) } : {}),
     });
     const paidTotal = paymentsTotal(log);
     derived = derivePaymentStatus(current.finalPrice, current.advanceAmount, paidTotal);

@@ -144,6 +144,37 @@ export async function fetchOrderWithKeys(
   return { id: order.id, amount: order.amount, currency: order.currency, status: order.status, notes: order.notes ?? {} };
 }
 
+// Refunds a captured payment back to the client's original method, using the
+// owner's keys (the money goes back out of her account). Amount is optional —
+// omit for a full refund, or pass rupees for a partial one.
+export async function createRefundWithKeys(
+  keys: { keyId: string; keySecret: string },
+  paymentId: string,
+  amountInr?: number,
+): Promise<{ id: string; amount: number; status: string }> {
+  if (!keys.keyId || !keys.keySecret) {
+    throw new Error("Online payments aren't set up. Add Razorpay keys in Settings.");
+  }
+  if (!paymentId) throw new Error("Missing the original payment reference to refund.");
+  const auth = Buffer.from(`${keys.keyId}:${keys.keySecret}`).toString("base64");
+  const body: Record<string, unknown> = { speed: "normal" };
+  if (amountInr && amountInr > 0) body.amount = Math.round(amountInr * 100);
+  const response = await fetchWithTimeout(
+    `https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}/refund`,
+    {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Couldn't process the refund (Razorpay ${response.status}). ${detail.slice(0, 140)}`);
+  }
+  const refund = (await response.json()) as { id: string; amount: number; status: string };
+  return { id: refund.id, amount: refund.amount, status: refund.status };
+}
+
 export function verifyCheckoutSignatureWithSecret(
   keySecret: string,
   input: { orderId: string; paymentId: string; signature: string },
