@@ -460,8 +460,13 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
   }
 
   const bookingId = buildId("B");
+  const advancePct = depositPercentForEvent(
+    workspace.config.depositPercentByService,
+    Number(workspace.config.advancePercentage) || 30,
+    lead.record.eventType,
+  );
   const advanceAmount = roundToPremiumNumber(
-    (lead.record.finalApprovedPrice * (Number(workspace.config.advancePercentage) || 30)) / 100,
+    (lead.record.finalApprovedPrice * advancePct) / 100,
   );
   const balanceDue = Math.max(0, lead.record.finalApprovedPrice - advanceAmount);
   const confirmedEventId = await createConfirmedCalendarEvent(workspace, tokens, {
@@ -777,8 +782,10 @@ export type PaymentEntry = {
   note: string;
   at: string;
   // "refund" entries subtract from the running total (cancelled weddings are
-  // a fact of life); everything else counts as money received.
-  kind?: "payment" | "refund";
+  // a fact of life). "tip" entries are money received but NOT against the
+  // service price, so they're tracked separately and never move the balance or
+  // payment status. Everything else counts as a payment toward the booking.
+  kind?: "payment" | "refund" | "tip";
 };
 
 // Tolerant parser: bad/empty JSON yields an empty ledger rather than throwing.
@@ -795,7 +802,10 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
           method: String(e.method ?? "").slice(0, 30),
           note: String(e.note ?? "").slice(0, 120),
           at: String(e.at ?? ""),
-          kind: e.kind === "refund" ? ("refund" as const) : ("payment" as const),
+          kind:
+            e.kind === "refund" ? ("refund" as const)
+            : e.kind === "tip" ? ("tip" as const)
+            : ("payment" as const),
         };
       })
       .filter((entry) => entry.amount > 0);
@@ -804,8 +814,19 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
   }
 }
 
+// Money received against the booking price: payments minus refunds. Tips are
+// deliberately excluded — they're a bonus on top of the price, so counting them
+// here would wrongly mark a booking overpaid / close out its balance early.
 export function paymentsTotal(log: PaymentEntry[]): number {
-  return log.reduce((sum, entry) => sum + (entry.kind === "refund" ? -entry.amount : entry.amount), 0);
+  return log.reduce((sum, entry) => {
+    if (entry.kind === "tip") return sum;
+    return sum + (entry.kind === "refund" ? -entry.amount : entry.amount);
+  }, 0);
+}
+
+// Sum of tip entries — surfaced separately (payment modal, artist's tip income).
+export function tipsTotal(log: PaymentEntry[]): number {
+  return log.reduce((sum, entry) => sum + (entry.kind === "tip" ? entry.amount : 0), 0);
 }
 
 // Payment status derived from how much has actually been received.
@@ -826,7 +847,7 @@ export async function recordBookingPayment(
   email: string,
   tokens: Credentials,
   bookingId: string,
-  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" },
+  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" | "tip" },
 ) {
   let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
   const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
@@ -836,7 +857,7 @@ export async function recordBookingPayment(
       method: String(input.method ?? "UPI").slice(0, 30),
       note: String(input.note ?? "").slice(0, 120),
       at: new Date().toISOString(),
-      kind: input.type === "refund" ? "refund" : "payment",
+      kind: input.type === "refund" ? "refund" : input.type === "tip" ? "tip" : "payment",
     });
     const paidTotal = paymentsTotal(log);
     derived = derivePaymentStatus(current.finalPrice, current.advanceAmount, paidTotal);
@@ -1639,6 +1660,25 @@ export function durationHoursForEvent(raw: string | undefined, eventType: string
   return fallback;
 }
 
+// Resolves the advance/deposit % for a service: a per-service override (from the
+// depositPercentByService JSON, e.g. {"Bridal":50}) if present, else the
+// workspace-wide default. Booksy lets pros set a bigger deposit on big jobs.
+export function depositPercentForEvent(
+  perServiceJson: string | undefined,
+  defaultPercent: number,
+  eventType: string,
+): number {
+  const fallback = Number(defaultPercent) > 0 ? Number(defaultPercent) : 30;
+  try {
+    const map = JSON.parse(String(perServiceJson || "{}")) as Record<string, unknown>;
+    const v = Number(map[eventType]);
+    if (Number.isFinite(v) && v > 0 && v <= 100) return v;
+  } catch {
+    /* malformed JSON → use the default */
+  }
+  return fallback;
+}
+
 // ---- Duration-aware slot availability ----
 // A 4-hour bridal at 09:00 occupies 09:00–13:00, so the 11:00 slot must show
 // as taken. Jobs without a time can't be placed on the timeline; they count
@@ -1657,14 +1697,23 @@ export function computeSlotAvailability(input: {
   timeSlots: string[];
   serviceDurations: string;
   requestedEventType: string;
-  busy: { eventTime: string; eventType: string }[];
+  busy: { eventTime: string; eventType: string; travelMinutes?: number }[];
+  // Cleanup/buffer minutes padded around every existing job, so back-to-back
+  // bookings leave the artist time to pack up, reset her kit and breathe.
+  bufferMinutes?: number;
 }): SlotAvailability[] {
+  const buffer = Math.max(0, Math.min(480, Math.round(input.bufferMinutes || 0)));
   const requestedMinutes = durationHoursForEvent(input.serviceDurations, input.requestedEventType) * 60;
   const busyWindows = input.busy
     .map((job) => {
       const start = minutesOfDay(job.eventTime);
       if (start === null) return null;
-      return { start, end: start + durationHoursForEvent(input.serviceDurations, job.eventType) * 60 };
+      const duration = durationHoursForEvent(input.serviceDurations, job.eventType) * 60;
+      // Pad each job by the buffer on both sides, plus any travel time it needs
+      // afterwards (a mobile artist must reach the next venue before she can
+      // start there). Both default to 0, so the math is unchanged when unset.
+      const travel = Math.max(0, Math.round(Number(job.travelMinutes) || 0));
+      return { start: start - buffer, end: start + duration + buffer + travel };
     })
     .filter((w): w is { start: number; end: number } => w !== null);
 

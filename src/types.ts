@@ -21,6 +21,9 @@ export type PricingRuleConfig = {
   scarcityThresholdSoft: number;
   scarcityThresholdHard: number;
   advancePercentage: number;
+  // Optional per-service deposit overrides as JSON, e.g. {"Bridal":50,"Party":20}.
+  // Falls back to advancePercentage for any service not listed.
+  depositPercentByService: string;
 };
 
 export type WorkspaceConfig = PricingRuleConfig & {
@@ -57,6 +60,9 @@ export type WorkspaceConfig = PricingRuleConfig & {
   bookingWeeklyOffDays: string;
   bookingBlockedDates: string;
   bookingMaxPerDay: number;
+  // Cleanup/buffer minutes padded around every booked job so back-to-backs
+  // leave time to pack up and travel. 0 = no buffer.
+  bufferMinutes: number;
   bookingConfirmTemplate: string;
   bookingConfirmTemplateLang: string;
   approvalTemplate: string;
@@ -107,6 +113,13 @@ export type WorkspaceConfig = PricingRuleConfig & {
   rebookNudgeDaysAfter: string;
   rebookTemplate: string;
   rebookTemplateLang: string;
+  // Automated win-back: message clients whose last booking is this many days
+  // past (blank = off). Birthday: greet on the day (blank template = off).
+  winbackDaysAfter: string;
+  winbackTemplate: string;
+  winbackTemplateLang: string;
+  birthdayTemplate: string;
+  birthdayTemplateLang: string;
   documentTemplate: string;
   quoteIntro: string;
   cancellationPolicy: string;

@@ -558,13 +558,20 @@ app.post("/api/public/:workspaceId/payment/:leadId/order", publicWriteLimiter, a
     if (!(amountInr > 0)) {
       return res.status(400).json({ error: "There's nothing due on this booking right now." });
     }
+    // Optional tip the client added on the pay page. Charge it on top of what's
+    // due and stamp it in the order notes so /verify can record it as a tip
+    // (separate from the service payment, so it never skews the balance).
+    const tipRaw = Number(req.body?.tipAmount);
+    const tipInr = details.tipsEnabled && Number.isFinite(tipRaw)
+      ? Math.max(0, Math.min(1000000, Math.round(tipRaw)))
+      : 0;
 
     const order = await createOrderWithKeys(
       { keyId: razorpayKeyId, keySecret: razorpayKeySecret },
       {
-        amountInr,
+        amountInr: amountInr + tipInr,
         receipt: leadId.slice(0, 40),
-        notes: { workspaceId, leadId, purpose: stage },
+        notes: { workspaceId, leadId, purpose: stage, tip: String(tipInr) },
       },
     );
     res.json({
@@ -619,12 +626,14 @@ app.post("/api/public/:workspaceId/payment/:leadId/verify", publicWriteLimiter, 
       lead.paymentStatus === "Paid in Full" ||
       (purpose === "advance" && lead.paymentStatus === "Advance Paid");
     if (!alreadyThere) {
-      const amountInr = Math.round(Number(order.amount) / 100);
+      const grossInr = Math.round(Number(order.amount) / 100);
+      const tipInr = Math.max(0, Math.round(Number(order.notes.tip) || 0));
+      const serviceInr = Math.max(0, grossInr - tipInr);
       // Prefer the per-booking ledger (keeps collected/outstanding exact);
       // fall back to the coarse status flip for leads without a booking row.
-      if (lead.bookingId && amountInr > 0) {
+      if (lead.bookingId && serviceInr > 0) {
         await recordBookingPayment(workspace.email, tokens, lead.bookingId, {
-          amount: amountInr,
+          amount: serviceInr,
           method: "Razorpay",
           note: `Online ${purpose} payment`,
         }).catch(async () => {
@@ -632,6 +641,16 @@ app.post("/api/public/:workspaceId/payment/:leadId/verify", publicWriteLimiter, 
         });
       } else {
         await updatePaymentStatus(workspace.email, tokens, leadId, targetStatus);
+      }
+      // Record the tip as its own ledger line so the artist sees it but the
+      // booking balance stays based purely on the service price.
+      if (lead.bookingId && tipInr > 0) {
+        await recordBookingPayment(workspace.email, tokens, lead.bookingId, {
+          amount: tipInr,
+          method: "Razorpay",
+          note: "Tip 💛",
+          type: "tip",
+        }).catch(() => {});
       }
       await logInteractionForWorkspace(workspace.email, tokens, {
         leadId,

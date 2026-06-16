@@ -316,6 +316,24 @@
         return "Starting from ₹" + Number(value).toLocaleString("en-IN");
       }
 
+      // Show a "₹X–₹Y" range when a service has tiers that span a range, so the
+      // client gets an honest sense of cost up front (Booksy shows this too).
+      function formatPriceRange(type) {
+        const lo = Number(type.startingPrice) || 0;
+        const hi = Number(type.maxPrice) || 0;
+        if (!lo) return "Price on request";
+        if (hi > lo) return "₹" + lo.toLocaleString("en-IN") + "–₹" + hi.toLocaleString("en-IN");
+        return "Starting from ₹" + lo.toLocaleString("en-IN");
+      }
+
+      // "approx 4h" / "approx 90 min" — set aside the right amount of time.
+      function formatDuration(hours) {
+        const h = Number(hours) || 0;
+        if (h <= 0) return "";
+        if (h < 1) return "approx " + Math.round(h * 60) + " min";
+        return "approx " + (Number.isInteger(h) ? h : h.toFixed(1)) + "h";
+      }
+
       async function loadProfile() {
         if (!workspaceId) {
           hide("loading");
@@ -425,9 +443,12 @@
           card.type = "button";
           card.className = "service";
           card.dataset.key = type.key;
+          const durationLabel = formatDuration(type.durationHours);
           card.innerHTML =
             '<div class="name">' + type.label + "</div>" +
-            '<div class="price">' + formatPrice(type.startingPrice) + "</div>";
+            '<div class="price">' + formatPriceRange(type) +
+              (durationLabel ? ' <span style="color:var(--muted);">· ⏱ ' + durationLabel + "</span>" : "") +
+            "</div>";
           card.addEventListener("click", () => {
             selectedEventType = type.key;
             document.querySelectorAll(".service").forEach((s) => s.classList.remove("selected"));

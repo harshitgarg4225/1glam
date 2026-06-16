@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, listActiveLeadsForDate, updateLeadRecord, updateBookingRecord, roundToPremiumNumber } from "./booking.js";
+import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, listActiveLeadsForDate, updateLeadRecord, updateBookingRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
 import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -27,6 +27,11 @@ export type PublicEventType = {
   key: string;
   label: string;
   startingPrice: number;
+  // Highest variant price, so the page can show a "₹X–₹Y" range when tiers vary.
+  maxPrice: number;
+  // Approximate hours this service takes — shown on the booking page so the
+  // client knows to set aside the time (Booksy shows this on every service).
+  durationHours: number;
   description: string;
   addons: PublicAddon[];
   variants: ServiceVariant[];
@@ -228,11 +233,15 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
   ].map((entry) => {
     const variants = allVariants[entry.key] ?? [];
     const basePrice = Number(entry.startingPrice) || 0;
-    const startingPrice = variants.length > 0 ? Math.min(...variants.map((v) => v.price)) || basePrice : basePrice;
+    const variantPrices = variants.map((v) => v.price).filter((p) => p > 0);
+    const startingPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : basePrice;
+    const maxPrice = variantPrices.length > 0 ? Math.max(...variantPrices) : basePrice;
     return {
       key: entry.key,
       label: EVENT_TYPE_LABELS[entry.key] ?? entry.key,
       startingPrice,
+      maxPrice,
+      durationHours: durationHoursForEvent(config.serviceDurations, entry.key),
       description: String(config[entry.descKey] || ""),
       addons: parseAddons(String(config[entry.addonsKey] || "")),
       variants,
@@ -354,6 +363,7 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
       serviceDurations: workspace.config.serviceDurations,
       requestedEventType: input.eventType,
       busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+      bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
     });
     const requested = slots.find((slot) => slot.time === input.eventTime);
     if (requested && !requested.available) {
@@ -510,8 +520,13 @@ export async function getPublicPaymentDetails(
   // Use the SAME rounding the booking confirmation uses (roundToPremiumNumber),
   // otherwise the advance shown on the pay page would differ from the amount
   // stored on the booking and printed on the invoice.
+  const advancePct = depositPercentForEvent(
+    config.depositPercentByService,
+    Number(config.advancePercentage) || 30,
+    lead.eventType,
+  );
   const advanceAmount = roundToPremiumNumber(
-    (lead.finalApprovedPrice * (Number(config.advancePercentage) || 30)) / 100,
+    (lead.finalApprovedPrice * advancePct) / 100,
   );
   const balanceDue = Math.max(0, lead.finalApprovedPrice - advanceAmount);
 
@@ -717,6 +732,7 @@ export async function getPublicSlotsForDate(
       serviceDurations: workspace.config.serviceDurations,
       requestedEventType: eventType || "Other",
       busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+      bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
     }),
   };
 }

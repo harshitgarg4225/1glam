@@ -2185,6 +2185,19 @@
                 <div><label for="advancePercentage">Advance to lock a date (%)</label><input id="advancePercentage" name="advancePercentage" type="number" required /></div>
                 <div><label for="upiId">Your UPI ID (for advances)</label><input id="upiId" name="upiId" placeholder="yourname@bank" /></div>
                 <div class="wide">
+                  <label>Per-service advance % (optional)</label>
+                  <p class="muted" style="margin:0 0 8px;font-size:12.5px;">Override the advance for specific services — e.g. a bigger deposit for bridal. Leave a box blank to use the default above.</p>
+                  <input type="hidden" id="depositPercentByService" name="depositPercentByService" />
+                  <div class="section-grid" id="deposit-grid">
+                    <div><label for="dep-Bridal">Bridal</label><input id="dep-Bridal" data-deposit-for="Bridal" type="number" min="0" max="100" step="5" placeholder="%" /></div>
+                    <div><label for="dep-Engagement">Engagement</label><input id="dep-Engagement" data-deposit-for="Engagement" type="number" min="0" max="100" step="5" placeholder="%" /></div>
+                    <div><label for="dep-Reception">Reception</label><input id="dep-Reception" data-deposit-for="Reception" type="number" min="0" max="100" step="5" placeholder="%" /></div>
+                    <div><label for="dep-Party">Party</label><input id="dep-Party" data-deposit-for="Party" type="number" min="0" max="100" step="5" placeholder="%" /></div>
+                    <div><label for="dep-Shoot">Shoot</label><input id="dep-Shoot" data-deposit-for="Shoot" type="number" min="0" max="100" step="5" placeholder="%" /></div>
+                    <div><label for="dep-Other">Other</label><input id="dep-Other" data-deposit-for="Other" type="number" min="0" max="100" step="5" placeholder="%" /></div>
+                  </div>
+                </div>
+                <div class="wide">
                   <label>🚗 Travel charges</label>
                   <p class="muted" style="margin:0 0 8px;font-size:12.5px;">
                     Added on top of the makeup price based on how far the venue is from your city.
@@ -2240,6 +2253,7 @@
                 <div><label for="bookingLeadTimeDays">Least notice you need (days)</label><input id="bookingLeadTimeDays" name="bookingLeadTimeDays" type="number" min="0" /></div>
                 <div><label for="bookingMaxAdvanceDays">How far ahead clients can book (days)</label><input id="bookingMaxAdvanceDays" name="bookingMaxAdvanceDays" type="number" min="1" /></div>
                 <div><label for="bookingMaxPerDay">Max bookings per day (0 = no limit)</label><input id="bookingMaxPerDay" name="bookingMaxPerDay" type="number" min="0" /></div>
+                <div><label for="bufferMinutes">Cleanup buffer between jobs (mins)</label><input id="bufferMinutes" name="bufferMinutes" type="number" min="0" step="15" placeholder="0" /></div>
                 <div><label for="bookingWeeklyOffDays">Your weekly days off</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
                 <div class="wide"><label for="bookingBlockedDates">Dates you're not available</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
                 <div class="wide"><label for="bookingTimeSlots">Time slots you offer (leave empty to let clients type a time)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
@@ -2251,6 +2265,7 @@
                 <div><label for="reminderDaysBefore">Remind clients this many days before</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
                 <div><label for="reviewRequestDaysAfter">Ask for a review this many days after</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
                 <div><label for="rebookNudgeDaysAfter">Auto "time to rebook" nudge this many days after</label><input id="rebookNudgeDaysAfter" name="rebookNudgeDaysAfter" placeholder="90 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Sends a friendly WhatsApp once, asking the client to book again. Needs the rebook template (create it under WhatsApp &amp; Instagram).</p></div>
+                <div><label for="winbackDaysAfter">Auto win-back lapsed clients after (days)</label><input id="winbackDaysAfter" name="winbackDaysAfter" placeholder="120 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Messages a past client once when they haven't booked in this long. Needs the win-back template.</p></div>
                 <div><label for="cancellationWindowDays">Late cancellation window (days)</label><input id="cancellationWindowDays" name="cancellationWindowDays" type="number" min="0" max="60" placeholder="7" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Cancellations inside this many days before the event will prompt you to charge a fee.</p></div>
                 <div><label for="cancellationFeePercent">Cancellation fee (%)</label><input id="cancellationFeePercent" name="cancellationFeePercent" type="number" min="0" max="100" placeholder="50" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Percentage of the booking price charged for late cancellations.</p></div>
                 <div>
@@ -2366,6 +2381,10 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
                 <div><label for="reviewTemplateLang">Language</label><input id="reviewTemplateLang" name="reviewTemplateLang" placeholder="en" /></div>
                 <div><label for="rebookTemplate">Rebook nudge template</label><input id="rebookTemplate" name="rebookTemplate" placeholder="busydays_rebook_nudge" /></div>
                 <div><label for="rebookTemplateLang">Language</label><input id="rebookTemplateLang" name="rebookTemplateLang" placeholder="en" /></div>
+                <div><label for="winbackTemplate">Win-back template</label><input id="winbackTemplate" name="winbackTemplate" placeholder="busydays_winback" /></div>
+                <div><label for="winbackTemplateLang">Language</label><input id="winbackTemplateLang" name="winbackTemplateLang" placeholder="en" /></div>
+                <div><label for="birthdayTemplate">Birthday greeting template</label><input id="birthdayTemplate" name="birthdayTemplate" placeholder="busydays_birthday (blank = off)" /></div>
+                <div><label for="birthdayTemplateLang">Language</label><input id="birthdayTemplateLang" name="birthdayTemplateLang" placeholder="en" /></div>
                 <div><label for="waitlistOfferTemplate">Waitlist offer template</label><input id="waitlistOfferTemplate" name="waitlistOfferTemplate" placeholder="waitlist_offer" /></div>
                 <div><label for="waitlistOfferTemplateLang">Language</label><input id="waitlistOfferTemplateLang" name="waitlistOfferTemplateLang" placeholder="en" /></div>
               </div>
@@ -3539,6 +3558,28 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
       document.getElementById("duration-grid")?.addEventListener("input", syncDurationField);
 
+      // The six per-occasion deposit inputs read from / write to the single
+      // depositPercentByService config JSON ({"Bridal":50}). Blank = use default.
+      function fillDepositGrid(raw) {
+        let map = {};
+        try { map = JSON.parse(raw || "{}") || {}; } catch { map = {}; }
+        document.querySelectorAll("[data-deposit-for]").forEach((input) => {
+          const type = input.getAttribute("data-deposit-for");
+          const val = Number(map[type]);
+          input.value = Number.isFinite(val) && val > 0 ? val : "";
+        });
+      }
+      function syncDepositField() {
+        const map = {};
+        document.querySelectorAll("[data-deposit-for]").forEach((input) => {
+          const pct = Number(input.value);
+          if (Number.isFinite(pct) && pct > 0 && pct <= 100) map[input.getAttribute("data-deposit-for")] = pct;
+        });
+        const hidden = document.getElementById("depositPercentByService");
+        if (hidden) hidden.value = Object.keys(map).length ? JSON.stringify(map) : "";
+      }
+      document.getElementById("deposit-grid")?.addEventListener("input", syncDepositField);
+
       // ---- Service Variants Editor ----
       const SERVICE_KEYS = ["Bridal", "Engagement", "Reception", "Party", "Shoot", "Other"];
       let serviceVariantsData = {};
@@ -3617,6 +3658,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         Object.entries(config).forEach(([k, v]) => setValue(configForm, k, v));
         fillDurationGrid(config.serviceDurations);
         syncDurationField();
+        fillDepositGrid(config.depositPercentByService);
+        syncDepositField();
         renderTemplatePicker(config.documentTemplate);
         reflectToneProfile(config.aiToneProfile);
         updateAutoReplyStatus(config.autoReplyEnabled);
@@ -4190,7 +4233,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         try {
           const log = JSON.parse(b.paymentsLog || "[]");
           if (Array.isArray(log) && log.length) {
-            return log.reduce((s, p) => s + (p.kind === "refund" ? -1 : 1) * (Number(p.amount) || 0), 0);
+            // Tips are money received but not against the price, so they never
+            // count toward the booking's paid total (mirrors server paymentsTotal).
+            return log.reduce((s, p) => {
+              if (p.kind === "tip") return s;
+              return s + (p.kind === "refund" ? -1 : 1) * (Number(p.amount) || 0);
+            }, 0);
           }
         } catch {}
         const status = b.paymentStatus || "";
@@ -9258,7 +9306,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           ? `<div style="background:var(--surface,#f8f5f2);border:1px solid var(--line,#eee);border-radius:8px;padding:8px 12px;font-size:12.5px;">` +
             ledger.map((p, i) => {
               const refund = p.kind === "refund";
-              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;${refund ? "color:#b3422f;" : ""}"><span style="flex:1;">${refund ? "↩ Refund · " : ""}${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note ? " · " + escapeHtml(p.note) : ""}</span><strong>${refund ? "-" : ""}${formatMoney(p.amount)}</strong><button type="button" class="pay-del-btn" data-del-payment="${i}" title="Remove this entry" aria-label="Remove this entry" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;">✕</button></div>`;
+              const tip = p.kind === "tip";
+              const color = refund ? "color:#b3422f;" : tip ? "color:#1e7a3f;" : "";
+              const prefix = refund ? "↩ Refund · " : tip ? "💛 Tip · " : "";
+              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;${color}"><span style="flex:1;">${prefix}${escapeHtml(p.method || "Payment")}${p.at ? " · " + formatDate(p.at) : ""}${p.note && !tip ? " · " + escapeHtml(p.note) : ""}</span><strong>${refund ? "-" : "+"}${formatMoney(p.amount)}</strong><button type="button" class="pay-del-btn" data-del-payment="${i}" title="Remove this entry" aria-label="Remove this entry" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;">✕</button></div>`;
             }).join("") +
             `</div>`
           : "";

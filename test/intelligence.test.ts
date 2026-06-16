@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // modules that transitively pull it in.
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
-const { computeSlotAvailability, travelCostForDistance } = await import("../src/services/booking.ts");
+const { computeSlotAvailability, travelCostForDistance, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
 const { parseQuotePackages, parseDocumentAdjustments } = await import("../src/services/documents.ts");
 const { computeInsights, buildDigestSummary, buildServicesContext } = await import("../src/services/insights.ts");
 const { matchSelectedAddons } = await import("../src/services/public-booking.ts");
@@ -49,6 +49,64 @@ test("jobs without a time never block specific slots", () => {
     busy: [{ eventTime: "", eventType: "Bridal" }],
   });
   assert.ok(slots.every((s) => s.available));
+});
+
+test("cleanup buffer keeps the slot right after a job free", () => {
+  // Party at 09:00 runs 2h (→11:00). With a 60-min buffer the 11:00 slot is
+  // blocked (needs cleanup), but 14:00 stays open.
+  const withBuffer = computeSlotAvailability({
+    timeSlots: ["09:00", "11:00", "14:00"],
+    serviceDurations: "Party=2",
+    requestedEventType: "Party",
+    busy: [{ eventTime: "09:00", eventType: "Party" }],
+    bufferMinutes: 60,
+  });
+  assert.equal(withBuffer.find((s) => s.time === "11:00")?.available, false);
+  assert.equal(withBuffer.find((s) => s.time === "14:00")?.available, true);
+  // Without a buffer the same 11:00 slot is bookable (back-to-back allowed).
+  const noBuffer = computeSlotAvailability({
+    timeSlots: ["09:00", "11:00"],
+    serviceDurations: "Party=2",
+    requestedEventType: "Party",
+    busy: [{ eventTime: "09:00", eventType: "Party" }],
+  });
+  assert.equal(noBuffer.find((s) => s.time === "11:00")?.available, true);
+});
+
+test("travel time after a job pushes the next bookable slot later", () => {
+  // Party at 09:00 (2h → 11:00) + 90 min travel blocks an 11:00 start.
+  const slots = computeSlotAvailability({
+    timeSlots: ["11:00", "14:00"],
+    serviceDurations: "Party=2",
+    requestedEventType: "Party",
+    busy: [{ eventTime: "09:00", eventType: "Party", travelMinutes: 90 }],
+  });
+  assert.equal(slots.find((s) => s.time === "11:00")?.available, false);
+  assert.equal(slots.find((s) => s.time === "14:00")?.available, true);
+});
+
+// --- Per-service deposit % -----------------------------------------------------
+
+test("per-service deposit overrides the default, else falls back", () => {
+  const json = '{"Bridal":50,"Party":0}';
+  assert.equal(depositPercentForEvent(json, 30, "Bridal"), 50); // override wins
+  assert.equal(depositPercentForEvent(json, 30, "Party"), 30);  // 0 is ignored → default
+  assert.equal(depositPercentForEvent(json, 30, "Shoot"), 30);  // unlisted → default
+  assert.equal(depositPercentForEvent("", 30, "Bridal"), 30);   // no overrides
+  assert.equal(depositPercentForEvent("not json", 30, "Bridal"), 30); // malformed → default
+  assert.equal(depositPercentForEvent("", 0, "Bridal"), 30);    // 0 default → 30 floor
+});
+
+// --- Tips are tracked but never move the balance -------------------------------
+
+test("tips are excluded from the paid total but summed separately", () => {
+  const log = parsePaymentsLog(JSON.stringify([
+    { amount: 3000, method: "Razorpay", note: "Online advance payment", kind: "payment" },
+    { amount: 500, method: "Razorpay", note: "Tip", kind: "tip" },
+    { amount: 200, method: "UPI", note: "overpaid", kind: "refund" },
+  ]));
+  assert.equal(paymentsTotal(log), 2800); // 3000 - 200 refund; tip excluded
+  assert.equal(tipsTotal(log), 500);
 });
 
 // --- Travel pricing ------------------------------------------------------------
