@@ -737,6 +737,58 @@ export async function getPublicSlotsForDate(
   };
 }
 
+// Validates a date/time against the artist's public availability — lead time,
+// max-advance window, weekly days off, blocked dates, an all-day calendar
+// block, and duration-aware slot conflicts (with buffer). Used by the
+// self-service reschedule flow, which previously skipped every one of these.
+export async function checkPublicAvailability(
+  workspaceId: string,
+  eventType: string,
+  eventDate: string,
+  eventTime: string | undefined,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+  if (!workspace) return { ok: false, error: "Not found" };
+  const availability = buildAvailability(workspace.config);
+  if (availability.minDate && eventDate < availability.minDate) {
+    return { ok: false, error: "That date is too soon — please pick a later one." };
+  }
+  if (availability.maxDate && eventDate > availability.maxDate) {
+    return { ok: false, error: "That date is too far ahead. Please pick an earlier one." };
+  }
+  const weekday = new Date(eventDate + "T00:00:00Z").getUTCDay();
+  if (availability.offWeekdays.includes(weekday)) {
+    return { ok: false, error: "The artist isn't available on that day of the week." };
+  }
+  if (availability.blockedDates.includes(eventDate)) {
+    return { ok: false, error: "That date is unavailable. Please choose another." };
+  }
+  const tokens = await getWorkspaceCredentials(workspace.email);
+  const busyAllDay = await hasAllDayCalendarEvent(workspace, tokens, eventDate).catch(() => false);
+  if (busyAllDay) {
+    return { ok: false, error: "That date is unavailable. Please choose another." };
+  }
+  const timeSlots = parseTimeSlots(workspace.config.bookingTimeSlots);
+  if (timeSlots.length > 0 && eventTime) {
+    if (!timeSlots.includes(eventTime)) {
+      return { ok: false, error: "Please choose one of the available time slots." };
+    }
+    const busy = await listActiveLeadsForDate(workspace.email, tokens, eventDate).catch(() => []);
+    const slots = computeSlotAvailability({
+      timeSlots,
+      serviceDurations: workspace.config.serviceDurations,
+      requestedEventType: eventType || "Other",
+      busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+      bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
+    });
+    const requested = slots.find((slot) => slot.time === eventTime);
+    if (requested && !requested.available) {
+      return { ok: false, error: "That time is no longer free. Please pick another." };
+    }
+  }
+  return { ok: true };
+}
+
 function buildInboundMessage(input: PublicBookingInput) {
   return [
     `Booking request via website for ${input.eventType}.`,

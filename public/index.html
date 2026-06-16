@@ -4905,6 +4905,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:5px;">
                   <button class="button small secondary" data-booking-reschedule="${booking.bookingId}">📅 Reschedule / edit</button>
                   <button class="button small secondary" data-booking-reschedule-link="${booking.bookingId}">🔗 Send reschedule link</button>
+                  <button class="button small secondary" data-booking-cancel-link="${booking.bookingId}">🔗 Send cancel link</button>
                   <button class="button small secondary" data-booking-expenses="${booking.bookingId}">💸 Expenses</button>
                   <button class="button small secondary" data-book-again-name="${escapeHtml(booking.clientName)}" data-book-again-phone="${escapeHtml(booking.clientWhatsApp)}">🔁 Book again</button>
                   <button class="button small secondary" data-booking-no-show="${booking.bookingId}" title="Mark as no-show">🚫 No show</button>
@@ -8588,6 +8589,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             toast(`Reschedule link copied${b?.clientWhatsApp ? " and sent to " + b.clientName : ""}!`, "success");
           } catch (error) { toast(error.message, "error"); }
           finally { clearLoading(rsl); }
+          return;
+        }
+        const cxl = e.target.closest("[data-booking-cancel-link]");
+        if (cxl) {
+          const bookingId = cxl.getAttribute("data-booking-cancel-link");
+          const b = (sessionState?.dashboard?.bookings || []).find((x) => x.bookingId === bookingId);
+          setLoading(cxl, "Generating…");
+          try {
+            const result = await postJson(`/api/bookings/${bookingId}/cancel-link`, { send: true });
+            await navigator.clipboard.writeText(result.url).catch(() => null);
+            toast(`Cancel link copied${b?.clientWhatsApp ? " and sent to " + b.clientName : ""}.`, "success");
+          } catch (error) { toast(error.message, "error"); }
+          finally { clearLoading(cxl); }
           return;
         }
         const ex = e.target.closest("[data-booking-expenses]");

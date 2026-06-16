@@ -69,7 +69,7 @@ import {
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
-import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot } from "./services/public-booking.js";
+import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability } from "./services/public-booking.js";
 import { buildServicesContext, computeInsights } from "./services/insights.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
 import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply, listGmbPosts, createGmbPost, getReputationSummary } from "./services/gmb.js";
@@ -117,7 +117,7 @@ import {
   parseDocumentAdjustments,
   parseQuotePackages,
 } from "./services/documents.js";
-import { buildPublicDocumentUrl, buildRescheduleUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken } from "./services/document-links.js";
+import { buildPublicDocumentUrl, buildRescheduleUrl, buildCancelUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken, verifyCancelToken } from "./services/document-links.js";
 import { estimateCampaignReach, getCampaignJob, rehydrateInterruptedCampaigns, startCampaignBroadcast, type CampaignSegment } from "./services/campaigns.js";
 import {
   checkLeegalityDocumentDetails,
@@ -3073,8 +3073,164 @@ app.post("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next
     const tokens = await getWorkspaceCredentials(workspace.email);
     if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
 
+    // Guard the new date against the same availability rules the booking page
+    // enforces — previously the reschedule flow accepted any future date,
+    // letting clients land on blocked, off, or already-full days.
+    const existing = await getBookingRecord(workspace.email, tokens, bookingId);
+    if (!existing) return res.status(404).json({ error: "Booking not found" });
+    const check = await checkPublicAvailability(workspaceId, existing.eventType, eventDate, eventTime);
+    if (!check.ok) return res.status(409).json({ error: check.error });
+
     await rescheduleBooking(workspace.email, tokens, bookingId, { eventDate, eventTime });
     res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
+// ── Client self-service cancellation ─────────────────────────────────────────
+
+// Days between today and the event (UTC, date-only), floored at 0.
+function daysUntilEvent(eventDate: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return Number.POSITIVE_INFINITY;
+  const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
+  const event = new Date(eventDate + "T00:00:00Z").getTime();
+  return Math.max(0, Math.round((event - today) / 86_400_000));
+}
+
+// The cancellation fee this booking would incur right now: a percentage of the
+// price, but only when cancelling inside the late-cancellation window.
+function cancellationFeeFor(config: WorkspaceConfig, finalPrice: number, eventDate: string) {
+  const windowDays = Math.max(0, Number(config.cancellationWindowDays) || 0);
+  const feePercent = Math.max(0, Math.min(100, Number(config.cancellationFeePercent) || 0));
+  const days = daysUntilEvent(eventDate);
+  const withinWindow = days <= windowDays;
+  const feeAmount = withinWindow ? Math.round((Number(finalPrice) || 0) * feePercent / 100) : 0;
+  return { windowDays, feePercent, daysUntil: days, withinWindow, feeAmount };
+}
+
+app.post("/api/bookings/:bookingId/cancel-link", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const booking = await getBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    const url = buildCancelUrl(workspace.workspaceId, req.params.bookingId);
+
+    if (req.body?.send && booking.clientWhatsApp) {
+      const phone = String(booking.clientWhatsApp).replace(/\D/g, "");
+      const connection = workspace.metaConnections?.whatsapp;
+      const accessToken = connection?.accessToken || appConfig.waAccessToken;
+      const phoneNumberId = connection?.phoneNumberId || appConfig.waPhoneNumberId;
+      if (accessToken && phoneNumberId) {
+        const msg = `Hi ${booking.clientName} 🙏\n\nNeed to cancel your ${booking.eventType} booking? You can do it here:\n${url}\n\n— ${workspace.config.businessName || workspace.config.ownerName}`;
+        const waUrl = `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`;
+        await fetch(waUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: msg } }),
+        }).catch(() => null);
+      }
+    }
+    res.json({ ok: true, url });
+  } catch (error) { next(error); }
+});
+
+// Public cancel page (token-gated).
+app.get("/cancel/:workspaceId/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyCancelToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).send("<html><body style='font-family:sans-serif;padding:40px;max-width:480px;margin:auto'><h2>Link expired</h2><p>This cancellation link has expired or is invalid. Please contact the studio directly.</p></body></html>");
+    }
+    const path = await import("node:path");
+    res.sendFile(path.join(process.cwd(), "public", "cancel.html"));
+  } catch (error) { next(error); }
+});
+
+// Details for the cancel page: booking summary + what cancelling now would cost.
+app.get("/api/public/:workspaceId/cancel/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyCancelToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).json({ error: "Link expired" });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
+    const booking = await getBookingRecord(workspace.email, tokens, bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+    const alreadyCancelled = booking.status === "Cancelled";
+    const paid = paymentsTotal(parsePaymentsLog(booking.paymentsLog));
+    const fee = cancellationFeeFor(workspace.config, booking.finalPrice, booking.eventDate);
+    res.json({
+      ok: true,
+      businessName: workspace.config.businessName || workspace.config.ownerName,
+      brandColor: workspace.config.brandColor || "#C26B45",
+      alreadyCancelled,
+      cancellationPolicy: workspace.config.cancellationPolicy || "",
+      booking: {
+        clientName: booking.clientName,
+        eventType: booking.eventType,
+        eventDate: booking.eventDate,
+        eventTime: booking.eventTime,
+        venue: booking.venue,
+        finalPrice: booking.finalPrice,
+      },
+      paidSoFar: paid,
+      ...fee,
+    });
+  } catch (error) { next(error); }
+});
+
+// Client confirms the cancellation.
+app.post("/api/public/:workspaceId/cancel/:bookingId", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const bookingId = String(req.params.bookingId ?? "");
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyCancelToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).json({ error: "Link expired" });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
+
+    const existing = await getBookingRecord(workspace.email, tokens, bookingId);
+    if (!existing) return res.status(404).json({ error: "Booking not found" });
+    const fee = cancellationFeeFor(workspace.config, existing.finalPrice, existing.eventDate);
+
+    if (existing.status !== "Cancelled") {
+      await cancelBooking(workspace.email, tokens, bookingId);
+      // Log who cancelled, and flag the fee so the artist can follow up.
+      await logInteractionForWorkspace(workspace.email, tokens, {
+        leadId: existing.leadId || bookingId,
+        direction: "Inbound",
+        channel: "WhatsApp",
+        actor: existing.clientWhatsApp || bookingId,
+        message: `Client cancelled their ${existing.eventType} on ${existing.eventDate} via the cancellation link.${fee.feeAmount > 0 ? ` Late-cancellation fee applies: ₹${fee.feeAmount} (${fee.feePercent}%).` : ""}`,
+        aiSummary: "Client self-cancelled the booking",
+      }).catch(() => {});
+      // A freed date may have waiting clients — nudge the artist.
+      try {
+        const { leads } = await getDashboardData(workspace.email, tokens);
+        const waiting = leads.filter(
+          (lead) => lead.source === "Waitlist" && lead.eventDate === existing.eventDate && !["Lost", "Completed"].includes(lead.status),
+        );
+        if (waiting.length) {
+          await sendPushToWorkspace(workspace, {
+            title: `A slot opened on ${existing.eventDate}`,
+            body: `${waiting[0].clientName || "A client"} is waiting for this date${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}. Offer them the slot?`,
+            url: "/",
+          });
+        }
+      } catch { /* best-effort */ }
+    }
+    res.json({ ok: true, feeAmount: fee.feeAmount, feePercent: fee.feePercent, withinWindow: fee.withinWindow });
   } catch (error) { next(error); }
 });
 

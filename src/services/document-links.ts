@@ -109,3 +109,38 @@ export function verifyRescheduleToken(
   return timingSafeEqual(a, b);
 }
 
+// Cancel links: same 72h signed pattern, but a distinct "cancel" purpose so a
+// reschedule link can never be replayed to cancel a booking (or vice-versa).
+const CANCEL_TTL_MS = 72 * 60 * 60 * 1000;
+
+function cancelSignature(workspaceId: string, bookingId: string, exp: number): string {
+  return createHmac("sha256", appConfig.sessionSecret)
+    .update(`cancel:${workspaceId}:${bookingId}:${exp}`)
+    .digest("hex");
+}
+
+export function buildCancelUrl(workspaceId: string, bookingId: string): string {
+  const exp = Date.now() + CANCEL_TTL_MS;
+  const sig = cancelSignature(workspaceId, bookingId, exp);
+  const url = new URL(`/cancel/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}`, appConfig.baseUrl);
+  url.searchParams.set("exp", String(exp));
+  url.searchParams.set("sig", sig);
+  return url.toString();
+}
+
+export function verifyCancelToken(
+  workspaceId: string,
+  bookingId: string,
+  exp: string,
+  sig: string,
+): boolean {
+  if (!exp || !sig) return false;
+  const expNum = Number(exp);
+  if (Number.isNaN(expNum) || Date.now() > expNum) return false;
+  const expected = cancelSignature(workspaceId, bookingId, expNum);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(sig);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+

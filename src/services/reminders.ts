@@ -1,5 +1,6 @@
 import { getWorkspaceCredentials } from "./auth-store.js";
 import { getDashboardData, listActiveBookings, markBookingReminderSent, recordReviewRequest } from "./booking.js";
+import { loadClientNotes, markBirthdayGreeted } from "./client-notes.js";
 import { listWorkspaces, withDistributedLock } from "./database.js";
 import { buildDigestSummary } from "./insights.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -14,6 +15,8 @@ const REVIEW_LOCK_KEY = 918_273_002;
 const PAYMENT_LOCK_KEY = 918_273_003;
 const DIGEST_LOCK_KEY = 918_273_004;
 const REBOOK_LOCK_KEY = 918_273_005;
+const WINBACK_LOCK_KEY = 918_273_006;
+const BIRTHDAY_LOCK_KEY = 918_273_007;
 
 // Spread per-workspace Sheets reads across time so a large fleet doesn't
 // burst the Google Sheets API all at once at 8 UTC. 200 ms × 500 workspaces
@@ -47,6 +50,12 @@ export function startReminderScheduler() {
     withDistributedLock(REBOOK_LOCK_KEY, runRebookNudgeJob)
       .then((r) => { if (!r.ran) logger.info("[rebook] skipped — another instance holds the lock"); })
       .catch((err) => captureException(err, { job: "rebook" }));
+    withDistributedLock(WINBACK_LOCK_KEY, runWinbackJob)
+      .then((r) => { if (!r.ran) logger.info("[winback] skipped — another instance holds the lock"); })
+      .catch((err) => captureException(err, { job: "winback" }));
+    withDistributedLock(BIRTHDAY_LOCK_KEY, runBirthdayJob)
+      .then((r) => { if (!r.ran) logger.info("[birthday] skipped — another instance holds the lock"); })
+      .catch((err) => captureException(err, { job: "birthday" }));
     setTimeout(tick, 24 * 60 * 60 * 1000);
   };
 
@@ -306,6 +315,150 @@ async function runRebookNudgeJob() {
           });
         } catch (err) {
           captureException(err, { bookingId: booking.bookingId });
+        }
+      }
+    } catch (err) {
+      captureException(err, { workspace: workspace.email });
+    }
+  }
+}
+
+// Automated win-back: when a client's most recent event was exactly N days ago
+// and they haven't booked anything since, send one friendly "we miss you"
+// template. Deduped via the booking's remindersSent marker, and skipped for
+// anyone who already has a later booking (they've returned on their own).
+async function runWinbackJob() {
+  const WINBACK_MARKER = "winback";
+  const workspaces = await listWorkspaces();
+
+  for (let i = 0; i < workspaces.length; i++) {
+    await stagger(i);
+    const workspace = workspaces[i];
+    const daysAfter = parseFirstPositiveInt(workspace.config.winbackDaysAfter);
+    if (daysAfter === null) continue;
+
+    const templateName = String(workspace.config.winbackTemplate || "").trim();
+    if (!templateName) continue;
+
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    const connectionCanSend =
+      whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    if (!connectionCanSend && !envCanSend) continue;
+
+    const targetDate = addDaysToIso(-daysAfter);
+
+    try {
+      const tokens = await getWorkspaceCredentials(workspace.email);
+      const bookings = await listActiveBookings(workspace.email, tokens);
+
+      // Most recent event date per client, so we only win back the truly lapsed.
+      const latestByPhone = new Map<string, string>();
+      for (const bk of bookings) {
+        const phone = (bk.clientWhatsApp || "").replace(/\D/g, "");
+        if (!phone) continue;
+        const prev = latestByPhone.get(phone);
+        if (!prev || bk.eventDate > prev) latestByPhone.set(phone, bk.eventDate);
+      }
+
+      for (const booking of bookings) {
+        if (!booking.clientWhatsApp || booking.eventDate !== targetDate) continue;
+        const phone = booking.clientWhatsApp.replace(/\D/g, "");
+        if ((latestByPhone.get(phone) || "") !== targetDate) continue; // already came back
+
+        const alreadySent = (booking.remindersSent || "")
+          .split(",")
+          .map((s) => s.trim())
+          .includes(WINBACK_MARKER);
+        if (alreadySent) continue;
+
+        try {
+          await sendWhatsAppTemplate(
+            { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+            phone,
+            templateName,
+            String(workspace.config.winbackTemplateLang || "en"),
+            [booking.clientName, workspace.config.businessName || workspace.name],
+          );
+          await markBookingReminderSent(workspace.email, tokens, booking.bookingId, WINBACK_MARKER);
+          await logInteractionForWorkspace(workspace.email, tokens, {
+            leadId: booking.leadId,
+            direction: "Outbound",
+            channel: "WhatsApp",
+            actor: phone,
+            message: `Automated win-back template "${templateName}" sent`,
+            aiSummary: `Automated win-back (T+${daysAfter})`,
+          });
+        } catch (err) {
+          captureException(err, { bookingId: booking.bookingId });
+        }
+      }
+    } catch (err) {
+      captureException(err, { workspace: workspace.email });
+    }
+  }
+}
+
+// Automated birthday greetings: greet each client whose stored birthday is
+// today, at most once per year (tracked in the client-notes store).
+async function runBirthdayJob() {
+  const workspaces = await listWorkspaces();
+  const today = new Date().toISOString();
+  const todayMmDd = today.slice(5, 10);
+  const year = today.slice(0, 4);
+
+  for (let i = 0; i < workspaces.length; i++) {
+    await stagger(i);
+    const workspace = workspaces[i];
+    const templateName = String(workspace.config.birthdayTemplate || "").trim();
+    if (!templateName) continue;
+
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    const connectionCanSend =
+      whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    if (!connectionCanSend && !envCanSend) continue;
+
+    try {
+      const tokens = await getWorkspaceCredentials(workspace.email);
+      const { leads, bookings } = await getDashboardData(workspace.email, tokens);
+
+      // One display name per client phone (bookings first — they're confirmed).
+      const nameByPhone = new Map<string, string>();
+      for (const b of bookings) {
+        const phone = (b.clientWhatsApp || "").replace(/\D/g, "");
+        if (phone && !nameByPhone.has(phone)) nameByPhone.set(phone, b.clientName);
+      }
+      for (const l of leads) {
+        const phone = (l.clientWhatsApp || "").replace(/\D/g, "");
+        if (phone && !nameByPhone.has(phone)) nameByPhone.set(phone, l.clientName);
+      }
+
+      for (const [phone, name] of nameByPhone) {
+        const notes = await loadClientNotes(workspace.workspaceId, phone).catch(() => null);
+        if (!notes || !notes.birthday) continue;
+        if (notes.birthday.slice(5, 10) !== todayMmDd) continue;
+        if (notes.birthdayGreetedYear === year) continue;
+
+        try {
+          await sendWhatsAppTemplate(
+            { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+            phone,
+            templateName,
+            String(workspace.config.birthdayTemplateLang || "en"),
+            [name || "there", workspace.config.businessName || workspace.name],
+          );
+          await markBirthdayGreeted(workspace.workspaceId, phone, year);
+          await logInteractionForWorkspace(workspace.email, tokens, {
+            leadId: "",
+            direction: "Outbound",
+            channel: "WhatsApp",
+            actor: phone,
+            message: `Automated birthday greeting template "${templateName}" sent`,
+            aiSummary: "Automated birthday greeting",
+          }).catch(() => {});
+        } catch (err) {
+          captureException(err, { phone });
         }
       }
     } catch (err) {
