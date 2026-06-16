@@ -47,6 +47,11 @@
     .signed-banner { background: var(--success-soft); border: 1px solid #A7E3BC; color: var(--success); border-radius: 12px; padding: 18px 20px; text-align: center; font-weight: 600; font-size: 15.5px; margin-bottom: 20px; line-height: 1.5; }
     .footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 24px; }
     .loading { text-align: center; color: var(--muted); padding: 40px 0; }
+    /* Native-app polish */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    * { -webkit-tap-highlight-color: transparent; }
+    .sign-btn { touch-action: manipulation; transition: background 0.15s, transform 0.08s ease; }
+    .sign-btn:active:not(:disabled) { transform: scale(0.98); }
   </style>
 </head>
 <body>

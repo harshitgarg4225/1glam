@@ -45,6 +45,10 @@
       }
 
       * { box-sizing: border-box; }
+      /* Native-app polish: kill the grey tap-flash and stop iOS from
+         silently re-scaling text in landscape. */
+      html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+      * { -webkit-tap-highlight-color: transparent; }
 
       body {
         margin: 0;
@@ -151,9 +155,11 @@
         letter-spacing: 0.01em;
         text-decoration: none;
         display: inline-flex; align-items: center; justify-content: center;
-        transition: background 0.15s;
+        transition: background 0.15s, transform 0.08s ease;
+        -webkit-user-select: none; user-select: none; touch-action: manipulation;
       }
       .button:hover { background: var(--accent-hover); }
+      .button:active { transform: scale(0.97); }
       .button.secondary {
         background: transparent;
         color: var(--text);
@@ -904,6 +910,64 @@
       .wizard-field { margin-bottom: 14px; }
       .wizard-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
       .wizard-field .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+      /* ───────────────────────────────────────────────────────────────
+         Premium mobile layer
+         Everything below only changes the phone experience (≤640px): it
+         turns dialogs into native bottom sheets, stops iOS zoom-on-focus,
+         grows touch targets, and makes the kanban swipe snap. Desktop is
+         untouched.
+         ─────────────────────────────────────────────────────────────── */
+      @media (max-width: 640px) {
+        /* iOS zooms the whole page when you focus a field smaller than 16px.
+           Bumping form controls to 16px on phones keeps the page steady. */
+        input, textarea, select { font-size: 16px; }
+
+        /* Comfortable, thumb-sized tap targets. */
+        .button { min-height: 46px; }
+        .button.small { min-height: 40px; }
+        .modal-close { width: 36px; height: 36px; }
+
+        /* Dialogs become bottom sheets: full-width, anchored to the bottom
+           edge where the thumb is, with a grab handle and a slide-up. The
+           !important overrides per-modal inline max-widths. */
+        .modal-overlay { align-items: flex-end; padding: 0; }
+        .modal-overlay > .modal {
+          width: 100% !important; max-width: none !important;
+          max-height: 92vh; border-radius: 22px 22px 0 0;
+          padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+          animation: sheet-up 0.28s cubic-bezier(.22,.68,0,1.1);
+          overscroll-behavior: contain;
+        }
+        /* Grab handle — skip the search sheet (it has its own zero padding). */
+        .modal-overlay > .modal:not(.search-modal)::before {
+          content: ""; display: block; width: 40px; height: 4px;
+          border-radius: 4px; background: var(--line); margin: -8px auto 14px;
+        }
+        .modal-overlay > .modal.search-modal { max-height: 88vh; border-radius: 20px 20px 0 0; }
+
+        /* Confirm/alert dialogs slide up from the bottom too. */
+        .confirm-overlay { align-items: flex-end; padding: 0; }
+        .confirm-card {
+          max-width: none; border-radius: 22px 22px 0 0;
+          padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+          animation: sheet-up 0.28s cubic-bezier(.22,.68,0,1.1);
+        }
+        .confirm-card::before {
+          content: ""; display: block; width: 40px; height: 4px;
+          border-radius: 4px; background: var(--line); margin: -6px auto 14px;
+        }
+
+        /* The drawer becomes a full-height sheet that contains its own
+           scroll/rubber-band instead of dragging the page behind it. */
+        .drawer { width: 100%; }
+        .drawer-body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+        /* Kanban: let columns snap into place as she swipes, so the board
+           feels like paging through stages rather than free-scrolling. */
+        .board:not(.list-mode) { scroll-snap-type: x proximity; scroll-padding-left: 12px; }
+        .board:not(.list-mode) .board-col { scroll-snap-align: start; }
+      }
     </style>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>

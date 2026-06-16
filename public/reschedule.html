@@ -35,6 +35,12 @@
     .done-screen p { font-size: 14px; color: var(--muted); line-height: 1.6; }
     .skeleton { background: linear-gradient(90deg, #f0ece7 25%, #e8e3de 50%, #f0ece7 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }
     @keyframes shimmer { to { background-position: -200% 0; } }
+    /* Native-app polish */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    * { -webkit-tap-highlight-color: transparent; }
+    .btn { touch-action: manipulation; transition: opacity .15s, transform 0.08s ease; }
+    .btn:active:not(:disabled) { transform: scale(0.98); }
+    input[type=date], input[type=time] { font-size: 16px; }
   </style>
 </head>
 <body>

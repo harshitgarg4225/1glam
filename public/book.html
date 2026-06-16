@@ -127,6 +127,50 @@
       .cal-day.empty { cursor: default; }
       .cal-day.selected { background: var(--accent); color: #fff; font-weight: 600; }
       .selected-date { margin-top: 10px; font-size: 14px; }
+
+      /* Native-app polish */
+      html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+      * { -webkit-tap-highlight-color: transparent; }
+      .button, .service, .slot, .cal-day, .cal-nav { touch-action: manipulation; }
+      .button { transition: background 0.15s, transform 0.08s ease; }
+      .button:active:not(:disabled) { transform: scale(0.98); }
+      .service:active, .slot:active { transform: scale(0.98); }
+
+      /* Lightbox close affordance */
+      .lightbox-close {
+        position: absolute; top: 16px; right: 18px; width: 42px; height: 42px;
+        border-radius: 50%; border: none; background: rgba(255,255,255,0.16);
+        color: #fff; font-size: 26px; line-height: 1; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+      }
+
+      /* Sticky booking bar — keeps the price and the primary action in view
+         the whole way down the page, so the client always knows what they'll
+         pay and can request without hunting for the button. */
+      .cta-bar {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+        background: rgba(255,255,255,0.93);
+        -webkit-backdrop-filter: saturate(180%) blur(12px);
+        backdrop-filter: saturate(180%) blur(12px);
+        border-top: 1px solid var(--line);
+        box-shadow: 0 -6px 24px rgba(0,0,0,0.07);
+        padding: 11px 14px calc(11px + env(safe-area-inset-bottom, 0px));
+        transform: translateY(110%); transition: transform 0.28s cubic-bezier(.22,.68,0,1.1);
+      }
+      .cta-bar.show { transform: translateY(0); }
+      .cta-bar-inner { width: min(680px, 100%); margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+      .cta-bar-price { display: flex; flex-direction: column; line-height: 1.15; flex-shrink: 0; }
+      .cta-bar-price .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+      .cta-bar-price .amt { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+      .cta-go {
+        flex: 1; padding: 14px 18px; border: none; border-radius: var(--radius-sm);
+        font: 600 16px/1 inherit; color: #fff; background: var(--accent); cursor: pointer;
+        transition: background 0.15s, transform 0.08s ease; touch-action: manipulation;
+      }
+      .cta-go:hover { background: var(--accent-hover); }
+      .cta-go:active:not(:disabled) { transform: scale(0.98); }
+      .cta-go:disabled { opacity: 0.6; cursor: default; }
+      body.cta-on .shell { padding-bottom: 84px; }
     </style>
   </head>
   <body>
@@ -239,7 +283,20 @@
       <div class="footer">Powered by BusyDays · <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></div>
     </div>
 
-    <div class="lightbox" id="lightbox"><img id="lightbox-img" alt="" /></div>
+    <div class="cta-bar" id="cta-bar">
+      <div class="cta-bar-inner">
+        <div class="cta-bar-price">
+          <span class="lbl" id="cta-label">Select a service</span>
+          <span class="amt" id="cta-amount">—</span>
+        </div>
+        <button type="button" class="cta-go" id="cta-go">Request booking</button>
+      </div>
+    </div>
+
+    <div class="lightbox" id="lightbox">
+      <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+      <img id="lightbox-img" alt="" />
+    </div>
 
     <script>
       const workspaceId = window.location.pathname.split("/").filter(Boolean)[1] || "";
@@ -378,6 +435,7 @@
             renderServiceDetail(type);
             // Slot availability is duration-aware, so it depends on the service.
             refreshSlotAvailability();
+            updateCta();
           });
           container.appendChild(card);
         });
@@ -410,6 +468,10 @@
 
         hide("loading");
         show("booking");
+        // Reveal the sticky price/CTA bar now that there's a form to act on.
+        document.body.classList.add("cta-on");
+        el("cta-bar").classList.add("show");
+        updateCta();
       }
 
       function formatSlotTime(t) {
@@ -580,7 +642,7 @@
             const label = document.createElement("label");
             label.className = "addon-item";
             label.innerHTML =
-              '<input type="checkbox" id="' + safeId + '" value="' + addon.name.replace(/"/g, "&quot;") + '" />' +
+              '<input type="checkbox" id="' + safeId + '" value="' + addon.name.replace(/"/g, "&quot;") + '" data-price="' + (Number(addon.price) || 0) + '" />' +
               '<span>' + addon.name +
               (addon.price > 0 ? ' <span class="addon-price">+₹' + Number(addon.price).toLocaleString("en-IN") + '</span>' : '') +
               '</span>';
@@ -638,7 +700,11 @@
         const radio = e.target.closest("input[type=radio]");
         if (radio) radio.closest(".variant-item")?.classList.add("selected");
         resetPromo();
+        updateCta();
       });
+
+      // Add-on toggles change the running total too.
+      el("addons-list").addEventListener("change", () => { resetPromo(); updateCta(); });
 
       // Current order amount = selected variant price, else the service's starting price.
       function currentOrderAmount() {
@@ -651,6 +717,39 @@
         appliedPromoCode = "";
         const fb = el("promo-feedback");
         if (fb) { fb.textContent = ""; }
+      }
+
+      // Keep the sticky bar's price live as the client picks a package / add-ons,
+      // so they always see what they're about to request — no surprises, no
+      // scrolling to find the total.
+      function updateCta() {
+        const lbl = el("cta-label");
+        const amt = el("cta-amount");
+        if (!lbl || !amt) return;
+        if (!selectedEventType) {
+          lbl.textContent = "Select a service";
+          amt.textContent = "—";
+          return;
+        }
+        const base = currentOrderAmount();
+        const addonTotal = [...document.querySelectorAll("#addons-list input:checked")]
+          .reduce((s, cb) => s + (Number(cb.dataset.price) || 0), 0);
+        const total = base + addonTotal;
+        if (!total) {
+          lbl.textContent = "Estimated";
+          amt.textContent = "Price on request";
+          return;
+        }
+        const hasVariant = !!document.querySelector("#variants-list input[name='serviceVariant']:checked");
+        lbl.textContent = (hasVariant || addonTotal > 0) ? "Estimated total" : "Starting from";
+        amt.textContent = "₹" + Number(total).toLocaleString("en-IN");
+      }
+
+      // Bring the section that needs attention into view when the client taps
+      // the sticky button from anywhere on the page.
+      function scrollToEl(id) {
+        const node = el(id);
+        if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       el("promo-apply")?.addEventListener("click", async () => {
         const fb = el("promo-feedback");
@@ -680,17 +779,20 @@
 
         if (!selectedEventType) {
           statusEl.textContent = "Please choose a service above.";
+          scrollToEl("services");
           return;
         }
 
         if (!el("eventDate").value) {
           statusEl.textContent = "Please pick an available date from the calendar.";
+          scrollToEl("calendar");
           return;
         }
 
         const dateReason = dateUnavailableReason(el("eventDate").value);
         if (dateReason) {
           statusEl.textContent = dateReason;
+          scrollToEl("calendar");
           return;
         }
 
@@ -702,6 +804,7 @@
 
         if (hasSlots && !eventTimeValue) {
           statusEl.textContent = "Please choose a time slot above.";
+          scrollToEl("time-slots-wrap");
           return;
         }
 
@@ -729,8 +832,11 @@
         };
 
         const submitBtn = el("submit");
+        const ctaGo = el("cta-go");
         submitBtn.disabled = true;
         submitBtn.textContent = "Sending…";
+        ctaGo.disabled = true;
+        ctaGo.textContent = "Sending…";
         try {
           const res = await fetch("/api/public/" + encodeURIComponent(workspaceId) + "/book", {
             method: "POST",
@@ -766,6 +872,9 @@
 
           hide("booking");
           show("success");
+          // The action is done — retire the sticky bar.
+          el("cta-bar").classList.remove("show");
+          document.body.classList.remove("cta-on");
           window.scrollTo({ top: 0, behavior: "smooth" });
         } catch (error) {
           // Show the server's friendly validation message, but never surface a
@@ -775,7 +884,23 @@
             : (error.message || "Something went wrong. Please try again.");
           submitBtn.disabled = false;
           submitBtn.textContent = "Request booking";
+          ctaGo.disabled = false;
+          ctaGo.textContent = "Request booking";
         }
+      });
+
+      // The sticky bar is the primary action on the page; the inline button is
+      // now redundant, so hide it and let the floating bar drive submission.
+      el("submit").style.display = "none";
+      el("cta-go").addEventListener("click", () => el("form").requestSubmit());
+
+      // Lightbox: explicit close button + Escape, on top of tap-to-dismiss.
+      el("lightbox-close").addEventListener("click", (e) => {
+        e.stopPropagation();
+        el("lightbox").classList.remove("open");
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") el("lightbox").classList.remove("open");
       });
 
       loadProfile();
