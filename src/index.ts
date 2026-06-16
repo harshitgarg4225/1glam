@@ -141,6 +141,7 @@ import {
   recoverSheet,
   setSheetProtection,
   uploadLogoImage,
+  uploadCoverImage,
   uploadPublicImage,
   upsertMetaConnection,
   updateWorkspaceConfig,
@@ -446,7 +447,9 @@ function buildBookingMeta(
       ? profile.aboutText
       : "Check availability and request your booking date.";
   const desc = rawDesc.length > 200 ? `${rawDesc.slice(0, 197)}…` : rawDesc;
-  const image = profile?.portfolioImages?.[0] || "";
+  // Prefer the wide cover photo for social cards (it's designed to be the
+  // banner); fall back to the first portfolio image.
+  const image = profile?.coverImageUrl || profile?.portfolioImages?.[0] || "";
   return [
     `<title>${escapeAttr(title)}</title>`,
     `<meta name="description" content="${escapeAttr(desc)}" />`,
@@ -1214,6 +1217,36 @@ app.post(
       }
       if (!req.file) return res.status(400).json({ error: "No image uploaded" });
       const result = await uploadLogoImage(req.session.profile.email, req.session.googleTokens, {
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Cover photo upload: same Drive-backed flow, saved to coverImageUrl.
+app.post(
+  "/api/workspace/cover/upload",
+  (req, res, next) => {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
+  async (req, res, next) => {
+    try {
+      if (!req.session.profile || !req.session.googleTokens) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      const result = await uploadCoverImage(req.session.profile.email, req.session.googleTokens, {
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
         originalName: req.file.originalname,

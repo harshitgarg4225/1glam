@@ -268,6 +268,41 @@ export async function uploadLogoImage(
   return { logoUrl };
 }
 
+// Same as the logo upload, but for the wide cover photo at the top of the
+// booking page — previously the cover could only be set by pasting a URL.
+export async function uploadCoverImage(
+  email: string,
+  tokens: Credentials,
+  file: { buffer: Buffer; mimeType: string; originalName: string },
+): Promise<{ coverImageUrl: string }> {
+  const workspace = await findWorkspaceByEmail(email);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const { drive } = createGoogleClients(tokens);
+  const ext = (file.originalName.split(".").pop() || "jpg").toLowerCase();
+  const response = await drive.files.create({
+    requestBody: {
+      name: `cover-${nanoid(8)}.${ext}`,
+      mimeType: file.mimeType,
+      description: `Cover photo for ${workspace.config.businessName || workspace.name}`,
+    },
+    media: { mimeType: file.mimeType, body: Readable.from(file.buffer) },
+    fields: "id",
+  });
+
+  const fileId = response.data.id;
+  if (!fileId) throw new Error("Cover upload failed");
+  await drive.permissions.create({ fileId, requestBody: { role: "reader", type: "anyone" } });
+
+  const coverImageUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+  workspace.config = { ...workspace.config, coverImageUrl };
+  workspace.updatedAt = new Date().toISOString();
+  await seedSpreadsheet(workspace.spreadsheetId, workspace.config, tokens, { includeSampleArtist: false });
+  await saveWorkspace(workspace);
+
+  return { coverImageUrl };
+}
+
 export async function persistWorkspaceTokens(email: string, tokens: Credentials) {
   return updateWorkspaceByEmail(email, (workspace) => ({
     ...workspace,

@@ -2126,8 +2126,13 @@
               </div>
             </div>
             <div>
-              <label for="mypage-cover">Cover photo URL</label>
+              <label for="mypage-cover">Cover photo</label>
               <input type="text" id="mypage-cover" name="coverImageUrl" placeholder="https://… (a wide hero image)" />
+              <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+                <input type="file" id="cover-upload-input" accept="image/*" style="display:none;" />
+                <button class="button small secondary" type="button" id="cover-upload-btn">⬆️ Upload cover photo</button>
+                <span class="muted" id="cover-upload-status" style="font-size:12.5px;"></span>
+              </div>
             </div>
             <div class="wide">
               <label for="mypage-about">About you</label>
@@ -3688,6 +3693,28 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const preview = document.getElementById("logo-preview");
           preview.src = data.logoUrl; preview.style.display = "";
           statusEl.textContent = "✓ Logo saved — it's on all your documents now.";
+          await refreshSession();
+        } catch (error) {
+          statusEl.textContent = error.message;
+        } finally {
+          e.target.value = "";
+        }
+      });
+
+      document.getElementById("cover-upload-btn")?.addEventListener("click", () => document.getElementById("cover-upload-input")?.click());
+      document.getElementById("cover-upload-input")?.addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const statusEl = document.getElementById("cover-upload-status");
+        statusEl.textContent = "Uploading…";
+        try {
+          const fd = new FormData();
+          fd.append("image", file);
+          const res = await fetch("/api/workspace/cover/upload", { method: "POST", body: fd });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed — try a smaller image.");
+          document.getElementById("mypage-cover").value = data.coverImageUrl;
+          statusEl.textContent = "✓ Cover photo saved — it's live on your booking page.";
           await refreshSession();
         } catch (error) {
           statusEl.textContent = error.message;
