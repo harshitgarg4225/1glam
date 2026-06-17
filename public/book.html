@@ -893,6 +893,8 @@
 
           hide("booking");
           show("success");
+          // A confirming buzz, like a native app (Android web / Capacitor only).
+          try { if (navigator.vibrate) navigator.vibrate([10, 40, 16]); } catch (e) {}
           // The action is done — retire the sticky bar.
           el("cta-bar").classList.remove("show");
           document.body.classList.remove("cta-on");
