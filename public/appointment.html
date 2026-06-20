@@ -179,11 +179,17 @@
     if (d.balanceDue > 0 && ["Awaiting Client", "Confirmed"].includes(d.leadStatus)) {
       btns.push(`<a class="action-btn primary" href="/pay/${workspaceId}/${leadId}">💳 Pay now</a>`);
     }
-    if (d.bookingId) {
-      const bid = encodeURIComponent(d.bookingId);
-      btns.push(`<a class="action-btn secondary" href="/sign/${workspaceId}/${bid}">📝 View / sign contract</a>`);
-      btns.push(`<a class="action-btn secondary" href="/reschedule/${workspaceId}/${bid}">📆 Reschedule</a>`);
-      btns.push(`<a class="action-btn danger" href="/cancel/${workspaceId}/${bid}">✕ Cancel appointment</a>`);
+    // Sign / reschedule / cancel each need their own signed token, so we use the
+    // pre-signed URLs the server hands back rather than building bare paths
+    // (which would land the client on a "link expired" page).
+    if (d.signUrl) {
+      btns.push(`<a class="action-btn secondary" href="${esc(d.signUrl)}">📝 View / sign contract</a>`);
+    }
+    if (d.rescheduleUrl) {
+      btns.push(`<a class="action-btn secondary" href="${esc(d.rescheduleUrl)}">📆 Reschedule</a>`);
+    }
+    if (d.cancelUrl) {
+      btns.push(`<a class="action-btn danger" href="${esc(d.cancelUrl)}">✕ Cancel appointment</a>`);
     }
 
     if (d.paymentTerms) {

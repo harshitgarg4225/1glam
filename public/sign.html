@@ -76,6 +76,7 @@
 
       <div id="signed-state" style="display:none;">
         <div class="signed-banner" id="signed-banner"></div>
+        <a class="sign-btn" id="hub-link" href="#" style="display:none;text-decoration:none;">View my appointment &amp; pay</a>
       </div>
 
       <form id="sign-form" style="display:none;">
@@ -100,6 +101,7 @@
     const wid = decodeURIComponent(parts[1] || "");
     const bid = decodeURIComponent(parts[2] || "");
     const sig = new URLSearchParams(window.location.search).get("sig") || "";
+    let leadIdForHub = "";
 
     function fmtMoney(v) { return "₹" + Number(v || 0).toLocaleString("en-IN"); }
     function fmtDay(v) {
@@ -115,6 +117,13 @@
       const when = at ? new Date(at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "";
       document.getElementById("signed-banner").textContent =
         `✓ Signed by ${name}${when ? " on " + when : ""}. You're all set — see you at the event!`;
+      // Signing is no longer a dead-end: give the client one tap back to their
+      // appointment hub, where they can pay the advance/balance and see status.
+      if (leadIdForHub) {
+        const hub = document.getElementById("hub-link");
+        hub.href = `/appointment/${encodeURIComponent(wid)}/${encodeURIComponent(leadIdForHub)}`;
+        hub.style.display = "";
+      }
     }
 
     async function load() {
@@ -124,8 +133,12 @@
         if (!r.ok) throw new Error(data.error || "Contract not found");
         document.getElementById("loading").style.display = "none";
         document.getElementById("content").style.display = "";
+        leadIdForHub = data.leadId || "";
         document.getElementById("biz").textContent = data.businessName;
         document.getElementById("client").textContent = data.clientName;
+        // The server already knows who's signing — pre-fill so signing is a
+        // one-tap confirm, not a "type your full legal name" chore (still editable).
+        if (data.clientName) document.getElementById("signer").value = data.clientName;
         document.getElementById("event").textContent = data.eventType;
         document.getElementById("date").textContent = fmtDay(data.eventDate) + (data.eventTime ? " · " + data.eventTime : "");
         if (data.venue) document.getElementById("venue").textContent = data.venue;

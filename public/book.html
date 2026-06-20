@@ -270,13 +270,13 @@
             <div class="slots" id="time-slots"></div>
             <input type="hidden" id="eventTime" />
           </div>
-          <div id="time-free-wrap">
+          <div id="time-free-wrap" class="hidden">
             <label for="eventTimeFree">Preferred time (optional)</label>
             <input type="time" id="eventTimeFree" />
           </div>
 
-          <label for="locationText">Event location / venue</label>
-          <input type="text" id="locationText" placeholder="Venue name, area, city" required />
+          <label for="locationText">Event location / venue <span class="muted" style="font-weight:400;">(optional — add it later if you're not sure)</span></label>
+          <input type="text" id="locationText" placeholder="Venue name or area, city" />
 
           <div class="row">
             <div>
@@ -314,7 +314,8 @@
         <h1 id="success-title">Request received</h1>
         <p id="success-text" class="muted"></p>
         <p id="success-subtext" class="muted">To confirm faster, send us a quick message on WhatsApp so we can lock in your date and share pricing.</p>
-        <a id="wa-confirm" class="button hidden" target="_blank" rel="noreferrer">Confirm on WhatsApp</a>
+        <a id="appointment-link" class="button hidden" style="margin-bottom:10px;">View my appointment</a>
+        <a id="wa-confirm" class="button secondary hidden" target="_blank" rel="noreferrer">Confirm on WhatsApp</a>
       </div>
 
       <div class="footer">Powered by BusyDays · <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></div>
@@ -545,7 +546,9 @@
         if (availability) {
           initCalendar(availability);
 
-          // Time slots
+          // Time slots: show the fixed-slot picker OR the free-text time input,
+          // never both. Both start hidden so a slow profile fetch never flashes
+          // a redundant time picker before we know which mode applies.
           const slots = availability.timeSlots || [];
           if (slots.length > 0) {
             show("time-slots-wrap");
@@ -565,6 +568,9 @@
               });
               slotsContainer.appendChild(btn);
             });
+          } else {
+            hide("time-slots-wrap");
+            show("time-free-wrap");
           }
         }
 
@@ -970,7 +976,7 @@
           eventType: selectedEventType,
           eventDate: el("eventDate").value,
           eventTime: eventTimeValue,
-          locationText: el("locationText").value.trim(),
+          locationText: el("locationText").value.trim() || undefined,
           addons: checkedAddons || undefined,
           clientName: el("clientName").value.trim(),
           clientWhatsApp: el("clientWhatsApp").value.trim(),
@@ -1009,10 +1015,23 @@
               ". Your date is tentatively held — it's locked in once " + data.businessName +
               " confirms and the advance is paid. You'll usually hear back on WhatsApp within a day.";
 
+            // Hand the client a permanent home for this booking: one link to
+            // track status, pay the advance, sign the contract, or reschedule —
+            // instead of the request vanishing into a confirmation message.
+            let appointmentUrl = "";
+            if (data.leadId) {
+              appointmentUrl = location.origin + "/appointment/" +
+                encodeURIComponent(workspaceId) + "/" + encodeURIComponent(data.leadId);
+              const apptBtn = el("appointment-link");
+              apptBtn.href = appointmentUrl;
+              apptBtn.classList.remove("hidden");
+            }
+
             if (ownerWhatsApp) {
               const text =
                 "Hi! I just requested a " + data.eventType + " booking for " + data.eventDate +
-                " via your booking page. My name is " + payload.clientName + ".";
+                " via your booking page. My name is " + payload.clientName + "." +
+                (appointmentUrl ? "\n\nMy appointment: " + appointmentUrl : "");
               const waBtn = el("wa-confirm");
               waBtn.href = "https://wa.me/" + ownerWhatsApp + "?text=" + encodeURIComponent(text);
               waBtn.classList.remove("hidden");

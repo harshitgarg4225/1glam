@@ -707,6 +707,7 @@ app.get("/api/public/contract/:workspaceId/:bookingId", async (req, res, next) =
       ok: true,
       businessName: workspace.config.businessName || workspace.name,
       clientName: booking.clientName,
+      leadId: booking.leadId || "",
       eventType: booking.eventType,
       eventDate: booking.eventDate,
       eventTime: booking.eventTime,

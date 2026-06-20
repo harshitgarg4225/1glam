@@ -9,6 +9,7 @@ import { sendWhatsAppTemplate } from "./messaging.js";
 import { ensureSheetTab } from "./sheets-util.js";
 import { sheetNames } from "./sheet-definitions.js";
 import { parsePromoCode, promoCodeToRow, promoCodeHeaders, validatePromo } from "./promo-codes.js";
+import { buildRescheduleUrl, buildCancelUrl, signDocumentToken } from "./document-links.js";
 import { listArtists } from "./team.js";
 import { TtlCache } from "./cache.js";
 import type { Credentials } from "google-auth-library";
@@ -98,6 +99,12 @@ export type PublicPaymentDetails = {
   tipsEnabled: boolean;
   // bookingId if the lead has been confirmed into a booking.
   bookingId: string;
+  // Pre-signed action URLs so the appointment hub can link straight to the
+  // sign / reschedule / cancel pages, which each require their own HMAC token.
+  // Empty until the lead becomes a booking (bookingId set).
+  signUrl: string;
+  rescheduleUrl: string;
+  cancelUrl: string;
 };
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -550,6 +557,26 @@ export async function getPublicPaymentDetails(
       `&am=${advanceAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(leadId)}`
     : "";
 
+  // Once the lead is a confirmed booking, the appointment hub needs correctly
+  // signed links for the sign / reschedule / cancel pages (each route enforces
+  // its own HMAC token). Sign reuses the same "contract" document token the
+  // sign page already verifies; reschedule/cancel use their time-limited tokens.
+  const bookingId = lead.bookingId || "";
+  let signUrl = "";
+  let rescheduleUrl = "";
+  let cancelUrl = "";
+  if (bookingId) {
+    const contractSig = signDocumentToken("contract", workspaceId, bookingId);
+    const signPath = new URL(
+      `/sign/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}`,
+      appConfig.baseUrl,
+    );
+    signPath.searchParams.set("sig", contractSig);
+    signUrl = signPath.toString();
+    rescheduleUrl = buildRescheduleUrl(workspaceId, bookingId);
+    cancelUrl = buildCancelUrl(workspaceId, bookingId);
+  }
+
   return {
     businessName: config.businessName || workspace.name,
     clientName: lead.clientName,
@@ -568,7 +595,10 @@ export async function getPublicPaymentDetails(
     onlinePayAvailable: Boolean(config.razorpayKeyId && config.razorpayKeySecret),
     razorpayKeyId: config.razorpayKeyId || "",
     tipsEnabled: config.tipsEnabled === "Yes",
-    bookingId: lead.bookingId || "",
+    bookingId,
+    signUrl,
+    rescheduleUrl,
+    cancelUrl,
   };
 }
 

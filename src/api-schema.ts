@@ -26,7 +26,10 @@ export const publicBookingSchema = z.object({
   eventType: z.string().trim().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   eventTime: z.string().max(20).optional(),
-  locationText: z.string().trim().min(1).max(200),
+  // Venue is often unknown when a bride first requests a date; the artist
+  // confirms it on WhatsApp anyway. Accept a blank and default to a clear
+  // placeholder rather than blocking the request.
+  locationText: z.string().trim().max(200).optional().default("To be decided"),
   addons: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
   promoCode: z.string().max(40).optional(),
