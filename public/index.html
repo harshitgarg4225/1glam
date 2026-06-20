@@ -5719,6 +5719,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <strong>${escapeHtml(dayLabel)}</strong>
             <div class="action-row" style="gap:6px;">
               <button class="button small" type="button" data-mcal-book="${escapeHtml(mcalSelectedDate)}">➕ Book this day</button>
+              ${blocked
+                ? `<button class="button small secondary" type="button" data-mcal-unblock="${escapeHtml(mcalSelectedDate)}">↩ Unblock</button>`
+                : `<button class="button small secondary" type="button" data-mcal-block="${escapeHtml(mcalSelectedDate)}" title="Hide this day from your booking page">🛌 Block day off</button>`}
             </div>
           </div>
           ${blocked ? `<p class="muted" style="margin:10px 0 0;font-size:13px;">🛌 You've blocked this day off — clients can't book it.</p>` : ""}
@@ -5731,9 +5734,33 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         mcalSelectedDate = cell.getAttribute("data-mcal-date") === mcalSelectedDate ? "" : cell.getAttribute("data-mcal-date");
         renderCalendarGrid();
       });
-      document.getElementById("mcal-day-panel")?.addEventListener("click", (e) => {
+      document.getElementById("mcal-day-panel")?.addEventListener("click", async (e) => {
         const bookBtn = e.target.closest("[data-mcal-book]");
-        if (bookBtn) openQuickBooking({ eventDate: bookBtn.getAttribute("data-mcal-book") });
+        if (bookBtn) { openQuickBooking({ eventDate: bookBtn.getAttribute("data-mcal-book") }); return; }
+        // Block / unblock a day right where you're looking at it, instead of
+        // hunting for the date-range input down in Settings.
+        const blockBtn = e.target.closest("[data-mcal-block]");
+        if (blockBtn) {
+          const d = blockBtn.getAttribute("data-mcal-block");
+          setLoading(blockBtn, "Blocking…");
+          try {
+            await saveBlockedDates([...parseBlockedDates(), d]);
+            toast(`${formatDay(d)} blocked — clients can't book it.`, "success");
+            renderCalendarGrid();
+          } catch (err) { toast(err.message || "Couldn't block that day.", "error"); clearLoading(blockBtn, "🛌 Block day off"); }
+          return;
+        }
+        const unblockBtn = e.target.closest("[data-mcal-unblock]");
+        if (unblockBtn) {
+          const d = unblockBtn.getAttribute("data-mcal-unblock");
+          setLoading(unblockBtn, "Unblocking…");
+          try {
+            await saveBlockedDates(parseBlockedDates().filter((x) => x !== d));
+            toast(`${formatDay(d)} is open for bookings again.`, "success");
+            renderCalendarGrid();
+          } catch (err) { toast(err.message || "Couldn't unblock that day.", "error"); clearLoading(unblockBtn, "↩ Unblock"); }
+          return;
+        }
       });
       document.getElementById("mcal-prev")?.addEventListener("click", () => { mcalCursor = new Date(mcalCursor.getFullYear(), mcalCursor.getMonth() - 1, 1); renderCalendarGrid(); });
       document.getElementById("mcal-next")?.addEventListener("click", () => { mcalCursor = new Date(mcalCursor.getFullYear(), mcalCursor.getMonth() + 1, 1); renderCalendarGrid(); });
