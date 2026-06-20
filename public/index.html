@@ -1805,6 +1805,10 @@
                 <select id="team-skillLevel" name="skillLevel"><option>Junior</option><option selected>Senior</option><option value="Lead">Lead artist</option></select>
               </div>
             </div>
+            <div style="margin-top:10px;">
+              <label for="team-bio">Bio / speciality (shown on booking page)</label>
+              <textarea id="team-bio" name="bio" rows="2" placeholder="Specialises in HD and airbrush bridal makeup. 5+ years experience." style="width:100%;margin-top:4px;font-size:14px;resize:vertical;"></textarea>
+            </div>
             <details class="collapse" style="margin-top:12px;">
               <summary>Advanced (optional)</summary>
               <div class="collapse-body">
@@ -2707,16 +2711,22 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
                 Add-ons format: <code>Name:Price</code> comma-separated, e.g. <code>Hair Styling:2000, False Lashes:500</code>. Leave blank to hide.
               </p>
               <div class="form-grid">
+                <div><label>Bridal — Cover image URL</label><input name="serviceBridalImageUrl" placeholder="https://…" /></div>
                 <div><label>Bridal — Description</label><input name="serviceBridalDesc" placeholder="Luxury bridal makeup for your big day…" /></div>
                 <div><label>Bridal — Add-ons</label><input name="serviceBridalAddons" placeholder="Hair Styling:2000, Airbrush:1500" /></div>
+                <div><label>Engagement — Cover image URL</label><input name="serviceEngagementImageUrl" placeholder="https://…" /></div>
                 <div><label>Engagement — Description</label><input name="serviceEngagementDesc" placeholder="Elegant look for your engagement ceremony…" /></div>
                 <div><label>Engagement — Add-ons</label><input name="serviceEngagementAddons" placeholder="Hair Styling:1500" /></div>
+                <div><label>Reception — Cover image URL</label><input name="serviceReceptionImageUrl" placeholder="https://…" /></div>
                 <div><label>Reception — Description</label><input name="serviceReceptionDesc" placeholder="Glamorous reception makeup…" /></div>
                 <div><label>Reception — Add-ons</label><input name="serviceReceptionAddons" placeholder="Hair Styling:1500, False Lashes:500" /></div>
+                <div><label>Party / Event — Cover image URL</label><input name="servicePartyImageUrl" placeholder="https://…" /></div>
                 <div><label>Party / Event — Description</label><input name="servicePartyDesc" placeholder="Bold looks for parties and events…" /></div>
                 <div><label>Party — Add-ons</label><input name="servicePartyAddons" placeholder="False Lashes:500" /></div>
+                <div><label>Photoshoot — Cover image URL</label><input name="serviceShootImageUrl" placeholder="https://…" /></div>
                 <div><label>Photoshoot — Description</label><input name="serviceShootDesc" placeholder="Camera-ready makeup for shoots…" /></div>
                 <div><label>Photoshoot — Add-ons</label><input name="serviceShootAddons" placeholder="Hair Styling:1500" /></div>
+                <div><label>Other — Cover image URL</label><input name="serviceOtherImageUrl" placeholder="https://…" /></div>
                 <div><label>Other — Description</label><input name="serviceOtherDesc" placeholder="Custom makeup services…" /></div>
                 <div><label>Other — Add-ons</label><input name="serviceOtherAddons" placeholder="" /></div>
               </div>
@@ -5783,6 +5793,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               ${escapeHtml(a.skillLevel || "Specialist")}${a.city ? " · " + escapeHtml(a.city) : ""}
               ${a.whatsApp ? "<br>📱 " + escapeHtml(a.whatsApp) : "<br><span style='color:var(--danger);'>No WhatsApp number</span>"}
               ${a.email ? "<br>" + escapeHtml(a.email) : ""}
+              ${a.bio ? `<br><span style="font-size:12.5px;color:var(--muted-text,#666);">${escapeHtml(a.bio)}</span>` : ""}
             </p>
             <div class="action-row" style="flex-wrap:wrap;gap:6px;">
               ${wa ? `<a class="button tiny secondary" href="https://wa.me/${wa}" target="_blank" rel="noreferrer" style="text-decoration:none;">💬 Message</a>` : ""}
@@ -5839,6 +5850,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           setValue(teamForm, "priceMultiplier", a.priceMultiplier);
           setValue(teamForm, "luxuryEligible", a.luxuryEligible);
           setValue(teamForm, "primaryCalendarId", a.primaryCalendarId);
+          setValue(teamForm, "bio", a.bio || "");
           document.getElementById("team-save-btn").textContent = "Save changes";
           const tc = document.getElementById("add-team-collapse");
           if (tc) { tc.open = true; tc.scrollIntoView({ behavior: "smooth", block: "start" }); }

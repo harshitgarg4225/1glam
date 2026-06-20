@@ -46,13 +46,16 @@
       .brand-meta { color: var(--muted); margin-bottom: 4px; font-size: 14px; }
       .services { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin: 12px 0 6px; }
       .service {
-        text-align: left; cursor: pointer; padding: 14px 16px;
+        text-align: left; cursor: pointer; padding: 0;
         border: 1px solid var(--line); border-radius: var(--radius);
         background: var(--card); color: var(--text); font: inherit;
+        overflow: hidden;
         transition: border-color 0.15s, background 0.15s;
       }
       .service:hover { border-color: var(--accent); background: var(--accent-soft); }
       .service.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .service-img { width: 100%; height: 110px; object-fit: cover; display: block; }
+      .service-body { padding: 12px 14px; }
       .service .name { font-size: 15px; font-weight: 600; }
       .service .price { font-size: 13px; color: var(--muted); margin-top: 4px; }
       .service-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin: 8px 0 16px; }
@@ -466,10 +469,16 @@
           card.className = "service";
           card.dataset.key = type.key;
           const durationLabel = formatDuration(type.durationHours);
+          const imgHtml = type.imageUrl
+            ? '<img class="service-img" src="' + type.imageUrl + '" alt="" loading="lazy" />'
+            : "";
           card.innerHTML =
+            imgHtml +
+            '<div class="service-body">' +
             '<div class="name">' + type.label + "</div>" +
             '<div class="price">' + formatPriceRange(type) +
               (durationLabel ? ' <span style="color:var(--muted);">· ⏱ ' + durationLabel + "</span>" : "") +
+            "</div>" +
             "</div>";
           card.addEventListener("click", () => {
             selectedEventType = type.key;

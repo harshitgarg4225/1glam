@@ -162,5 +162,11 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     receiptTemplate: "",
     receiptTemplateLang: "en",
     invoiceDueDays: 0,
+    serviceBridalImageUrl: "",
+    serviceEngagementImageUrl: "",
+    serviceReceptionImageUrl: "",
+    servicePartyImageUrl: "",
+    serviceShootImageUrl: "",
+    serviceOtherImageUrl: "",
   };
 }

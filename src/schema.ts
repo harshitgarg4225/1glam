@@ -176,6 +176,13 @@ export const workspaceConfigSchema = z.object({
   receiptTemplateLang: z.string().optional().default("en"),
   // Invoice due days (0 = due on receipt)
   invoiceDueDays: numberFromForm.optional().default(0),
+  // Per-service cover images shown on the public booking page
+  serviceBridalImageUrl: z.string().optional().default(""),
+  serviceEngagementImageUrl: z.string().optional().default(""),
+  serviceReceptionImageUrl: z.string().optional().default(""),
+  servicePartyImageUrl: z.string().optional().default(""),
+  serviceShootImageUrl: z.string().optional().default(""),
+  serviceOtherImageUrl: z.string().optional().default(""),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

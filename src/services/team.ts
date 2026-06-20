@@ -15,6 +15,7 @@ export type ArtistRecord = {
   luxuryEligible: string;
   primaryCalendarId: string;
   active: string;
+  bio: string;
 };
 
 export type ArtistInput = {
@@ -28,6 +29,7 @@ export type ArtistInput = {
   luxuryEligible?: string;
   primaryCalendarId?: string;
   active?: string;
+  bio?: string;
 };
 
 export async function listArtists(email: string, tokens: Credentials): Promise<ArtistRecord[]> {
@@ -71,6 +73,7 @@ export async function upsertArtist(
     luxuryEligible: input.luxuryEligible ?? "Yes",
     primaryCalendarId: input.primaryCalendarId ?? "",
     active: input.active ?? "Yes",
+    bio: input.bio ?? "",
   };
 
   const existingIndex = input.artistId
@@ -134,6 +137,7 @@ function artistToRow(artist: ArtistRecord) {
     artist.luxuryEligible,
     artist.primaryCalendarId,
     artist.active,
+    artist.bio,
   ];
 }
 
@@ -149,6 +153,7 @@ function rowToArtist(row: string[]): ArtistRecord {
     luxuryEligible: row[7] ?? "Yes",
     primaryCalendarId: row[8] ?? "",
     active: row[9] ?? "Yes",
+    bio: row[10] ?? "",
   };
 }
 

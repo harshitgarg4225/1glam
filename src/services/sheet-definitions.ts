@@ -112,6 +112,7 @@ export const artistHeaders = [
   "Luxury Eligible",
   "Primary Calendar ID",
   "Active",
+  "Bio",
 ] as const;
 
 export const followUpHeaders = [

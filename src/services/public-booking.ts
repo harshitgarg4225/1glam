@@ -35,6 +35,8 @@ export type PublicEventType = {
   description: string;
   addons: PublicAddon[];
   variants: ServiceVariant[];
+  // Optional cover image URL displayed on the service card.
+  imageUrl: string;
 };
 
 export type PublicAvailability = {
@@ -224,12 +226,12 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
   const { config } = workspace;
   const allVariants = parseServiceVariants(config);
   const eventTypes: PublicEventType[] = [
-    { key: "Bridal", startingPrice: config.basePriceBridal, descKey: "serviceBridalDesc" as const, addonsKey: "serviceBridalAddons" as const },
-    { key: "Engagement", startingPrice: config.basePriceEngagement, descKey: "serviceEngagementDesc" as const, addonsKey: "serviceEngagementAddons" as const },
-    { key: "Reception", startingPrice: config.basePriceReception, descKey: "serviceReceptionDesc" as const, addonsKey: "serviceReceptionAddons" as const },
-    { key: "Party", startingPrice: config.basePriceParty, descKey: "servicePartyDesc" as const, addonsKey: "servicePartyAddons" as const },
-    { key: "Shoot", startingPrice: config.basePriceShoot, descKey: "serviceShootDesc" as const, addonsKey: "serviceShootAddons" as const },
-    { key: "Other", startingPrice: config.basePriceOther, descKey: "serviceOtherDesc" as const, addonsKey: "serviceOtherAddons" as const },
+    { key: "Bridal", startingPrice: config.basePriceBridal, descKey: "serviceBridalDesc" as const, addonsKey: "serviceBridalAddons" as const, imageUrlKey: "serviceBridalImageUrl" as const },
+    { key: "Engagement", startingPrice: config.basePriceEngagement, descKey: "serviceEngagementDesc" as const, addonsKey: "serviceEngagementAddons" as const, imageUrlKey: "serviceEngagementImageUrl" as const },
+    { key: "Reception", startingPrice: config.basePriceReception, descKey: "serviceReceptionDesc" as const, addonsKey: "serviceReceptionAddons" as const, imageUrlKey: "serviceReceptionImageUrl" as const },
+    { key: "Party", startingPrice: config.basePriceParty, descKey: "servicePartyDesc" as const, addonsKey: "servicePartyAddons" as const, imageUrlKey: "servicePartyImageUrl" as const },
+    { key: "Shoot", startingPrice: config.basePriceShoot, descKey: "serviceShootDesc" as const, addonsKey: "serviceShootAddons" as const, imageUrlKey: "serviceShootImageUrl" as const },
+    { key: "Other", startingPrice: config.basePriceOther, descKey: "serviceOtherDesc" as const, addonsKey: "serviceOtherAddons" as const, imageUrlKey: "serviceOtherImageUrl" as const },
   ].map((entry) => {
     const variants = allVariants[entry.key] ?? [];
     const basePrice = Number(entry.startingPrice) || 0;
@@ -245,6 +247,7 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
       description: String(config[entry.descKey] || ""),
       addons: parseAddons(String(config[entry.addonsKey] || "")),
       variants,
+      imageUrl: String(config[entry.imageUrlKey] || ""),
     };
   });
 

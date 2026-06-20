@@ -188,6 +188,13 @@ export type WorkspaceConfig = PricingRuleConfig & {
   receiptTemplateLang: string;
   // Days after booking date that the invoice becomes due (shown on invoice PDF and client page).
   invoiceDueDays: number;
+  // Per-service cover images shown on the public booking page
+  serviceBridalImageUrl: string;
+  serviceEngagementImageUrl: string;
+  serviceReceptionImageUrl: string;
+  servicePartyImageUrl: string;
+  serviceShootImageUrl: string;
+  serviceOtherImageUrl: string;
 };
 
 export type WalletLedgerEntry = {
