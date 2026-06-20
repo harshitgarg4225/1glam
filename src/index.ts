@@ -1984,6 +1984,7 @@ app.post("/api/team", async (req, res, next) => {
       luxuryEligible: req.body.luxuryEligible,
       primaryCalendarId: req.body.primaryCalendarId,
       active: req.body.active,
+      bio: typeof req.body.bio === "string" ? req.body.bio : undefined,
     });
     res.json({ ok: true, artist });
   } catch (error) {
