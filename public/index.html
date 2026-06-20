@@ -3031,8 +3031,41 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
             </div>
           </div>
           <div id="doc-money-summary" class="payment-summary" style="display:none;margin:0 0 14px;"></div>
-          <div class="filter-bar">
-            <input type="search" id="doc-search" class="grow" placeholder="Search client, number…" />
+
+          <!-- Quick terms editor (Task 2: easier way to change terms/policy without going to Settings) -->
+          <details id="quick-terms-editor" style="margin-bottom:14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;">
+            <summary style="cursor:pointer;font-size:13.5px;font-weight:600;color:var(--text);list-style:none;display:flex;align-items:center;gap:8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Edit terms &amp; cancellation policy
+            </summary>
+            <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="quick-terms-body">
+              <div class="wide" style="grid-column:1/-1;">
+                <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Cancellation policy</label>
+                <textarea id="quick-cancellation-policy" rows="3" placeholder="e.g. Full fee is charged if cancelled within 7 days of the event…" style="margin-top:4px;width:100%;font-size:14px;"></textarea>
+              </div>
+              <div class="wide" style="grid-column:1/-1;">
+                <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Contract terms</label>
+                <textarea id="quick-contract-terms" rows="4" placeholder="e.g. Payment of the advance confirms the booking. The artist reserves the right to…" style="margin-top:4px;width:100%;font-size:14px;"></textarea>
+              </div>
+              <div style="grid-column:1/-1;">
+                <button class="button small" type="button" id="quick-terms-save">Save terms</button>
+                <span id="quick-terms-status" class="muted" style="font-size:12.5px;margin-left:10px;"></span>
+              </div>
+            </div>
+          </details>
+
+          <!-- Mobile chip filters for docs -->
+          <div class="sticky-search-wrap">
+            <input type="search" id="doc-search" class="grow" placeholder="Search client, number…" style="width:100%;" />
+          </div>
+          <div class="filter-chips-row" id="doc-chip-row">
+            <button class="filter-chip active" type="button" data-doc-type-chip="">All docs</button>
+            <button class="filter-chip" type="button" data-doc-type-chip="quote">Quotes</button>
+            <button class="filter-chip" type="button" data-doc-type-chip="invoice">Invoices</button>
+            <button class="filter-chip" type="button" data-doc-type-chip="contract">Contracts</button>
+          </div>
+
+          <div class="filter-bar desktop-only-filters">
             <select id="doc-filter-type">
               <option value="">All types</option>
               <option value="quote">Quotes</option>
@@ -4146,6 +4179,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       const DOC_ICONS = { quote: "📝", invoice: "🧾", contract: "📜" };
 
       async function loadDocuments() {
+        // Pre-fill quick terms editor from current config
+        const cfg = sessionState?.workspace?.config || {};
+        const cancelEl = document.getElementById("quick-cancellation-policy");
+        const termsEl = document.getElementById("quick-contract-terms");
+        if (cancelEl) { cancelEl.value = cfg.cancellationPolicy || ""; cancelEl.dataset.prefilled = "1"; }
+        if (termsEl) { termsEl.value = cfg.contractTerms || ""; termsEl.dataset.prefilled = "1"; }
+
         const body = document.getElementById("documents-body");
         body.innerHTML = `<tr><td colspan="6"><div class="skeleton-row"><div class="skeleton" style="width:70%;"></div><div class="skeleton" style="width:55%;"></div><div class="skeleton" style="width:62%;"></div></div></td></tr>`;
         try {
@@ -4371,6 +4411,47 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.getElementById("doc-filter-type").addEventListener("change", renderDocuments);
       document.getElementById("doc-filter-status").addEventListener("change", renderDocuments);
       document.getElementById("doc-refresh").addEventListener("click", loadDocuments);
+
+      // Doc type chips → sync to hidden select + re-render
+      document.getElementById("doc-chip-row")?.addEventListener("click", (e) => {
+        const chip = e.target.closest("[data-doc-type-chip]");
+        if (!chip) return;
+        document.querySelectorAll("#doc-chip-row [data-doc-type-chip]").forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+        const sel = document.getElementById("doc-filter-type");
+        if (sel) { sel.value = chip.getAttribute("data-doc-type-chip"); }
+        renderDocuments();
+      });
+
+      // Quick terms save
+      document.getElementById("quick-terms-save")?.addEventListener("click", async () => {
+        const statusEl = document.getElementById("quick-terms-status");
+        const cancelEl = document.getElementById("quick-cancellation-policy");
+        const termsEl = document.getElementById("quick-contract-terms");
+        statusEl.textContent = "Saving…";
+        statusEl.style.color = "";
+        try {
+          await saveConfigPatch({
+            cancellationPolicy: cancelEl.value.trim(),
+            contractTerms: termsEl.value.trim(),
+          });
+          statusEl.style.color = "var(--success)";
+          statusEl.textContent = "✓ Saved";
+          setTimeout(() => { statusEl.textContent = ""; }, 3000);
+        } catch (err) {
+          statusEl.style.color = "var(--danger)";
+          statusEl.textContent = err.message || "Could not save.";
+        }
+      });
+
+      // Pre-fill quick terms when docs tab loads
+      document.addEventListener("bd-session-updated", () => {
+        const cfg = sessionState?.workspace?.config || {};
+        const cancelEl = document.getElementById("quick-cancellation-policy");
+        const termsEl = document.getElementById("quick-contract-terms");
+        if (cancelEl && !cancelEl.dataset.prefilled) { cancelEl.value = cfg.cancellationPolicy || ""; cancelEl.dataset.prefilled = "1"; }
+        if (termsEl && !termsEl.dataset.prefilled) { termsEl.value = cfg.contractTerms || ""; termsEl.dataset.prefilled = "1"; }
+      });
 
       // ─── Document edit modal ───
       const docEditModal = document.getElementById("doc-edit-modal");
@@ -6916,6 +6997,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
         portfolioImages = parsePortfolio(cfg.portfolioImages);
         renderPortfolioGrid();
+        // Pre-fill custom domain input
+        const domainInput = document.getElementById("custom-domain-input");
+        if (domainInput && cfg.customDomain) domainInput.value = cfg.customDomain;
+        // Re-apply quick terms (in case docs tab hasn't been opened yet)
+        const cancelEl = document.getElementById("quick-cancellation-policy");
+        const termsEl = document.getElementById("quick-contract-terms");
+        if (cancelEl) { cancelEl.value = cfg.cancellationPolicy || ""; cancelEl.dataset.prefilled = "1"; }
+        if (termsEl) { termsEl.value = cfg.contractTerms || ""; termsEl.dataset.prefilled = "1"; }
       }
 
       function refreshMyPagePreview() {
