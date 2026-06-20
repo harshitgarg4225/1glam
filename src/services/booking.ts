@@ -209,6 +209,8 @@ export type CreateLeadInput = {
   clientTags?: string;
   inboundMessage?: string;
   referredBy?: string;
+  // Client's preferred specialist (from booking page staff picker). Empty = no preference.
+  preferredArtist?: string;
 };
 
 export async function createLeadForWorkspace(
@@ -272,7 +274,7 @@ export async function createLeadForWorkspace(
     ownerDecision: "",
     ownerNotes: "",
     status: "New",
-    assignedArtist: workspace.config.ownerName || "Owner",
+    assignedArtist: input.preferredArtist || workspace.config.ownerName || "Owner",
     lastContactedAt: createdAt,
     tentativeCalendarEventId: "",
     confirmedCalendarEventId: "",

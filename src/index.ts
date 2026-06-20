@@ -70,7 +70,7 @@ import {
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
 import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
-import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability } from "./services/public-booking.js";
+import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability, getPublicArtists } from "./services/public-booking.js";
 import { buildServicesContext, computeInsights } from "./services/insights.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
 import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply, listGmbPosts, createGmbPost, getReputationSummary } from "./services/gmb.js";
@@ -509,6 +509,15 @@ app.get("/api/public/:workspaceId/slots", async (req, res, next) => {
     );
     if (!result) return res.status(404).json({ error: "Booking page not found" });
     res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/public/:workspaceId/artists", async (req, res, next) => {
+  try {
+    const artists = await getPublicArtists(String(req.params.workspaceId));
+    res.json({ ok: true, artists });
   } catch (error) {
     next(error);
   }

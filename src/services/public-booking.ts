@@ -9,6 +9,7 @@ import { sendWhatsAppTemplate } from "./messaging.js";
 import { ensureSheetTab } from "./sheets-util.js";
 import { sheetNames } from "./sheet-definitions.js";
 import { parsePromoCode, promoCodeToRow, promoCodeHeaders, validatePromo } from "./promo-codes.js";
+import { listArtists } from "./team.js";
 import type { Credentials } from "google-auth-library";
 import type { WorkspaceConfig, WorkspaceRecord } from "../types.js";
 
@@ -193,6 +194,7 @@ export type PublicBookingInput = {
   addons?: string;
   notes?: string;
   promoCode?: string;
+  preferredArtist?: string;
 };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -421,6 +423,7 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
       eventTime: input.eventTime,
       locationText: input.locationText,
       inboundMessage,
+      preferredArtist: input.preferredArtist,
     });
     return { waitlisted, result };
   });
@@ -564,6 +567,26 @@ export async function getPublicPaymentDetails(
     tipsEnabled: config.tipsEnabled === "Yes",
     bookingId: lead.bookingId || "",
   };
+}
+
+export type PublicArtist = {
+  name: string;
+  skillLevel: string;
+  bio: string;
+};
+
+export async function getPublicArtists(workspaceId: string): Promise<PublicArtist[]> {
+  const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+  if (!workspace) return [];
+  try {
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    const artists = await listArtists(workspace.email, tokens);
+    return artists
+      .filter((a) => a.active !== "No")
+      .map((a) => ({ name: a.name, skillLevel: a.skillLevel, bio: a.bio }));
+  } catch {
+    return [];
+  }
 }
 
 export async function submitPaymentScreenshot(

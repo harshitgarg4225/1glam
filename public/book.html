@@ -70,6 +70,13 @@
       .variant-name { font-weight: 600; font-size: 14.5px; }
       .variant-price { font-size: 13px; color: var(--accent); font-weight: 600; margin-top: 2px; }
       .variant-desc { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+      .staff-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 10px 0 16px; }
+      .staff-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; cursor: pointer; background: var(--card); text-align: left; font: inherit; color: var(--text); transition: border-color 0.15s, background 0.15s; }
+      .staff-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+      .staff-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .staff-name { font-weight: 600; font-size: 14.5px; }
+      .staff-level { font-size: 12px; color: var(--muted); margin-top: 2px; }
+      .staff-bio { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .slots { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
       .slot { padding: 9px 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
       .slot:hover { border-color: var(--accent); background: var(--accent-soft); }
@@ -239,6 +246,11 @@
             <p class="addons-heading">A few quick questions</p>
             <div id="intake-questions"></div>
           </div>
+          <div id="staff-wrap" style="display:none;margin-top:16px;">
+            <p class="addons-heading">Choose your specialist</p>
+            <div class="staff-list" id="staff-list"></div>
+            <input type="hidden" id="preferredArtist" />
+          </div>
         </div>
 
         <form id="form">
@@ -370,10 +382,39 @@
           if (!res.ok) throw new Error("not found");
           const data = await res.json();
           renderProfile(data.profile);
+          // Fetch team members (non-blocking, optional)
+          fetch("/api/public/" + encodeURIComponent(workspaceId) + "/artists")
+            .then((r) => r.json())
+            .then((d) => { if (d.ok && d.artists && d.artists.length > 0) renderStaffList(d.artists); })
+            .catch(() => {});
         } catch (error) {
           hide("loading");
           show("not-found");
         }
+      }
+
+      function renderStaffList(artists) {
+        const wrap = document.getElementById("staff-wrap");
+        const list = document.getElementById("staff-list");
+        if (!wrap || !list) return;
+        // "No preference" option first
+        const cards = [{ name: "", skillLevel: "", bio: "Let the studio assign the best available specialist." }].concat(artists);
+        list.innerHTML = cards.map((a, i) => {
+          const isNoPref = a.name === "";
+          return `<button type="button" class="staff-card${i === 0 ? " selected" : ""}" data-artist="${a.name}">
+            <div class="staff-name">${isNoPref ? "No preference" : a.name}</div>
+            ${!isNoPref && a.skillLevel ? '<div class="staff-level">' + a.skillLevel + '</div>' : ""}
+            ${a.bio ? '<div class="staff-bio">' + a.bio + '</div>' : ""}
+          </button>`;
+        }).join("");
+        wrap.style.display = "";
+        list.addEventListener("click", (e) => {
+          const card = e.target.closest(".staff-card");
+          if (!card) return;
+          list.querySelectorAll(".staff-card").forEach((c) => c.classList.remove("selected"));
+          card.classList.add("selected");
+          document.getElementById("preferredArtist").value = card.getAttribute("data-artist");
+        });
       }
 
       // Apply a brand accent colour by overriding the CSS variables. We derive a
@@ -927,6 +968,7 @@
           clientInstagram: el("clientInstagram").value.trim() || undefined,
           notes: [el("notes").value.trim(), variantNote, intakeNote].filter(Boolean).join("\n") || undefined,
           promoCode: appliedPromoCode || undefined,
+          preferredArtist: el("preferredArtist")?.value || undefined,
         };
 
         const submitBtn = el("submit");

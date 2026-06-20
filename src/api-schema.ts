@@ -30,6 +30,7 @@ export const publicBookingSchema = z.object({
   addons: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
   promoCode: z.string().max(40).optional(),
+  preferredArtist: z.string().max(80).optional(),
 });
 
 // One-shot walk-in/phone booking: creates the lead and confirms it in a single
