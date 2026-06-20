@@ -531,6 +531,12 @@ app.get("/pay/:workspaceId/:leadId", (_req, res) => {
   res.sendFile(path.join(process.cwd(), "public", "pay.html"));
 });
 
+// Client appointment hub — unified page showing booking summary, payment status,
+// and links to pay / sign / reschedule / cancel.
+app.get("/appointment/:workspaceId/:leadId", (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "public", "appointment.html"));
+});
+
 // Built-in contract signing page (no Leegality needed). The link carries the
 // same HMAC token as the public contract PDF, so only the client who received
 // the contract can open or sign it.

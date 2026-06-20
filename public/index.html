@@ -5369,6 +5369,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                   <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance reminder</button>
                 </div>
                 <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:5px;">
+                  <button class="button small secondary" data-booking-appt-link="${escapeHtml(booking.leadId)}">🔗 Client portal</button>
                   <button class="button small secondary" data-booking-reschedule="${booking.bookingId}">📅 Reschedule / edit</button>
                   <button class="button small secondary" data-booking-reschedule-link="${booking.bookingId}">🔗 Send reschedule link</button>
                   <button class="button small secondary" data-booking-cancel-link="${booking.bookingId}">🔗 Send cancel link</button>
@@ -9101,6 +9102,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       bookingsBody.addEventListener("click", async (e) => {
         const rp = e.target.closest("[data-booking-record-payment]");
         if (rp) { openPaymentModal(rp.getAttribute("data-booking-record-payment")); return; }
+
+        const apl = e.target.closest("[data-booking-appt-link]");
+        if (apl) {
+          const leadId = apl.getAttribute("data-booking-appt-link");
+          const wsId = sessionState?.workspace?.workspaceId;
+          if (!wsId || !leadId) { toast("Link unavailable.", "error"); return; }
+          const url = `${window.location.origin}/appointment/${encodeURIComponent(wsId)}/${encodeURIComponent(leadId)}`;
+          await navigator.clipboard.writeText(url).catch(() => null);
+          toast("Client portal link copied to clipboard!", "success");
+          return;
+        }
+
         const rs = e.target.closest("[data-booking-reschedule]");
         if (rs) { openReschedule(rs.getAttribute("data-booking-reschedule")); return; }
         const rsl = e.target.closest("[data-booking-reschedule-link]");

@@ -78,6 +78,8 @@ export type PublicPaymentDetails = {
   clientName: string;
   eventType: string;
   eventDate: string;
+  eventTime: string;
+  venue: string;
   finalApprovedPrice: number;
   advanceAmount: number;
   balanceDue: number;
@@ -92,6 +94,8 @@ export type PublicPaymentDetails = {
   onlinePayAvailable: boolean;
   razorpayKeyId: string;
   tipsEnabled: boolean;
+  // bookingId if the lead has been confirmed into a booking.
+  bookingId: string;
 };
 
 const WEEKDAY_INDEX: Record<string, number> = {
@@ -545,6 +549,8 @@ export async function getPublicPaymentDetails(
     clientName: lead.clientName,
     eventType: lead.eventType,
     eventDate: lead.eventDate,
+    eventTime: lead.eventTime || "",
+    venue: lead.locationText || "",
     finalApprovedPrice: lead.finalApprovedPrice,
     advanceAmount,
     balanceDue,
@@ -556,6 +562,7 @@ export async function getPublicPaymentDetails(
     onlinePayAvailable: Boolean(config.razorpayKeyId && config.razorpayKeySecret),
     razorpayKeyId: config.razorpayKeyId || "",
     tipsEnabled: config.tipsEnabled === "Yes",
+    bookingId: lead.bookingId || "",
   };
 }
 
