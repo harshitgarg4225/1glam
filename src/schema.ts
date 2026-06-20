@@ -114,6 +114,7 @@ export const workspaceConfigSchema = z.object({
   winbackTemplateLang: z.string().optional().default("en"),
   birthdayTemplate: z.string().optional().default(""),
   birthdayTemplateLang: z.string().optional().default("en"),
+  customDomain: z.string().optional().default(""),
   documentTemplate: z.string().optional().default("classic"),
   quoteIntro: z.string().optional().default(""),
   cancellationPolicy: z.string().optional().default(""),

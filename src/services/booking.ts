@@ -173,6 +173,8 @@ export type BookingRecord = {
   contractViewedAt: string;
   // Date the invoice payment is due (ISO date string, e.g. "2026-07-15").
   invoiceDueDate: string;
+  // ISO timestamp when client checked in / arrived for this appointment.
+  arrivedAt: string;
 };
 
 export type DashboardData = {
@@ -511,6 +513,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     invoiceViewedAt: "",
     contractViewedAt: "",
     invoiceDueDate: "",
+    arrivedAt: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -1890,6 +1893,7 @@ function bookingToRow(booking: BookingRecord) {
     booking.invoiceViewedAt,
     booking.contractViewedAt,
     booking.invoiceDueDate,
+    booking.arrivedAt,
   ];
 }
 
@@ -1931,6 +1935,7 @@ function rowToBooking(row: string[]): BookingRecord {
     invoiceViewedAt: row[33] ?? "",
     contractViewedAt: row[34] ?? "",
     invoiceDueDate: row[35] ?? "",
+    arrivedAt: row[36] ?? "",
   };
 }
 

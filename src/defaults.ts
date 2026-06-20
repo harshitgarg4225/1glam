@@ -111,6 +111,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     winbackTemplateLang: "en",
     birthdayTemplate: "",
     birthdayTemplateLang: "en",
+    customDomain: "",
     documentTemplate: "classic",
     quoteIntro: "",
     cancellationPolicy: "",

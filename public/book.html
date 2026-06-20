@@ -171,6 +171,24 @@
       .cta-go:active:not(:disabled) { transform: scale(0.98); }
       .cta-go:disabled { opacity: 0.6; cursor: default; }
       body.cta-on .shell { padding-bottom: 84px; }
+
+      /* Next available dates quick strip (Savspot-style) */
+      .quick-dates-wrap { margin: -4px 0 14px; }
+      .quick-dates-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+      .quick-dates-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+      .quick-dates-row::-webkit-scrollbar { display: none; }
+      .quick-date-chip {
+        flex: 0 0 auto; padding: 9px 15px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--card); font: inherit; font-size: 13.5px; cursor: pointer;
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+        transition: border-color 0.12s, background 0.12s; touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent; min-width: 68px;
+      }
+      .quick-date-chip:active { transform: scale(0.95); }
+      .quick-date-chip:hover, .quick-date-chip.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .quick-date-chip .qd-day { font-size: 12px; color: var(--muted); font-weight: 500; }
+      .quick-date-chip .qd-date { font-size: 15px; font-weight: 700; }
+      .quick-date-chip .qd-mon { font-size: 11px; color: var(--muted); }
     </style>
   </head>
   <body>
@@ -223,6 +241,10 @@
         <form id="form">
           <div>
             <label>Event date</label>
+            <div id="quick-dates-wrap" class="quick-dates-wrap" style="display:none;">
+              <div class="quick-dates-label">Next available</div>
+              <div class="quick-dates-row" id="quick-dates-row"></div>
+            </div>
             <div class="cal" id="calendar"></div>
             <input type="hidden" id="eventDate" />
             <div class="selected-date muted" id="selected-date">No date selected yet.</div>
@@ -537,10 +559,56 @@
         if ((avail.blockedDates || []).includes(iso)) return true;
         return false;
       }
+      const SHORT_MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      function renderQuickDates(avail) {
+        const row = el("quick-dates-row");
+        const wrap = el("quick-dates-wrap");
+        if (!row || !wrap) return;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const start = avail.minDate ? new Date(avail.minDate + "T00:00:00Z") : today;
+        const from = start > today ? start : today;
+        const chips = [];
+        let d = new Date(from);
+        while (chips.length < 6 && chips.length < 60) {
+          const iso = d.toISOString().slice(0,10);
+          if (!isDisabledDate(iso, avail)) {
+            chips.push({ iso, day: DOW[d.getUTCDay()], date: d.getUTCDate(), mon: SHORT_MON[d.getUTCMonth()] });
+          }
+          d.setUTCDate(d.getUTCDate() + 1);
+          if (chips.length === 0 && (d - from) > 1000*60*60*24*120) break;
+        }
+        if (!chips.length) { wrap.style.display = "none"; return; }
+        wrap.style.display = "";
+        const sel = el("eventDate").value;
+        row.innerHTML = chips.map((c) =>
+          `<button class="quick-date-chip${c.iso === sel ? " selected" : ""}" type="button" data-qd-iso="${c.iso}">
+            <span class="qd-day">${c.day}</span><span class="qd-date">${c.date}</span><span class="qd-mon">${c.mon}</span>
+          </button>`
+        ).join("");
+        row.addEventListener("click", (e) => {
+          const btn = e.target.closest("[data-qd-iso]");
+          if (!btn) return;
+          const iso = btn.getAttribute("data-qd-iso");
+          el("eventDate").value = iso;
+          el("selected-date").textContent = "Selected: " + iso;
+          document.querySelectorAll(".cal-day").forEach((c) => c.classList.toggle("selected", c.dataset.iso === iso));
+          document.querySelectorAll(".quick-date-chip").forEach((c) => c.classList.toggle("selected", c.dataset.qdIso === iso));
+          // Scroll cal to the right month
+          if (calState) {
+            const dt = new Date(iso + "T00:00:00Z");
+            calState.y = dt.getUTCFullYear(); calState.m = dt.getUTCMonth();
+            renderCal();
+          }
+          // Trigger time slots if needed
+          const changeEvt = new Event("change", { bubbles: true });
+          el("eventDate").dispatchEvent(changeEvt);
+        }, { once: false });
+      }
       function initCalendar(avail) {
         const start = avail.minDate ? new Date(avail.minDate + "T00:00:00Z") : new Date();
         calState = { y: start.getUTCFullYear(), m: start.getUTCMonth(), avail };
         renderCal();
+        renderQuickDates(avail);
       }
       function renderCal() {
         if (!calState) return;

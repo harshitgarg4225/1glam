@@ -120,6 +120,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   winbackTemplateLang: string;
   birthdayTemplate: string;
   birthdayTemplateLang: string;
+  // Custom domain for the booking page (e.g. "bookings.glowbyaisha.com").
+  customDomain: string;
   documentTemplate: string;
   quoteIntro: string;
   cancellationPolicy: string;

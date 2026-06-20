@@ -981,7 +981,8 @@
           transform: scale(0.975); transition: transform 0.05s ease;
         }
         /* The active bottom-tab icon pops, the way native tab bars confirm a switch. */
-        .bnav-item.active .bnav-icon { animation: bnav-pop 0.32s cubic-bezier(.22,.68,0,1.3); }
+        .bnav-item.active .bnav-icon,
+        .bnav-item.active .bnav-svg { animation: bnav-pop 0.32s cubic-bezier(.22,.68,0,1.3); }
         @keyframes bnav-pop { 0% { transform: scale(1); } 45% { transform: scale(1.28); } 100% { transform: scale(1); } }
 
         /* While a sheet/drawer is being finger-dragged, drop the transition so it
@@ -1003,6 +1004,154 @@
       }
       #bd-ptr.bd-ptr-armed .bd-ptr-spinner { opacity: 1; }
       #bd-ptr.bd-ptr-spinning .bd-ptr-spinner { animation: bd-spin 0.7s linear infinite; opacity: 1; }
+
+      /* ─── Mobile FAB (floating action button for New Booking) ─── */
+      .mobile-fab {
+        display: none;
+      }
+      @media (max-width: 640px) {
+        .mobile-fab {
+          display: flex; align-items: center; justify-content: center;
+          position: fixed;
+          bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+          right: 18px;
+          width: 56px; height: 56px;
+          background: var(--accent);
+          color: #fff;
+          border-radius: 50%;
+          border: none;
+          box-shadow: 0 6px 20px rgba(194,107,69,0.38), 0 2px 8px rgba(0,0,0,0.12);
+          cursor: pointer;
+          z-index: 6800;
+          transition: transform 0.15s, box-shadow 0.15s;
+          font-size: 26px; line-height: 1;
+          -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+        }
+        .mobile-fab:active { transform: scale(0.88); box-shadow: 0 3px 10px rgba(194,107,69,0.28); }
+      }
+
+      /* ─── Filter chip row (Myntra-style horizontal scroll, mobile-only) ─── */
+      .filter-chips-row {
+        display: none;
+      }
+      @media (max-width: 640px) {
+        /* Chip row visible only on mobile */
+        .filter-chips-row {
+          display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 10px;
+          -webkit-overflow-scrolling: touch; scrollbar-width: none;
+          margin-top: 10px;
+        }
+        .filter-chips-row::-webkit-scrollbar { display: none; }
+        /* Hide the desktop-style dropdown filter bar on phones when chips are present */
+        .filter-bar.desktop-only-filters { display: none; }
+      }
+      .filter-chip {
+        flex: 0 0 auto; cursor: pointer; border: none; font: inherit;
+        background: var(--surface); border: 1px solid var(--line);
+        border-radius: 999px; padding: 7px 15px;
+        font-size: 13.5px; font-weight: 500; color: var(--text);
+        white-space: nowrap;
+        display: inline-flex; align-items: center; gap: 5px;
+        transition: background 0.12s, border-color 0.12s, color 0.12s;
+        -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      }
+      .filter-chip:active { transform: scale(0.95); }
+      .filter-chip.active {
+        background: var(--accent-soft); border-color: var(--accent);
+        color: var(--accent); font-weight: 600;
+      }
+      .filter-chip.action-chip {
+        background: var(--card); border: 1.5px solid var(--line);
+        font-weight: 600;
+      }
+      .filter-chip.action-chip.has-filter {
+        background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+      }
+
+      /* Sort bottom sheet options */
+      .sort-option-btn {
+        width: 100%; padding: 13px 16px; background: none;
+        border: none; border-bottom: 1px solid var(--line);
+        text-align: left; font: inherit; font-size: 15px; cursor: pointer;
+        display: flex; align-items: center; justify-content: space-between;
+        color: var(--text); transition: background 0.1s;
+        -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      }
+      .sort-option-btn:last-child { border-bottom: none; }
+      .sort-option-btn:active { background: var(--surface); }
+      .sort-option-btn.selected { color: var(--accent); font-weight: 600; }
+      .sort-option-btn.selected::after { content: "✓"; font-size: 14px; }
+      .sort-sheet-title { font-size: 16px; font-weight: 700; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+
+      /* ─── Bottom nav SVG icons ─── */
+      .bnav-svg { display: block; width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      .bnav-item.active .bnav-svg { stroke-width: 2.3; }
+
+      /* ─── Compact topbar on mobile ─── */
+      @media (max-width: 640px) {
+        body.has-bottom-nav .topbar {
+          padding: 10px 14px;
+        }
+        body.has-bottom-nav .topbar .account-id { display: none; }
+        body.has-bottom-nav .topbar .brand-title { font-size: 16px; }
+        body.has-bottom-nav .topbar .kicker { display: none; }
+        body.has-bottom-nav #share-link-btn { display: none !important; }
+        body.has-bottom-nav #logout-button { display: none !important; }
+        body.has-bottom-nav #quick-booking-btn { display: none !important; }
+        /* The global search stays visible, just smaller */
+        body.has-bottom-nav #global-search-btn { width: 38px; height: 38px; }
+        /* Credits pill stays but compact */
+        body.has-bottom-nav .credits-pill { font-size: 12px; padding: 5px 10px; }
+        /* Tab panel content: tighter side padding */
+        .tab-panel { padding: 16px 14px; }
+        .panel.section { padding: 16px 14px; }
+      }
+
+      /* ─── Check-in status on upcoming jobs ─── */
+      .check-in-btn {
+        background: var(--success-soft); color: var(--success);
+        border: 1px solid #a7d9b8; border-radius: 8px;
+        font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 5px 10px;
+        -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+        transition: transform 0.1s;
+      }
+      .check-in-btn:active { transform: scale(0.95); }
+      .check-in-badge { display: inline-flex; align-items: center; gap: 4px; background: var(--success-soft); color: var(--success); border: 1px solid #a7d9b8; border-radius: 8px; padding: 4px 8px; font-size: 12px; font-weight: 600; }
+
+      /* ─── Review reply row ─── */
+      .review-reply-row { display: flex; gap: 8px; margin-top: 6px; align-items: flex-start; }
+      .review-reply-row textarea { flex: 1; min-height: 54px; font-size: 13px; resize: none; }
+      .review-note-display { font-size: 12.5px; color: var(--muted); font-style: italic; margin-top: 4px; }
+
+      /* ─── Domain setup guide card ─── */
+      .domain-step { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+      .domain-step:last-child { border-bottom: none; }
+      .domain-step-num { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+      .dns-record-box { display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-top: 6px; }
+      .dns-record-box code { flex: 1; font-family: ui-monospace, monospace; font-size: 12.5px; word-break: break-all; }
+      .dns-copy-btn { flex-shrink: 0; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 12px; cursor: pointer; transition: background 0.1s; }
+      .dns-copy-btn:active { background: var(--line); }
+
+      /* ─── Sticky search bar on mobile (leads & bookings) ─── */
+      @media (max-width: 640px) {
+        .sticky-search-wrap {
+          position: sticky; top: 0; z-index: 200;
+          background: var(--card);
+          margin: -14px -14px 0;
+          padding: 10px 14px 0;
+          border-bottom: 1px solid var(--line);
+        }
+        .sticky-search-wrap input { margin-bottom: 0; }
+      }
+
+      /* ─── My Page portfolio preview strip ─── */
+      .portfolio-preview-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+      .portfolio-preview-strip::-webkit-scrollbar { display: none; }
+      .portfolio-preview-thumb { width: 80px; height: 80px; border-radius: 8px; object-fit: cover; flex: 0 0 auto; border: 1.5px solid var(--line); }
+
+      /* ─── Intake form questions ─── */
+      .intake-question-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 13px; margin: 3px 4px 3px 0; }
+      .intake-question-chip button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; padding: 0 0 0 4px; }
     </style>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
@@ -1295,8 +1444,30 @@
             </div>
           </details>
 
-          <div class="filter-bar" style="margin-top:18px;">
-            <input type="search" id="lead-search" class="grow" placeholder="Search by name, place… (/ to focus)" />
+          <!-- Mobile sticky search + chip filters (Myntra-style) -->
+          <div class="sticky-search-wrap">
+            <input type="search" id="lead-search" class="grow" placeholder="Search by name, place…" style="width:100%;" />
+          </div>
+          <!-- Mobile chip filter row -->
+          <div class="filter-chips-row" id="lead-chip-row">
+            <button class="filter-chip action-chip" type="button" id="lead-sort-chip">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+              Sort
+            </button>
+            <button class="filter-chip action-chip" type="button" id="lead-filter-chip">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              Filter
+            </button>
+            <button class="filter-chip active" type="button" data-lead-event-chip="">All</button>
+            <button class="filter-chip" type="button" data-lead-event-chip="Bridal">Bridal</button>
+            <button class="filter-chip" type="button" data-lead-event-chip="Engagement">Engagement</button>
+            <button class="filter-chip" type="button" data-lead-event-chip="Reception">Reception</button>
+            <button class="filter-chip" type="button" data-lead-event-chip="Party">Party</button>
+            <button class="filter-chip" type="button" data-lead-event-chip="Shoot">Shoot</button>
+            <button class="filter-chip" type="button" data-lead-event-chip="Other">Other</button>
+          </div>
+          <!-- Desktop filter bar (hidden on mobile) -->
+          <div class="filter-bar desktop-only-filters" style="margin-top:18px;">
             <select id="lead-filter-event">
               <option value="">All occasions</option>
               <option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option>
@@ -1319,6 +1490,8 @@
             </div>
             <span class="muted" id="lead-count"></span>
           </div>
+          <!-- Lead count (mobile only) -->
+          <span class="muted" id="lead-count-mobile" style="font-size:12.5px;padding:2px 0 6px;display:none;"></span>
           <div class="board-swipe-hint" id="board-swipe-hint">👈 Swipe sideways to see every stage — New → Waiting → Confirmed → Paid 👉</div>
           <div class="board" id="leads-board"></div>
           <p class="muted" style="margin-top:12px;font-size:13px;">Tap any card to see details and actions, or drag it to the next column.</p>
@@ -1335,8 +1508,29 @@
             </div>
             <button class="button" type="button" data-open-quick-booking>➕ New booking</button>
           </div>
-          <div class="filter-bar">
-            <input type="search" id="booking-search" class="grow" placeholder="Search client, venue, booking id..." />
+          <!-- Mobile sticky search -->
+          <div class="sticky-search-wrap">
+            <input type="search" id="booking-search" class="grow" placeholder="Search client, venue, booking id…" style="width:100%;" />
+          </div>
+          <!-- Mobile chip filter row -->
+          <div class="filter-chips-row" id="booking-chip-row">
+            <button class="filter-chip action-chip" type="button" id="booking-sort-chip">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+              Sort
+            </button>
+            <button class="filter-chip action-chip" type="button" id="booking-filter-chip">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              Filter
+            </button>
+            <button class="filter-chip active" type="button" data-booking-event-chip="">All types</button>
+            <button class="filter-chip" type="button" data-booking-event-chip="Bridal">Bridal</button>
+            <button class="filter-chip" type="button" data-booking-event-chip="Engagement">Engagement</button>
+            <button class="filter-chip" type="button" data-booking-event-chip="Reception">Reception</button>
+            <button class="filter-chip" type="button" data-booking-event-chip="Party">Party</button>
+            <button class="filter-chip" type="button" data-booking-event-chip="Shoot">Shoot</button>
+          </div>
+          <!-- Desktop filter bar (hidden on mobile) -->
+          <div class="filter-bar desktop-only-filters">
             <select id="booking-filter-event">
               <option value="">All event types</option>
               <option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option>
@@ -2140,6 +2334,62 @@
           </div>
         </div>
 
+        <!-- Custom domain guide (Task 2) -->
+        <div class="panel section" style="margin-bottom:20px;">
+          <details id="domain-guide-details">
+            <summary class="more-summary" style="font-size:15px;font-weight:600;color:var(--text);">🌐 Connect a custom domain</summary>
+            <div style="margin-top:14px;">
+              <p class="muted" style="margin:0 0 14px;font-size:13.5px;">Point your own domain (e.g. <strong>bookings.glowbyaisha.com</strong>) to your BusyDays page. Takes 5 minutes — just follow the three steps below in your domain provider's DNS settings.</p>
+              <div id="domain-guide-steps">
+                <div class="domain-step">
+                  <div class="domain-step-num">1</div>
+                  <div>
+                    <strong style="font-size:14px;">Create a CNAME record</strong>
+                    <p class="muted" style="margin:4px 0 0;font-size:13px;">In your domain provider (GoDaddy, Namecheap, Cloudflare, etc.), add a CNAME record pointing your subdomain to BusyDays:</p>
+                    <div class="dns-record-box">
+                      <div>
+                        <div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Type</div>
+                        <code>CNAME</code>
+                      </div>
+                      <div style="flex:1;">
+                        <div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Name / Host</div>
+                        <code>bookings</code>
+                      </div>
+                      <div style="flex:2;">
+                        <div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Points to</div>
+                        <code id="domain-cname-target">busydays.app</code>
+                      </div>
+                      <button class="dns-copy-btn" type="button" data-copy="busydays.app">Copy</button>
+                    </div>
+                    <p class="muted" style="margin:6px 0 0;font-size:12px;">Replace <em>bookings</em> with any subdomain you like — <em>book</em>, <em>appointments</em>, your first name, etc.</p>
+                  </div>
+                </div>
+                <div class="domain-step">
+                  <div class="domain-step-num">2</div>
+                  <div>
+                    <strong style="font-size:14px;">Enter your subdomain below</strong>
+                    <p class="muted" style="margin:4px 0 8px;font-size:13px;">Tell BusyDays which subdomain to serve your page on:</p>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                      <input type="text" id="custom-domain-input" placeholder="bookings.glowbyaisha.com" style="flex:1;min-width:200px;" />
+                      <button class="button small" type="button" id="custom-domain-save">Save</button>
+                    </div>
+                    <div class="status" id="custom-domain-status" style="margin-top:6px;"></div>
+                  </div>
+                </div>
+                <div class="domain-step">
+                  <div class="domain-step-num">3</div>
+                  <div>
+                    <strong style="font-size:14px;">Wait for DNS to propagate (up to 24h)</strong>
+                    <p class="muted" style="margin:4px 0 8px;font-size:13px;">DNS changes take a few minutes to a few hours to spread worldwide. Once it's live, clients visiting your custom domain will see your BusyDays booking page.</p>
+                    <button class="button small secondary" type="button" id="domain-verify-btn">Check if it's live</button>
+                    <span id="domain-verify-result" style="font-size:13px;margin-left:10px;"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+
         <form id="mypage-form" class="panel section">
           <div class="kicker">Make it yours</div>
           <h2>Branding &amp; intro</h2>
@@ -2823,13 +3073,44 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
     <!-- Bottom navigation (mobile): thumb-zone access to the 4 daily tabs -->
     <nav class="bottom-nav requires-auth" id="bottom-nav" style="display:none;">
-      <button class="bnav-item active" type="button" data-tab="dashboard"><span class="bnav-icon">🏠</span><span>Today</span></button>
-      <button class="bnav-item" type="button" data-tab="leads"><span class="bnav-icon">📩</span><span>Requests</span><span class="bnav-badge" id="bnav-badge-leads" style="display:none;"></span></button>
-      <button class="bnav-item" type="button" data-tab="bookings"><span class="bnav-icon">📅</span><span>Bookings</span></button>
-      <button class="bnav-item" type="button" data-tab="documents"><span class="bnav-icon">📄</span><span>Docs</span></button>
-      <button class="bnav-item" type="button" data-tab="conversations"><span class="bnav-icon">💬</span><span>Messages</span><span class="bnav-badge" id="bnav-badge-messages" style="display:none;"></span></button>
-      <button class="bnav-item" type="button" id="bnav-more"><span class="bnav-icon">☰</span><span>More</span></button>
+      <button class="bnav-item active" type="button" data-tab="dashboard">
+        <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        <span>Today</span>
+      </button>
+      <button class="bnav-item" type="button" data-tab="leads">
+        <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+        <span>Requests</span><span class="bnav-badge" id="bnav-badge-leads" style="display:none;"></span>
+      </button>
+      <button class="bnav-item" type="button" data-tab="bookings">
+        <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span>Bookings</span>
+      </button>
+      <button class="bnav-item" type="button" data-tab="documents">
+        <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <span>Docs</span>
+      </button>
+      <button class="bnav-item" type="button" data-tab="conversations">
+        <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        <span>Messages</span><span class="bnav-badge" id="bnav-badge-messages" style="display:none;"></span>
+      </button>
+      <button class="bnav-item" type="button" id="bnav-more">
+        <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="5" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"/><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg>
+        <span>More</span>
+      </button>
     </nav>
+
+    <!-- Mobile FAB: + New Booking button above the bottom nav -->
+    <button class="mobile-fab requires-auth" type="button" id="mobile-fab-btn" aria-label="New booking" style="display:none;">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+
+    <!-- Sort bottom sheet -->
+    <div class="modal-overlay" id="sort-sheet">
+      <div class="modal" style="max-width:420px;padding:0;overflow:hidden;">
+        <div class="sort-sheet-title" id="sort-sheet-title">Sort by</div>
+        <div id="sort-sheet-options"></div>
+      </div>
+    </div>
 
     <!-- More sheet (mobile): everything else, including Settings front and centre -->
     <div class="modal-overlay" id="bnav-sheet">
@@ -4750,6 +5031,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       let leadsViewMode = "board";
+      let leadSortKey = "date-asc";
+      let bookingSortKey = "date-asc";
 
       function statusDotClass(status) {
         if (["Confirmed", "Payment Received", "Completed"].includes(status)) return "success";
@@ -4758,16 +5041,37 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         return "";
       }
 
+      function applyLeadSort(leads) {
+        const arr = [...leads];
+        switch (leadSortKey) {
+          case "date-desc": return arr.sort((a, b) => (daysUntil(b.eventDate) ?? 9999) - (daysUntil(a.eventDate) ?? 9999));
+          case "price-desc": return arr.sort((a, b) => Number(b.finalApprovedPrice || b.initialAiPrice || 0) - Number(a.finalApprovedPrice || a.initialAiPrice || 0));
+          case "price-asc": return arr.sort((a, b) => Number(a.finalApprovedPrice || a.initialAiPrice || 0) - Number(b.finalApprovedPrice || b.initialAiPrice || 0));
+          case "newest": return arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+          default: return arr.sort((a, b) => (daysUntil(a.eventDate) ?? 9999) - (daysUntil(b.eventDate) ?? 9999));
+        }
+      }
+      function applyBookingSort(bookings) {
+        const arr = [...bookings];
+        switch (bookingSortKey) {
+          case "date-desc": return arr.sort((a, b) => new Date(b.eventDate) - new Date(a.eventDate));
+          case "price-desc": return arr.sort((a, b) => Number(b.finalPrice || 0) - Number(a.finalPrice || 0));
+          case "price-asc": return arr.sort((a, b) => Number(a.finalPrice || 0) - Number(b.finalPrice || 0));
+          case "due-desc": return arr.sort((a, b) => {
+            const dueA = Math.max(0, Number(a.finalPrice || 0) - bookingPaidTotal(a));
+            const dueB = Math.max(0, Number(b.finalPrice || 0) - bookingPaidTotal(b));
+            return dueB - dueA;
+          });
+          default: return arr.sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
+        }
+      }
+
       function renderLeadList(leads) {
         if (!leads.length) {
           leadsBoard.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>No matches</h3><p>Try adjusting your filters above.</p></div>`;
           return;
         }
-        const sorted = [...leads].sort((a, b) => {
-          const da = daysUntil(a.eventDate) ?? 9999;
-          const db = daysUntil(b.eventDate) ?? 9999;
-          return da - db;
-        });
+        const sorted = applyLeadSort(leads);
         leadsBoard.innerHTML = `<div class="lead-list">${sorted.map((lead) => {
           const days = daysUntil(lead.eventDate);
           const daysStr = days === null ? "" :
@@ -4801,7 +5105,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       function renderLeads() {
         const leads = filteredLeads();
-        document.getElementById("lead-count").textContent = `${leads.length} shown`;
+        const countText = `${leads.length} shown`;
+        document.getElementById("lead-count").textContent = countText;
+        const mobileCount = document.getElementById("lead-count-mobile");
+        if (mobileCount) { mobileCount.textContent = countText; mobileCount.style.display = leads.length ? "" : "none"; }
         const totalLeads = (sessionState?.dashboard?.leads || []).length;
         if (totalLeads === 0) {
           leadsBoard.classList.remove("list-mode");
@@ -4896,7 +5203,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           bookingsBody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📅</div><h3>No bookings here yet</h3><p>When you confirm a request it lands here — with one-tap invoices, contracts and payment tracking. Share your booking link to get the first one in.</p><button class="button" type="button" data-share-booking-link style="margin-top:10px;">🔗 Copy my booking link</button></div></td></tr>`;
           return;
         }
-        bookingsBody.innerHTML = bookings.map((booking) => {
+        bookingsBody.innerHTML = applyBookingSort(bookings).map((booking) => {
           const paid = bookingPaidTotal(booking);
           const owed = Math.max(0, Number(booking.finalPrice || 0) - paid);
           const payPill = booking.paymentStatus === "Paid in Full"
@@ -5057,11 +5364,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const when = days === 0 ? "Today" : days === 1 ? "Tomorrow" : `in ${days} days`;
           const mapHref = b.venue ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.venue)}` : "";
           const paid = pillClass(b.paymentStatus || b.status);
+          const isToday = days === 0;
+          const checkedIn = b.arrivedAt;
+          const checkInHtml = isToday
+            ? checkedIn
+              ? `<span class="check-in-badge">✓ Arrived ${formatDate(b.arrivedAt)}</span>`
+              : `<button class="check-in-btn" type="button" data-check-in="${escapeHtml(b.bookingId)}">Mark arrived</button>`
+            : "";
           return `
-            <div class="upcoming-item">
+            <div class="upcoming-item" style="${isToday ? "border-color:var(--accent);border-left:3px solid var(--accent);" : ""}">
               <div class="upcoming-date">
                 <span class="upcoming-day">${escapeHtml(formatDay(b.eventDate))}</span>
-                <span class="upcoming-rel">${when}</span>
+                <span class="upcoming-rel" style="${isToday ? "color:var(--accent);font-weight:700;" : ""}">${when}</span>
               </div>
               <div class="upcoming-body">
                 <div class="upcoming-client">${escapeHtml(b.clientName)} · <span class="muted">${escapeHtml(b.eventType)}</span></div>
@@ -5070,11 +5384,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 </div>
                 ${b.venue ? `<div class="upcoming-meta">📍 ${mapHref ? `<a href="${mapHref}" target="_blank" rel="noreferrer">${escapeHtml(b.venue)}</a>` : escapeHtml(b.venue)}</div>` : ""}
                 ${travelBadgeHtml(b)}
+                ${checkInHtml ? `<div style="margin-top:6px;">${checkInHtml}</div>` : ""}
               </div>
               <div class="upcoming-right">
                 <span class="${paid}" style="font-size:11px;">${escapeHtml(b.paymentStatus || b.status)}</span>
                 ${Number(b.finalPrice || 0) > 0 ? `<span class="upcoming-amt">${formatMoney(b.finalPrice)}</span>` : ""}
-                ${b.clientWhatsApp ? `<a class="button tiny secondary" style="text-decoration:none;" href="https://wa.me/${b.clientWhatsApp.replace(/\D/g, "")}" target="_blank" rel="noreferrer">💬 Message</a>` : ""}
+                ${b.clientWhatsApp ? `<a class="button tiny secondary" style="text-decoration:none;" href="https://wa.me/${b.clientWhatsApp.replace(/\D/g, "")}" target="_blank" rel="noreferrer">💬</a>` : ""}
               </div>
             </div>`;
         }).join("")}</div>`;
@@ -5973,22 +6288,45 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <td>${r.reminderSentAt ? formatDate(r.reminderSentAt) : "—"}</td>
             <td><span class="pill ${r.reviewConfirmed === "Yes" ? "success" : "warning"}">${r.reviewConfirmed === "Yes" ? "✓ Yes" : "Pending"}</span></td>
             <td>
-              ${r.reviewConfirmed !== "Yes" ? `<button class="button tiny" data-review-confirm="${escapeHtml(r.reviewId)}">Mark Confirmed</button>` : ""}
+              ${r.reviewConfirmed !== "Yes" ? `<button class="button tiny" data-review-confirm="${escapeHtml(r.reviewId)}">Mark received</button>` : ""}
+              <div class="review-reply-row" style="margin-top:${r.reviewConfirmed !== "Yes" ? "6px" : "0"};">
+                <textarea placeholder="Private note about this review…" rows="2" data-review-note-id="${escapeHtml(r.reviewId)}">${escapeHtml(r.reviewNote || "")}</textarea>
+                <button class="button tiny secondary" type="button" data-review-note-save="${escapeHtml(r.reviewId)}">Save</button>
+              </div>
+              ${r.reviewNote ? `<div class="review-note-display">Note: ${escapeHtml(r.reviewNote)}</div>` : ""}
             </td>
           </tr>`).join("");
       }
       document.getElementById("reviews-table-body").addEventListener("click", async (e) => {
-        const reviewId = e.target.closest("[data-review-confirm]")?.getAttribute("data-review-confirm");
-        if (!reviewId) return;
-        const btn = e.target.closest("[data-review-confirm]");
-        setLoading(btn, "…");
-        try {
-          await postJson(`/api/reviews/${reviewId}/confirm`, {});
-          toast("Review marked confirmed.", "success");
-          loadReviews();
-        } catch (error) {
-          toast(error.message, "error");
-          clearLoading(btn);
+        const confirmId = e.target.closest("[data-review-confirm]")?.getAttribute("data-review-confirm");
+        if (confirmId) {
+          const btn = e.target.closest("[data-review-confirm]");
+          setLoading(btn, "…");
+          try {
+            await postJson(`/api/reviews/${confirmId}/confirm`, {});
+            toast("Review marked received.", "success");
+            loadReviews();
+          } catch (error) {
+            toast(error.message, "error");
+            clearLoading(btn);
+          }
+          return;
+        }
+        const saveId = e.target.closest("[data-review-note-save]")?.getAttribute("data-review-note-save");
+        if (saveId) {
+          const btn = e.target.closest("[data-review-note-save]");
+          const textarea = document.querySelector(`[data-review-note-id="${saveId}"]`);
+          const note = textarea?.value || "";
+          setLoading(btn, "…");
+          try {
+            await postJson(`/api/reviews/${saveId}/note`, { note });
+            toast("Note saved.", "success");
+            clearLoading(btn, "Save");
+          } catch (error) {
+            toast(error.message, "error");
+            clearLoading(btn, "Save");
+          }
+          return;
         }
       });
 
@@ -9484,6 +9822,236 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // ─── Date-range filter triggers ───
       document.getElementById("lead-filter-date")?.addEventListener("change", renderLeads);
       document.getElementById("booking-filter-date")?.addEventListener("change", renderBookings);
+
+      // ─── Mobile FAB → open quick booking ───
+      document.getElementById("mobile-fab-btn")?.addEventListener("click", () => {
+        window.bdHaptic?.("light");
+        const btn = document.querySelector("[data-open-quick-booking]");
+        if (btn) btn.click(); else activateTab("bookings");
+      });
+
+      // ─── Mobile filter chips ───
+      // Leads event-type chips → sync to hidden desktop select and re-render
+      document.getElementById("lead-chip-row")?.addEventListener("click", (e) => {
+        const chip = e.target.closest("[data-lead-event-chip]");
+        if (!chip) return;
+        const val = chip.getAttribute("data-lead-event-chip");
+        document.querySelectorAll("[data-lead-event-chip]").forEach((c) => c.classList.toggle("active", c === chip));
+        const sel = document.getElementById("lead-filter-event");
+        if (sel) { sel.value = val; renderLeads(); }
+        window.bdHaptic?.("light");
+      });
+      // Bookings event-type chips → sync to hidden desktop select and re-render
+      document.getElementById("booking-chip-row")?.addEventListener("click", (e) => {
+        const chip = e.target.closest("[data-booking-event-chip]");
+        if (!chip) return;
+        const val = chip.getAttribute("data-booking-event-chip");
+        document.querySelectorAll("[data-booking-event-chip]").forEach((c) => c.classList.toggle("active", c === chip));
+        const sel = document.getElementById("booking-filter-event");
+        if (sel) { sel.value = val; renderBookings(); }
+        window.bdHaptic?.("light");
+      });
+
+      // ─── Sort bottom sheet ───
+      let currentSortContext = "leads"; // "leads" or "bookings"
+      const LEAD_SORTS = [
+        { key: "date-asc", label: "Date — soonest first" },
+        { key: "date-desc", label: "Date — furthest first" },
+        { key: "price-desc", label: "Price — highest first" },
+        { key: "price-asc", label: "Price — lowest first" },
+        { key: "newest", label: "Newest request first" },
+      ];
+      const BOOKING_SORTS = [
+        { key: "date-asc", label: "Date — soonest first" },
+        { key: "date-desc", label: "Date — furthest first" },
+        { key: "price-desc", label: "Price — highest first" },
+        { key: "price-asc", label: "Price — lowest first" },
+        { key: "due-desc", label: "Amount due — highest first" },
+      ];
+      function openSortSheet(ctx) {
+        currentSortContext = ctx;
+        const sheet = document.getElementById("sort-sheet");
+        const opts = ctx === "leads" ? LEAD_SORTS : BOOKING_SORTS;
+        const cur = ctx === "leads" ? leadSortKey : bookingSortKey;
+        document.getElementById("sort-sheet-title").textContent = "Sort by";
+        document.getElementById("sort-sheet-options").innerHTML = opts.map((o) =>
+          `<button class="sort-option-btn${o.key === cur ? " selected" : ""}" type="button" data-sort-key="${o.key}">${o.label}</button>`
+        ).join("");
+        sheet.classList.add("open");
+      }
+      document.getElementById("lead-sort-chip")?.addEventListener("click", () => openSortSheet("leads"));
+      document.getElementById("booking-sort-chip")?.addEventListener("click", () => openSortSheet("bookings"));
+      document.getElementById("sort-sheet")?.addEventListener("click", (e) => {
+        const sheet = document.getElementById("sort-sheet");
+        if (e.target === sheet) { sheet.classList.remove("open"); return; }
+        const btn = e.target.closest("[data-sort-key]");
+        if (!btn) return;
+        const key = btn.getAttribute("data-sort-key");
+        sheet.classList.remove("open");
+        window.bdHaptic?.("light");
+        if (currentSortContext === "leads") {
+          leadSortKey = key;
+          renderLeads();
+        } else {
+          bookingSortKey = key;
+          renderBookings();
+        }
+      });
+      // Filter button → open full filter sheet (on mobile show date/source filter options)
+      document.getElementById("lead-filter-chip")?.addEventListener("click", () => {
+        const cur = document.getElementById("lead-filter-date")?.value || "";
+        const src = document.getElementById("lead-filter-source")?.value || "";
+        const sheet = document.getElementById("sort-sheet");
+        document.getElementById("sort-sheet-title").textContent = "More filters";
+        document.getElementById("sort-sheet-options").innerHTML = `
+          <div style="padding:12px 16px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">Date range</div>
+          ${[["","All dates"],["7","Next 7 days"],["30","Next 30 days"],["90","Next 3 months"],["past","Past events"]].map(([v,l]) =>
+            `<button class="sort-option-btn${cur===v?" selected":""}" type="button" data-lead-date-filter="${v}">${l}</button>`
+          ).join("")}
+          <div style="padding:12px 16px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">Source</div>
+          ${[["","All sources"],["Instagram","Instagram"],["WhatsApp","WhatsApp"],["Manual","In person / phone"],["Booking Page","Booking page"]].map(([v,l]) =>
+            `<button class="sort-option-btn${src===v?" selected":""}" type="button" data-lead-source-filter="${v}">${l}</button>`
+          ).join("")}`;
+        sheet.classList.add("open");
+        sheet.addEventListener("click", function filterHandler(e) {
+          const dateBtn = e.target.closest("[data-lead-date-filter]");
+          if (dateBtn) {
+            const v = dateBtn.getAttribute("data-lead-date-filter");
+            const sel = document.getElementById("lead-filter-date");
+            if (sel) { sel.value = v; renderLeads(); }
+            const fc = document.getElementById("lead-filter-chip");
+            if (fc) fc.classList.toggle("has-filter", !!v || !!document.getElementById("lead-filter-source")?.value);
+            sheet.classList.remove("open");
+            sheet.removeEventListener("click", filterHandler);
+            return;
+          }
+          const srcBtn = e.target.closest("[data-lead-source-filter]");
+          if (srcBtn) {
+            const v = srcBtn.getAttribute("data-lead-source-filter");
+            const sel = document.getElementById("lead-filter-source");
+            if (sel) { sel.value = v; renderLeads(); }
+            const fc = document.getElementById("lead-filter-chip");
+            if (fc) fc.classList.toggle("has-filter", !!v || !!document.getElementById("lead-filter-date")?.value);
+            sheet.classList.remove("open");
+            sheet.removeEventListener("click", filterHandler);
+          }
+        });
+      });
+      document.getElementById("booking-filter-chip")?.addEventListener("click", () => {
+        const cur = document.getElementById("booking-filter-date")?.value || "upcoming";
+        const pay = document.getElementById("booking-filter-payment")?.value || "";
+        const sheet = document.getElementById("sort-sheet");
+        document.getElementById("sort-sheet-title").textContent = "More filters";
+        document.getElementById("sort-sheet-options").innerHTML = `
+          <div style="padding:12px 16px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">Date range</div>
+          ${[["upcoming","Upcoming"],["","All time"],["30","Next 30 days"],["90","Next 3 months"],["past","Past events"]].map(([v,l]) =>
+            `<button class="sort-option-btn${cur===v?" selected":""}" type="button" data-booking-date-filter="${v}">${l}</button>`
+          ).join("")}
+          <div style="padding:12px 16px 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">Payment status</div>
+          ${[["","All"],["Advance Due","Advance due"],["Advance Paid","Advance paid"],["Paid in Full","Paid in full"]].map(([v,l]) =>
+            `<button class="sort-option-btn${pay===v?" selected":""}" type="button" data-booking-pay-filter="${v}">${l}</button>`
+          ).join("")}`;
+        sheet.classList.add("open");
+        sheet.addEventListener("click", function bkFilterHandler(e) {
+          const dateBtn = e.target.closest("[data-booking-date-filter]");
+          if (dateBtn) {
+            const v = dateBtn.getAttribute("data-booking-date-filter");
+            const sel = document.getElementById("booking-filter-date");
+            if (sel) { sel.value = v; renderBookings(); }
+            sheet.classList.remove("open");
+            sheet.removeEventListener("click", bkFilterHandler);
+            return;
+          }
+          const payBtn = e.target.closest("[data-booking-pay-filter]");
+          if (payBtn) {
+            const v = payBtn.getAttribute("data-booking-pay-filter");
+            const sel = document.getElementById("booking-filter-payment");
+            if (sel) { sel.value = v; renderBookings(); }
+            const fc = document.getElementById("booking-filter-chip");
+            if (fc) fc.classList.toggle("has-filter", !!v);
+            sheet.classList.remove("open");
+            sheet.removeEventListener("click", bkFilterHandler);
+          }
+        });
+      });
+
+      // ─── Check-in handler ───
+      document.getElementById("upcoming-jobs")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-check-in]");
+        if (!btn) return;
+        const bookingId = btn.getAttribute("data-check-in");
+        setLoading(btn, "…");
+        try {
+          await postJson(`/api/bookings/${bookingId}/checkin`, {});
+          toast("Marked as arrived!", "success");
+          window.bdHaptic?.("medium");
+          await refreshSession();
+        } catch (err) {
+          toast(err.message, "error");
+          clearLoading(btn, "Mark arrived");
+        }
+      });
+
+      // ─── Domain guide copy buttons ───
+      document.getElementById("domain-guide-details")?.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-copy]");
+        if (!btn) return;
+        const val = btn.getAttribute("data-copy");
+        navigator.clipboard?.writeText(val).then(() => {
+          const orig = btn.textContent;
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        });
+      });
+      document.getElementById("custom-domain-save")?.addEventListener("click", async () => {
+        const input = document.getElementById("custom-domain-input");
+        const status = document.getElementById("custom-domain-status");
+        const domain = (input?.value || "").trim();
+        if (!domain) { status.textContent = "Enter a domain first."; return; }
+        status.textContent = "Saving…";
+        try {
+          await postJson("/api/workspace/custom-domain", { domain });
+          status.style.color = "var(--success)";
+          status.textContent = "✓ Saved! DNS changes take up to 24 hours to propagate.";
+        } catch (err) {
+          status.style.color = "var(--danger)";
+          status.textContent = err.message || "Could not save.";
+        }
+      });
+      document.getElementById("domain-verify-btn")?.addEventListener("click", async () => {
+        const result = document.getElementById("domain-verify-result");
+        const input = document.getElementById("custom-domain-input");
+        const domain = (input?.value || "").trim();
+        if (!domain) { result.textContent = "Enter your domain first."; return; }
+        result.textContent = "Checking…";
+        try {
+          const res = await fetchJson(`/api/workspace/custom-domain/verify?domain=${encodeURIComponent(domain)}`);
+          if (res.live) {
+            result.innerHTML = `<span style="color:var(--success);">✓ Live! Your domain is working.</span>`;
+          } else {
+            result.innerHTML = `<span style="color:var(--warning);">DNS not yet active — check your CNAME record and try again in a few hours.</span>`;
+          }
+        } catch {
+          result.innerHTML = `<span style="color:var(--muted);">Could not check right now — try again shortly.</span>`;
+        }
+      });
+
+      // Show FAB only when authenticated and on mobile
+      (function setupFab() {
+        const fab = document.getElementById("mobile-fab-btn");
+        if (!fab) return;
+        function updateFabVisibility() {
+          const authed = !!sessionState?.authenticated;
+          if (authed && window.innerWidth <= 640) {
+            fab.style.display = "flex";
+          } else {
+            fab.style.display = "none";
+          }
+        }
+        document.addEventListener("bd-session-updated", updateFabVisibility);
+        window.addEventListener("resize", updateFabVisibility);
+        setTimeout(updateFabVisibility, 1000);
+      })();
 
       // ─── Global search ───
       const globalSearchModal = document.getElementById("global-search-modal");

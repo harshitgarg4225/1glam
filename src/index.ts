@@ -1287,6 +1287,46 @@ app.post(
   },
 );
 
+// ---- Custom domain ----
+app.post("/api/workspace/custom-domain", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const domain = typeof req.body?.domain === "string" ? req.body.domain.trim().toLowerCase() : "";
+    if (!domain) return res.status(400).json({ error: "Domain is required" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    workspace.config = { ...workspace.config, customDomain: domain };
+    workspace.updatedAt = new Date().toISOString();
+    await saveWorkspace(workspace);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/workspace/custom-domain/verify", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const domain = typeof req.query.domain === "string" ? req.query.domain.trim() : "";
+    if (!domain) return res.status(400).json({ error: "Domain required" });
+    // Simple DNS verification: try to resolve the domain and check it points to us
+    const dns = await import("node:dns/promises");
+    try {
+      const records = await dns.resolveCname(domain);
+      const live = records.some((r) => r.includes("busydays"));
+      res.json({ ok: true, live, records });
+    } catch {
+      res.json({ ok: true, live: false });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ---- Google Business Profile (reviews) setup ----
 // Finds the artist's business on Google so we can generate their direct
 // "write a review" link without the restricted Business Profile API.
@@ -4843,7 +4883,7 @@ app.get("/api/reviews", async (req, res, next) => {
       reminderSentAt: row[5] ?? "",
       reviewLinkClicked: row[6] ?? "No",
       reviewConfirmed: row[7] ?? "No",
-      notes: row[8] ?? "",
+      reviewNote: row[8] ?? "",
     }));
     res.json({ ok: true, reviews });
   } catch (error) {
@@ -4877,6 +4917,58 @@ app.post("/api/reviews/:reviewId/confirm", async (req, res, next) => {
       requestBody: { values: [row] },
     });
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Save a private note against a review (visible only to the owner).
+app.post("/api/reviews/:reviewId/note", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A2:I`,
+    });
+    const rows = response.data.values ?? [];
+    const index = rows.findIndex((row) => row[0] === req.params.reviewId);
+    if (index < 0) return res.status(404).json({ error: "Review not found" });
+
+    const row = [...rows[index]];
+    while (row.length < 9) row.push("");
+    row[8] = String(req.body.note ?? "");
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A${index + 2}:I${index + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [row] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Check-in / mark client as arrived.
+app.post("/api/bookings/:bookingId/checkin", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { updateBookingRecord } = await import("./services/booking.js");
+    const updated = await updateBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      (b) => ({ ...b, arrivedAt: new Date().toISOString() }),
+    );
+    res.json({ ok: true, booking: updated });
   } catch (error) {
     next(error);
   }
