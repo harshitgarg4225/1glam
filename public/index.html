@@ -1672,6 +1672,9 @@
             <strong id="mcal-title" style="min-width:150px;text-align:center;"></strong>
             <button class="button small secondary" type="button" id="mcal-next">›</button>
             <button class="button small secondary" type="button" id="mcal-today">Today</button>
+            <select id="mcal-staff-filter" style="font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);color:var(--text);margin-left:auto;" title="Filter by specialist">
+              <option value="">All specialists</option>
+            </select>
           </div>
           <div class="mcal-grid" id="mcal-grid"></div>
           <div class="mcal-legend">
@@ -3787,7 +3790,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (name === "documents") loadDocuments();
         if (name === "bookings") loadWaitlist();
         if (name === "clients") renderClients();
-        if (name === "calendar") { renderCalendar(); renderBlockedDates(); }
+        if (name === "calendar") { populateMcalStaffFilter(); renderCalendar(); renderBlockedDates(); }
         if (name === "conversations") loadConversations();
         if (name === "team") { loadTeam(); loadCommissionReport().then(renderTeamEarnings); }
         if (name === "reviews") { loadReviews(); loadLoyalty(); loadGiftCards(); }
@@ -5565,10 +5568,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       function mcalEventsByDate() {
         const map = {};
+        const staffFilter = (document.getElementById("mcal-staff-filter")?.value || "").trim();
         const bookings = sessionState?.dashboard?.bookings || [];
         const leads = sessionState?.dashboard?.leads || [];
         for (const b of bookings) {
           if (!b.eventDate || ["Cancelled"].includes(b.status || "")) continue;
+          if (staffFilter && (b.assignedArtist || "") !== staffFilter) continue;
           (map[b.eventDate] = map[b.eventDate] || []).push({ kind: "booking", rec: b });
         }
         for (const l of leads) {
@@ -5577,6 +5582,21 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           (map[l.eventDate] = map[l.eventDate] || []).push({ kind: "hold", rec: l });
         }
         return map;
+      }
+
+      function populateMcalStaffFilter() {
+        const sel = document.getElementById("mcal-staff-filter");
+        if (!sel) return;
+        const current = sel.value;
+        const artists = teamArtists || [];
+        const options = ['<option value="">All specialists</option>'];
+        const ownerName = sessionState?.workspace?.config?.ownerName || "";
+        if (ownerName) options.push(`<option value="${escapeHtml(ownerName)}">${escapeHtml(ownerName)} (you)</option>`);
+        artists.filter((a) => a.active !== "No").forEach((a) => {
+          if (a.name !== ownerName) options.push(`<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`);
+        });
+        sel.innerHTML = options.join("");
+        if (current) sel.value = current;
       }
 
       function renderCalendarGrid() {
@@ -5628,7 +5648,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="upcoming-item">
               <div class="upcoming-body">
                 <div class="upcoming-client">${isBooking ? "💄" : "⏳"} ${escapeHtml(r.clientName)} · <span class="muted">${escapeHtml(r.eventType)}</span>${isBooking ? "" : ' <span class="pill warning" style="font-size:10.5px;">tentative</span>'}</div>
-                <div class="upcoming-meta">${r.eventTime ? "🕒 " + escapeHtml(r.eventTime) + " · " : ""}📍 ${escapeHtml((isBooking ? r.venue : r.locationText) || "Venue TBC")}</div>
+                <div class="upcoming-meta">${r.eventTime ? "🕒 " + escapeHtml(r.eventTime) + " · " : ""}📍 ${escapeHtml((isBooking ? r.venue : r.locationText) || "Venue TBC")}${isBooking && r.assignedArtist ? " · 👤 " + escapeHtml(r.assignedArtist) : ""}</div>
               </div>
               <div class="upcoming-right">
                 ${r.clientWhatsApp ? `<a class="button tiny secondary" style="text-decoration:none;" href="https://wa.me/${String(r.clientWhatsApp).replace(/\D/g, "")}" target="_blank" rel="noreferrer">💬</a>` : ""}
@@ -5660,6 +5680,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.getElementById("mcal-prev")?.addEventListener("click", () => { mcalCursor = new Date(mcalCursor.getFullYear(), mcalCursor.getMonth() - 1, 1); renderCalendarGrid(); });
       document.getElementById("mcal-next")?.addEventListener("click", () => { mcalCursor = new Date(mcalCursor.getFullYear(), mcalCursor.getMonth() + 1, 1); renderCalendarGrid(); });
       document.getElementById("mcal-today")?.addEventListener("click", () => { mcalCursor = new Date(); mcalSelectedDate = new Date().toISOString().slice(0, 10); renderCalendarGrid(); });
+      document.getElementById("mcal-staff-filter")?.addEventListener("change", () => renderCalendarGrid());
 
       // ─── One-tap day off: writes bookingBlockedDates without opening Settings ───
       function parseBlockedDates() {
@@ -5726,7 +5747,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       async function loadTeam() {
         try {
           const payload = await getJson("/api/team");
-          if (payload?.ok) { teamArtists = payload.artists || []; renderTeam(); renderTeamEarnings(); renderLeads(); }
+          if (payload?.ok) { teamArtists = payload.artists || []; renderTeam(); renderTeamEarnings(); renderLeads(); populateMcalStaffFilter(); }
         } catch (error) { document.getElementById("team-list").innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
       }
 
