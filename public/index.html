@@ -8935,7 +8935,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           document.getElementById("qb-conflict").innerHTML = conflictWarningHtml(prefill.eventDate);
         }
         document.getElementById("qb-advance-amount-wrap").style.display = "none";
+        // reset() wipes our remembered suggestion too, so the next suggest is clean.
+        document.getElementById("qb-price").dataset.suggested = "";
         updateQbDurationHint();
+        maybeSuggestQbPrice();
         quickBookingModal.classList.add("open");
         setTimeout(() => document.getElementById(prefill?.name ? "qb-date" : "qb-name").focus(), 50);
       }
@@ -8990,6 +8993,42 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
       document.getElementById("qb-event")?.addEventListener("change", updateQbDurationHint);
       document.getElementById("qb-time")?.addEventListener("input", updateQbDurationHint);
+
+      // Suggest a price from the artist's own base prices + month multiplier —
+      // the same numbers the AI estimate uses. Only fills a blank field (or one
+      // still holding a previous suggestion), so a hand-typed price is never lost.
+      function suggestedBasePrice(eventType, eventDate) {
+        const cfg = sessionState?.workspace?.config;
+        if (!cfg) return 0;
+        const baseKey = { Bridal: "basePriceBridal", Engagement: "basePriceEngagement", Reception: "basePriceReception", Party: "basePriceParty", Shoot: "basePriceShoot" }[eventType] || "basePriceOther";
+        const base = Number(cfg[baseKey]) || 0;
+        if (base <= 0) return 0;
+        let mult = 1;
+        if (eventDate) {
+          const monthKeys = ["multiplierJan","multiplierFeb","multiplierMar","multiplierApr","multiplierMay","multiplierJun","multiplierJul","multiplierAug","multiplierSep","multiplierOct","multiplierNov","multiplierDec"];
+          const m = new Date(eventDate + "T00:00:00").getMonth();
+          if (m >= 0 && m <= 11) mult = Number(cfg[monthKeys[m]]) || 1;
+        }
+        return Math.round((base * mult) / 100) * 100;
+      }
+      function maybeSuggestQbPrice() {
+        const priceInput = document.getElementById("qb-price");
+        if (!priceInput) return;
+        const lastSuggested = priceInput.dataset.suggested || "";
+        // Respect a hand-typed value: only update when blank or unchanged from us.
+        if (priceInput.value && priceInput.value !== lastSuggested) return;
+        const suggestion = suggestedBasePrice(
+          document.getElementById("qb-event").value,
+          document.getElementById("qb-date").value,
+        );
+        if (suggestion > 0) {
+          priceInput.value = String(suggestion);
+          priceInput.dataset.suggested = String(suggestion);
+          updateQbAdvanceUI();
+        }
+      }
+      document.getElementById("qb-event")?.addEventListener("change", maybeSuggestQbPrice);
+      document.getElementById("qb-date")?.addEventListener("change", maybeSuggestQbPrice);
 
       // "Already paid" reveals the amount — collected money should be real
       // rupees in the ledger, not just a status flag.
