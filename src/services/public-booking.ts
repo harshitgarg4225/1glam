@@ -10,6 +10,7 @@ import { ensureSheetTab } from "./sheets-util.js";
 import { sheetNames } from "./sheet-definitions.js";
 import { parsePromoCode, promoCodeToRow, promoCodeHeaders, validatePromo } from "./promo-codes.js";
 import { listArtists } from "./team.js";
+import { TtlCache } from "./cache.js";
 import type { Credentials } from "google-auth-library";
 import type { WorkspaceConfig, WorkspaceRecord } from "../types.js";
 
@@ -253,7 +254,9 @@ function buildPublicProfile(workspace: WorkspaceRecord): PublicBusinessProfile {
       description: String(config[entry.descKey] || ""),
       addons: parseAddons(String(config[entry.addonsKey] || "")),
       variants,
-      imageUrl: String(config[entry.imageUrlKey] || ""),
+      // sanitizeUrl enforces http(s) so a malformed value can't break out of the
+      // <img src> attribute or smuggle a javascript: URL onto the public page.
+      imageUrl: sanitizeUrl(config[entry.imageUrlKey]),
     };
   });
 
@@ -575,18 +578,27 @@ export type PublicArtist = {
   bio: string;
 };
 
+// The booking page is the app's hottest public surface and the artist list lives
+// in Google Sheets (~60 reads/min/user). A 60s read-through cache with request
+// coalescing keeps the page fast and the owner's Sheets quota safe under traffic;
+// the only cost is a newly added/removed specialist taking up to a minute to
+// appear to clients, which is acceptable for a public listing.
+const publicArtistsCache = new TtlCache<PublicArtist[]>(60 * 1000);
+
 export async function getPublicArtists(workspaceId: string): Promise<PublicArtist[]> {
   const workspace = await findWorkspaceByWorkspaceId(workspaceId);
   if (!workspace) return [];
-  try {
-    const tokens = await getWorkspaceCredentials(workspace.email);
-    const artists = await listArtists(workspace.email, tokens);
-    return artists
-      .filter((a) => a.active !== "No")
-      .map((a) => ({ name: a.name, skillLevel: a.skillLevel, bio: a.bio }));
-  } catch {
-    return [];
-  }
+  return publicArtistsCache.getOrLoad(workspace.workspaceId, async () => {
+    try {
+      const tokens = await getWorkspaceCredentials(workspace.email);
+      const artists = await listArtists(workspace.email, tokens);
+      return artists
+        .filter((a) => a.active !== "No")
+        .map((a) => ({ name: a.name, skillLevel: a.skillLevel, bio: a.bio }));
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function submitPaymentScreenshot(

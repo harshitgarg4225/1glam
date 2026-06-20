@@ -92,7 +92,15 @@
   <p class="footer">Powered by BusyDays</p>
 </div>
 <script>
-  const [,, workspaceId, leadId] = location.pathname.split("/");
+  const rawWorkspaceId = location.pathname.split("/")[2] || "";
+  const rawLeadId = location.pathname.split("/")[3] || "";
+  // Path segments are attacker-controllable, so encode them before they go into
+  // href URLs, and HTML-escape any server string before it touches innerHTML.
+  const workspaceId = encodeURIComponent(rawWorkspaceId);
+  const leadId = encodeURIComponent(rawLeadId);
+  const esc = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
   const fmt = (n) => "₹" + Number(n).toLocaleString("en-IN");
   const fmtDate = (s) => {
@@ -149,8 +157,8 @@
       `<div class="detail-row">
         <span class="detail-icon">${icon}</span>
         <div>
-          <div class="detail-label">${label}</div>
-          <div class="detail-value">${value}</div>
+          <div class="detail-label">${esc(label)}</div>
+          <div class="detail-value">${esc(value)}</div>
         </div>
       </div>`
     ).join("");
@@ -172,13 +180,14 @@
       btns.push(`<a class="action-btn primary" href="/pay/${workspaceId}/${leadId}">💳 Pay now</a>`);
     }
     if (d.bookingId) {
-      btns.push(`<a class="action-btn secondary" href="/sign/${workspaceId}/${d.bookingId}">📝 View / sign contract</a>`);
-      btns.push(`<a class="action-btn secondary" href="/reschedule/${workspaceId}/${d.bookingId}">📆 Reschedule</a>`);
-      btns.push(`<a class="action-btn danger" href="/cancel/${workspaceId}/${d.bookingId}">✕ Cancel appointment</a>`);
+      const bid = encodeURIComponent(d.bookingId);
+      btns.push(`<a class="action-btn secondary" href="/sign/${workspaceId}/${bid}">📝 View / sign contract</a>`);
+      btns.push(`<a class="action-btn secondary" href="/reschedule/${workspaceId}/${bid}">📆 Reschedule</a>`);
+      btns.push(`<a class="action-btn danger" href="/cancel/${workspaceId}/${bid}">✕ Cancel appointment</a>`);
     }
 
     if (d.paymentTerms) {
-      btns.push(`<details style="margin-top:8px;"><summary style="font-size:13px;color:var(--muted);cursor:pointer;padding:4px 0;">Payment terms</summary><p style="font-size:13px;color:var(--muted);line-height:1.6;margin-top:8px;">${d.paymentTerms}</p></details>`);
+      btns.push(`<details style="margin-top:8px;"><summary style="font-size:13px;color:var(--muted);cursor:pointer;padding:4px 0;">Payment terms</summary><p style="font-size:13px;color:var(--muted);line-height:1.6;margin-top:8px;">${esc(d.paymentTerms)}</p></details>`);
     }
 
     actionsEl.innerHTML = btns.join("");

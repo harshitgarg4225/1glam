@@ -371,6 +371,15 @@
         return "approx " + (Number.isInteger(h) ? h : h.toFixed(1)) + "h";
       }
 
+      // Escape owner-controlled strings before they go into innerHTML. Owner data
+      // (artist names, bios) reaches the client's browser here, so it must be
+      // neutralised to prevent stored XSS from a malicious/compromised workspace.
+      function esc(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      }
+
       async function loadProfile() {
         if (!workspaceId) {
           hide("loading");
@@ -401,10 +410,10 @@
         const cards = [{ name: "", skillLevel: "", bio: "Let the studio assign the best available specialist." }].concat(artists);
         list.innerHTML = cards.map((a, i) => {
           const isNoPref = a.name === "";
-          return `<button type="button" class="staff-card${i === 0 ? " selected" : ""}" data-artist="${a.name}">
-            <div class="staff-name">${isNoPref ? "No preference" : a.name}</div>
-            ${!isNoPref && a.skillLevel ? '<div class="staff-level">' + a.skillLevel + '</div>' : ""}
-            ${a.bio ? '<div class="staff-bio">' + a.bio + '</div>' : ""}
+          return `<button type="button" class="staff-card${i === 0 ? " selected" : ""}" data-artist="${esc(a.name)}">
+            <div class="staff-name">${isNoPref ? "No preference" : esc(a.name)}</div>
+            ${!isNoPref && a.skillLevel ? '<div class="staff-level">' + esc(a.skillLevel) + '</div>' : ""}
+            ${a.bio ? '<div class="staff-bio">' + esc(a.bio) + '</div>' : ""}
           </button>`;
         }).join("");
         wrap.style.display = "";
@@ -511,7 +520,7 @@
           card.dataset.key = type.key;
           const durationLabel = formatDuration(type.durationHours);
           const imgHtml = type.imageUrl
-            ? '<img class="service-img" src="' + type.imageUrl + '" alt="" loading="lazy" />'
+            ? '<img class="service-img" src="' + esc(type.imageUrl) + '" alt="" loading="lazy" />'
             : "";
           card.innerHTML =
             imgHtml +

@@ -514,7 +514,7 @@ app.get("/api/public/:workspaceId/slots", async (req, res, next) => {
   }
 });
 
-app.get("/api/public/:workspaceId/artists", async (req, res, next) => {
+app.get("/api/public/:workspaceId/artists", publicReadLimiter, async (req, res, next) => {
   try {
     const artists = await getPublicArtists(String(req.params.workspaceId));
     res.json({ ok: true, artists });
