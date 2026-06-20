@@ -1006,6 +1006,24 @@
       #bd-ptr.bd-ptr-spinning .bd-ptr-spinner { animation: bd-spin 0.7s linear infinite; opacity: 1; }
 
       /* ─── Mobile FAB (floating action button for New Booking) ─── */
+      /* ─── Sticky settings save bar (mobile only) ─── */
+      .settings-save-bar { display: contents; }
+      @media (max-width: 640px) {
+        .settings-save-bar {
+          display: block;
+          position: sticky;
+          bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+          z-index: 500;
+          background: rgba(250,248,245,0.92);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border-top: 1px solid var(--line);
+          padding: 10px 16px;
+          margin: 0 -16px;
+        }
+        .settings-save-bar button { width: 100%; }
+      }
+
       .mobile-fab {
         display: none;
       }
@@ -2547,42 +2565,58 @@
             <summary>Your booking page</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
-                Controls the public link clients use to request a date. They can only pick dates that fit these rules.
+                Control what your clients see when they open your booking link.
               </p>
               <div class="section-grid">
                 <div>
-                  <label for="bookingPageEnabled">Accept online bookings?</label>
+                  <label for="bookingPageEnabled">Accept new bookings?</label>
                   <select id="bookingPageEnabled" name="bookingPageEnabled"><option>Yes</option><option>No</option></select>
                 </div>
-                <div><label for="bookingLeadTimeDays">Least notice you need (days)</label><input id="bookingLeadTimeDays" name="bookingLeadTimeDays" type="number" min="0" /></div>
-                <div><label for="bookingMaxAdvanceDays">How far ahead clients can book (days)</label><input id="bookingMaxAdvanceDays" name="bookingMaxAdvanceDays" type="number" min="1" /></div>
-                <div><label for="bookingMaxPerDay">Max bookings per day (0 = no limit)</label><input id="bookingMaxPerDay" name="bookingMaxPerDay" type="number" min="0" /></div>
-                <div><label for="bufferMinutes">Cleanup buffer between jobs (mins)</label><input id="bufferMinutes" name="bufferMinutes" type="number" min="0" step="15" placeholder="0" /></div>
-                <div><label for="bookingWeeklyOffDays">Your weekly days off</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
+                <div><label for="bookingWeeklyOffDays">Your days off each week</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
+                <div><label for="bookingLeadTimeDays">Minimum notice (days)</label><input id="bookingLeadTimeDays" name="bookingLeadTimeDays" type="number" min="0" placeholder="2" /></div>
+                <div class="wide"><label for="bookingTimeSlots">Times you offer (leave empty for flexible)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
                 <div class="wide"><label for="bookingBlockedDates">Dates you're not available</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
-                <div class="wide"><label for="bookingTimeSlots">Time slots you offer (leave empty to let clients type a time)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
-                <div><label for="bookingWaitlistEnabled">If a day is full…</label><select id="bookingWaitlistEnabled" name="bookingWaitlistEnabled"><option value="No">Don't accept more</option><option value="Yes">Add to a waitlist</option></select></div>
-                <div>
-                  <label for="notifyTeamOnBooking">Auto-alert your team on a new booking?</label>
-                  <select id="notifyTeamOnBooking" name="notifyTeamOnBooking"><option>Yes</option><option>No</option></select>
-                </div>
-                <div><label for="reminderDaysBefore">Remind clients this many days before</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
-                <div><label for="reviewRequestDaysAfter">Ask for a review this many days after</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
-                <div><label for="rebookNudgeDaysAfter">Auto "time to rebook" nudge this many days after</label><input id="rebookNudgeDaysAfter" name="rebookNudgeDaysAfter" placeholder="90 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Sends a friendly WhatsApp once, asking the client to book again. Needs the rebook template (create it under WhatsApp &amp; Instagram).</p></div>
-                <div><label for="winbackDaysAfter">Auto win-back lapsed clients after (days)</label><input id="winbackDaysAfter" name="winbackDaysAfter" placeholder="120 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Messages a past client once when they haven't booked in this long. Needs the win-back template.</p></div>
-                <div><label for="cancellationWindowDays">Late cancellation window (days)</label><input id="cancellationWindowDays" name="cancellationWindowDays" type="number" min="0" max="60" placeholder="7" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Cancellations inside this many days before the event will prompt you to charge a fee.</p></div>
-                <div><label for="cancellationFeePercent">Cancellation fee (%)</label><input id="cancellationFeePercent" name="cancellationFeePercent" type="number" min="0" max="100" placeholder="50" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Percentage of the booking price charged for late cancellations.</p></div>
-                <div>
-                  <label for="autoPaymentReminders">Auto-remind clients about payments?</label>
-                  <select id="autoPaymentReminders" name="autoPaymentReminders"><option>Yes</option><option>No</option></select>
-                  <p class="muted" style="margin:4px 0 0;font-size:12px;">Gentle nudges for unpaid advances (2, 5, 8 days after booking) and the balance (2 days before the event). Needs your payment-reminder WhatsApp template.</p>
-                </div>
-                <div>
-                  <label for="dailyDigest">Morning digest on your phone?</label>
-                  <select id="dailyDigest" name="dailyDigest"><option>Yes</option><option>No</option></select>
-                  <p class="muted" style="margin:4px 0 0;font-size:12px;">One notification at 8 AM with today's jobs and anything that needs you — quiet quotes, pending advances, waitlist openings. Needs notifications turned on.</p>
-                </div>
               </div>
+
+              <details class="collapse" style="margin-top:16px;">
+                <summary>Advanced scheduling — max per day, buffer &amp; waitlist</summary>
+                <div class="collapse-body">
+                  <div class="section-grid">
+                    <div><label for="bookingMaxAdvanceDays">How far ahead clients can book (days)</label><input id="bookingMaxAdvanceDays" name="bookingMaxAdvanceDays" type="number" min="1" /></div>
+                    <div><label for="bookingMaxPerDay">Max bookings per day (0 = no limit)</label><input id="bookingMaxPerDay" name="bookingMaxPerDay" type="number" min="0" /></div>
+                    <div><label for="bufferMinutes">Cleanup buffer between jobs (mins)</label><input id="bufferMinutes" name="bufferMinutes" type="number" min="0" step="15" placeholder="0" /></div>
+                    <div><label for="bookingWaitlistEnabled">If a day is full…</label><select id="bookingWaitlistEnabled" name="bookingWaitlistEnabled"><option value="No">Don't accept more</option><option value="Yes">Add to a waitlist</option></select></div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="collapse" style="margin-top:8px;">
+                <summary>Automations — reminders, review requests &amp; cancellation</summary>
+                <div class="collapse-body">
+                  <div class="section-grid">
+                    <div>
+                      <label for="notifyTeamOnBooking">Auto-alert your team on a new booking?</label>
+                      <select id="notifyTeamOnBooking" name="notifyTeamOnBooking"><option>Yes</option><option>No</option></select>
+                    </div>
+                    <div><label for="reminderDaysBefore">Remind clients this many days before</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
+                    <div><label for="reviewRequestDaysAfter">Ask for a review this many days after</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
+                    <div><label for="rebookNudgeDaysAfter">"Time to rebook" nudge — days after event</label><input id="rebookNudgeDaysAfter" name="rebookNudgeDaysAfter" placeholder="90 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Sends a friendly WhatsApp once, asking the client to book again. Needs the rebook template (create it under WhatsApp &amp; Instagram).</p></div>
+                    <div><label for="winbackDaysAfter">Win-back lapsed clients after (days)</label><input id="winbackDaysAfter" name="winbackDaysAfter" placeholder="120 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Messages a past client once when they haven't booked in this long. Needs the win-back template.</p></div>
+                    <div><label for="cancellationWindowDays">Late cancellation window (days)</label><input id="cancellationWindowDays" name="cancellationWindowDays" type="number" min="0" max="60" placeholder="7" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Cancellations inside this many days before the event will prompt you to charge a fee.</p></div>
+                    <div><label for="cancellationFeePercent">Cancellation fee (%)</label><input id="cancellationFeePercent" name="cancellationFeePercent" type="number" min="0" max="100" placeholder="50" /></div>
+                    <div>
+                      <label for="autoPaymentReminders">Auto-remind clients about payments?</label>
+                      <select id="autoPaymentReminders" name="autoPaymentReminders"><option>Yes</option><option>No</option></select>
+                      <p class="muted" style="margin:4px 0 0;font-size:12px;">Gentle nudges for unpaid advances (2, 5, 8 days after booking) and the balance (2 days before the event). Needs your payment-reminder WhatsApp template.</p>
+                    </div>
+                    <div>
+                      <label for="dailyDigest">Morning digest on your phone?</label>
+                      <select id="dailyDigest" name="dailyDigest"><option>Yes</option><option>No</option></select>
+                      <p class="muted" style="margin:4px 0 0;font-size:12px;">One notification at 8 AM with today's jobs and anything that needs you — quiet quotes, pending advances, waitlist openings. Needs notifications turned on.</p>
+                    </div>
+                  </div>
+                </div>
+              </details>
             </div>
           </details>
 
@@ -2943,8 +2977,10 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
           <input type="hidden" name="qrImageUrl" value="" />
           <input type="hidden" name="portfolioImages" value="" />
           <input type="hidden" name="aboutText" value="" />
-          <div class="action-row" style="margin-top:14px;"><button class="button" type="submit">Save settings</button></div>
-          <div class="status" id="form-status"></div>
+          <div class="settings-save-bar" style="margin-top:14px;">
+            <div class="action-row"><button class="button" type="submit">Save settings</button></div>
+            <div class="status" id="form-status"></div>
+          </div>
         </form>
       </section>
 
@@ -3138,9 +3174,9 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <span>Bookings</span>
       </button>
-      <button class="bnav-item" type="button" data-tab="documents">
-        <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-        <span>Docs</span>
+      <button class="bnav-item" type="button" data-tab="calendar">
+        <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14" stroke-width="2.5"/><line x1="12" y1="14" x2="12" y2="14" stroke-width="2.5"/></svg>
+        <span>Calendar</span>
       </button>
       <button class="bnav-item" type="button" data-tab="conversations">
         <svg class="bnav-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
@@ -3172,7 +3208,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
         <div class="bnav-sheet-grid">
           <div class="bnav-sheet-head">Clients &amp; schedule</div>
           <button class="bnav-sheet-item" type="button" data-tab="clients"><span>👥</span>Clients</button>
-          <button class="bnav-sheet-item" type="button" data-tab="calendar"><span>🗓️</span>Calendar</button>
+          <button class="bnav-sheet-item" type="button" data-tab="documents"><span>📄</span>Docs</button>
           <div class="bnav-sheet-head">Grow &amp; get paid</div>
           <button class="bnav-sheet-item" type="button" data-tab="analytics"><span>📊</span>Insights</button>
           <button class="bnav-sheet-item" type="button" data-tab="reviews"><span>⭐</span>Reviews</button>
@@ -3660,6 +3696,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <script>
       const configForm = document.getElementById("config-form");
+      // On mobile, auto-scroll a settings section into view when it opens so the
+      // artist doesn't have to manually scroll to find the newly revealed fields.
+      configForm?.querySelectorAll("details.collapse").forEach((d) => {
+        d.addEventListener("toggle", () => {
+          if (d.open && window.innerWidth < 640) {
+            setTimeout(() => d.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+          }
+        });
+      });
       const leadForm = document.getElementById("lead-form");
       const loginState = document.getElementById("login-state");
       const connectLink = document.getElementById("connect-link");
@@ -4748,6 +4793,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           parts.push("No jobs today.");
         }
         if (newRequests) parts.push(`${newRequests} new request${newRequests > 1 ? "s" : ""} waiting for you.`);
+        else if (!leads.length && !bookings.length) parts.push("Share your booking link so clients can request a date — it's ready to go! 🚀");
         else if (!todayJobs.length && peakSeason) parts.push("It's peak wedding season — a great time to share your booking link. 💪");
         document.getElementById("greeting-sub").textContent = parts.join(" ");
         wrap.style.display = "";
@@ -5220,8 +5266,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="empty-state" style="width:100%;">
               <div class="empty-icon">📩</div>
               <h3>No requests yet</h3>
-              <p>Share your booking link so clients can request a date. New requests land here automatically.</p>
-              ${bookingUrl ? `<button class="button" type="button" id="empty-share-link" data-share="${escapeHtml(bookingUrl)}">Copy booking link</button>` : ""}
+              <p>Share your booking link and new requests land here automatically — or add an existing client manually.</p>
+              <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
+                ${bookingUrl ? `<button class="button" type="button" data-share="${escapeHtml(bookingUrl)}">🔗 Copy booking link</button>` : ""}
+                <button class="button secondary" type="button" id="empty-add-client">➕ Add a client</button>
+              </div>
             </div>`;
           return;
         }
@@ -7229,9 +7278,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       });
 
       // "Add a client" button opens the manual-add form and scrolls to it.
+      function openAddClientForm() {
+        const c = document.getElementById("add-client-collapse");
+        if (c) { c.open = true; c.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      }
       document.getElementById("toggle-add-client")?.addEventListener("click", () => {
         const c = document.getElementById("add-client-collapse");
         if (c) { c.open = !c.open; if (c.open) c.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      });
+      // Empty-state "Add a client" button (rendered dynamically, use delegation)
+      leadsBoard.addEventListener("click", (e) => {
+        if (e.target.closest("#empty-add-client")) { activateTab("leads"); openAddClientForm(); }
       });
 
       // ---- Recurring bookings ----
