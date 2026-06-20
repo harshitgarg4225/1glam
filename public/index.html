@@ -4932,9 +4932,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // The one obvious next step for a lead, based on where it is in the pipeline.
       function primaryActionFor(lead) {
         switch (lead.status) {
-          // "Approve price & hold date" describes exactly what the tap does —
-          // the earlier "Approve & quote" promised a quote it never sent.
-          case "New": return { action: "yes", label: "Approve price & hold date" };
+          // The everyday intent for a new request is "yes — and send them the
+          // quote." One tap does both; "Approve only" stays as a secondary for
+          // when the artist wants to tweak the price before the client sees it.
+          case "New": return { action: "approve-send", label: "Approve & send quote" };
           case "Awaiting Client": return { action: "confirm", label: "Confirm booking" };
           case "Confirmed": return { action: "advance", label: "Mark advance paid" };
           case "Payment Received": return { action: "full", label: "Mark paid in full" };
@@ -5407,10 +5408,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 <button class="button small secondary" data-notify-team="${booking.bookingId}">📲 Team</button>
                 ${booking.invoiceUrl
                   ? `<button class="button small secondary" data-doc-url="${escapeHtml(booking.invoiceUrl)}" data-doc-title="Invoice" data-doc-pdf="${booking.invoiceUrl.startsWith('/d/') ? '1' : '0'}">Invoice</button>`
-                  : `<button class="button small" data-booking-action="invoice" data-booking-id="${booking.bookingId}">Create invoice</button>`}
+                  : `<button class="button small" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}" title="Creates the invoice and sends it to the client in one tap">📤 Send invoice</button>`}
                 ${booking.contractUrl
                   ? `<button class="button small secondary" data-doc-url="${escapeHtml(booking.contractUrl)}" data-doc-title="Contract" data-doc-pdf="1">Contract</button>`
-                  : `<button class="button small secondary" data-booking-action="contract" data-booking-id="${booking.bookingId}">Create contract</button>`}
+                  : `<button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}" title="Creates the contract and sends it to the client in one tap">📤 Send contract</button>`}
               </div>
               <details style="margin-top:8px;">
                 <summary class="more-summary">More</summary>
@@ -7221,6 +7222,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         list.innerHTML = threads.map((t) => {
           const hasAiMsg = t.msgs.some((m) => m.actor === "AI");
           const aiBadge = hasAiMsg ? `<span style="font-size:11px;background:#f0f4ff;color:#3b5bdb;border-radius:4px;padding:1px 6px;margin-left:6px;">🤖 AI replied</span>` : "";
+          // Reply right here instead of leaving for Requests → open lead → drawer.
+          // Only real client threads (key is a known leadId) get a reply box, and
+          // not ones already closed out. Seed with the AI's suggested reply.
+          const lead = leads.find((l) => l.leadId === t.key);
+          const canReply = lead && !["Lost", "Completed"].includes(lead.status);
+          const replyBox = canReply ? `
+              <div class="convo-reply" style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+                <input data-reply-input="${escapeHtml(lead.leadId)}" type="text" value="${escapeHtml(lead.suggestedReply || "")}" placeholder="Reply to ${escapeHtml(lead.clientName || "client")}…" style="flex:1;" />
+                <button class="button small" type="button" data-convo-reply="${escapeHtml(lead.leadId)}">Send</button>
+              </div>` : "";
           return `
           <details class="thread">
             <summary>
@@ -7250,12 +7261,23 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                   ${msgHtml}
                 </div>`;
               }).join("")}
+              ${replyBox}
             </div>
           </details>`;
         }).join("");
       }
       document.getElementById("convo-search").addEventListener("input", debounce(renderConversations));
       document.getElementById("convo-refresh").addEventListener("click", () => loadConversations(true));
+      // Inline reply from the Conversations tab — reuses the same /reply plumbing
+      // as the lead drawer, so an artist answers without leaving the thread.
+      document.getElementById("conversations-list").addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-convo-reply]");
+        if (!btn) return;
+        const leadId = btn.getAttribute("data-convo-reply");
+        const input = document.querySelector(`[data-reply-input="${leadId}"]`);
+        if (!input || !input.value.trim()) { toast("Type a message first.", "error"); return; }
+        runLeadAction("reply-inline", leadId, btn);
+      });
 
       // ---- Filters ----
       ["lead-search", "lead-filter-event", "lead-filter-source"].forEach((id) =>
@@ -7565,7 +7587,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // Shows a compact inline modal for picking the reason a lead was declined.
       // Returns the selected reason string, or null if the user cancelled.
       function pickLostReason(clientName) {
-        const REASONS = ["Date full", "Budget mismatch", "Out of service area", "Client cancelled", "Competition", "Duplicate lead", "Other"];
+        // Reason is optional — a neutral default sits first so an artist can just
+        // tap "Decline" without categorising (no more mis-attributing every
+        // decline to "Date full"). The dropdown stays for those who want reporting.
+        const REASONS = ["No reason", "Date full", "Budget mismatch", "Out of service area", "Client cancelled", "Competition", "Duplicate lead", "Other"];
         return new Promise((resolve) => {
           const overlay = document.createElement("div");
           overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;";
@@ -7573,7 +7598,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           card.style.cssText = "background:#fff;border-radius:14px;padding:24px;max-width:340px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);";
           card.innerHTML = `
             <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;">Decline ${escapeHtml(clientName)}?</h3>
-            <p style="font-size:13px;color:#78716c;margin-bottom:14px;">Pick a reason (helps with win-rate reporting):</p>
+            <p style="font-size:13px;color:#78716c;margin-bottom:14px;">Just tap Decline — or pick a reason for your reports (optional):</p>
             <select id="lost-reason-select" style="width:100%;padding:9px 10px;border:1.5px solid #e7e5e4;border-radius:8px;font-size:14px;margin-bottom:16px;">
               ${REASONS.map(r => `<option value="${r}">${r}</option>`).join("")}
             </select>
@@ -7585,7 +7610,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           overlay.appendChild(card);
           document.body.appendChild(overlay);
           const cleanup = (result) => { document.body.removeChild(overlay); resolve(result); };
-          card.querySelector("#lost-confirm-btn").addEventListener("click", () => cleanup(card.querySelector("#lost-reason-select").value));
+          card.querySelector("#lost-confirm-btn").addEventListener("click", () => {
+            const v = card.querySelector("#lost-reason-select").value;
+            cleanup(v === "No reason" ? "" : v);
+          });
           card.querySelector("#lost-cancel-btn").addEventListener("click", () => cleanup(null));
           overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(null); });
           setTimeout(() => card.querySelector("#lost-reason-select").focus(), 40);
@@ -7664,7 +7692,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         // instead of a raw error: a quote needs a price, and a quote can only be
         // sent once the price is approved.
         const leadForAction = leadById(leadId);
-        if ((action === "quote" || action === "send-quote") && leadForAction
+        if ((action === "quote" || action === "send-quote" || action === "approve-send") && leadForAction
             && !leadForAction.finalApprovedPrice && !leadForAction.initialAiPrice) {
           toast("Add a price first — open the request and set an amount, or the quote will be blank.", "info");
           return;
@@ -7682,6 +7710,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
             toast(`Price approved — ${who}'s date is on hold. Next: send them the quote.`, "success",
               { label: "Send quote now →", onClick: () => runLeadAction("send-quote", leadId, null) });
+          }
+          else if (action === "approve-send") {
+            // The everyday intent for a new request is "yes, and tell them" —
+            // one tap approves the price (holds the date) and sends the quote,
+            // instead of approve → read toast → send.
+            await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
+            await postJson(`/api/leads/${leadId}/send-quote`, {});
+            toast(`Quote sent to ${who} 🎉 — their date is on hold until they pay the advance.`, "success");
           }
           else if (action === "no") {
             if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
@@ -7722,6 +7758,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             await postJson(`/api/leads/${leadId}/reply`, body);
             const preview = document.getElementById("drawer-image-preview");
             if (preview) { preview.dataset.imageUrl = ""; preview.innerHTML = ""; preview.style.display = "none"; }
+            if (i) i.value = "";
+            toast(`Message sent to ${who}.`, "success");
+          }
+          else if (action === "reply-inline") {
+            // Conversations-tab reply: read ONLY this lead's keyed input so a
+            // lingering drawer reply box can never be picked up by mistake.
+            const i = document.querySelector(`[data-reply-input="${leadId}"]`);
+            await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" });
             if (i) i.value = "";
             toast(`Message sent to ${who}.`, "success");
           }
@@ -7918,7 +7962,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 : "";
             })()}
             <div style="display:flex;gap:8px;align-items:center;">
-              <input data-drawer-reply type="text" style="flex:1;" placeholder="Your message to the client…" />
+              <input data-drawer-reply type="text" style="flex:1;" value="${escapeHtml(lead.suggestedReply || "")}" placeholder="Your message to the client…" />
               <label title="Send image" style="cursor:pointer;display:flex;align-items:center;" class="button small secondary">
                 📎<input type="file" data-drawer-image-input accept="image/*" style="display:none;" />
               </label>
@@ -7936,8 +7980,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           </div>
           <div class="drawer-actions-row">
             <button class="button secondary small" data-drawer-edit-details="${lead.leadId}">✏️ Edit details</button>
-            <button class="button secondary small" data-drawer-action="quote" data-drawer-lead-id="${lead.leadId}">Generate quote</button>
-            <button class="button secondary small" data-drawer-action="send-quote" data-drawer-lead-id="${lead.leadId}">Send quote</button>
+            ${lead.status === "New" ? `<button class="button secondary small" data-drawer-action="yes" data-drawer-lead-id="${lead.leadId}" title="Hold the date without sending the quote yet">Approve only</button>` : ""}
+            ${lead.status !== "New" ? `<button class="button secondary small" data-drawer-action="send-quote" data-drawer-lead-id="${lead.leadId}">Send quote</button>` : ""}
             ${lead.status !== "Lost" && lead.status !== "Completed" ? `<button class="button secondary small${lead.urgencyFlag === "Urgent" ? " danger" : ""}" data-flag-lead="${lead.leadId}" title="${lead.urgencyFlag === "Urgent" ? "Remove urgent flag" : "Flag as urgent"}">${lead.urgencyFlag === "Urgent" ? "🚨 Urgent" : "⭐ Flag urgent"}</button>` : ""}
             ${lead.status !== "Lost" && lead.status !== "Completed" ? `<button class="button secondary small danger" data-drawer-action="no" data-drawer-lead-id="${lead.leadId}">Decline</button>` : ""}
           </div>`;
