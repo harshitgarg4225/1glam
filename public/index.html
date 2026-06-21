@@ -1696,6 +1696,7 @@
             </select>
           </div>
           <div class="mcal-grid" id="mcal-grid"></div>
+          <p class="muted" id="mcal-empty-hint" style="display:none;text-align:center;font-size:13px;margin:12px 0 0;">Nothing booked yet — tap any day to add a booking or block it off.</p>
           <div class="mcal-legend">
             <span><i class="dot dot-confirmed"></i> Booking</span>
             <span><i class="dot dot-hold"></i> Tentative hold</span>
@@ -5706,6 +5707,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
         const events = mcalEventsByDate();
         const blocked = new Set(parseBlockedDates());
+        // Guide a brand-new artist staring at an empty grid.
+        const hint = document.getElementById("mcal-empty-hint");
+        if (hint) {
+          const hasAnything = Object.keys(events).length > 0 || blocked.size > 0;
+          hint.style.display = hasAnything ? "none" : "";
+        }
         const todayStr = new Date().toISOString().slice(0, 10);
         const firstDay = new Date(year, month, 1);
         const startOffset = (firstDay.getDay() + 6) % 7; // Monday-first
@@ -9808,13 +9815,20 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const statusEl = document.getElementById("product-status");
         const name = document.getElementById("product-name").value.trim();
         if (!name) { statusEl.textContent = "Product name is required."; return; }
+        const price = Number(document.getElementById("product-price").value) || 0;
+        const cost = Number(document.getElementById("product-cost").value) || 0;
+        const stock = Number(document.getElementById("product-stock").value) || 0;
+        // min="0" on the inputs is bypassable by typing — guard before saving so
+        // a negative price/stock can't silently land in the sheet.
+        if (price <= 0) { statusEl.textContent = "Enter a retail price greater than ₹0."; return; }
+        if (cost < 0 || stock < 0) { statusEl.textContent = "Price, cost and stock can't be negative."; return; }
         const body = {
           name,
           sku: document.getElementById("product-sku").value.trim(),
           category: document.getElementById("product-category").value.trim(),
-          price: Number(document.getElementById("product-price").value) || 0,
-          cost: Number(document.getElementById("product-cost").value) || 0,
-          stock: Number(document.getElementById("product-stock").value) || 0,
+          price,
+          cost,
+          stock,
           lowStockThreshold: Number(document.getElementById("product-low").value) || 0,
         };
         const editId = document.getElementById("product-edit-id").value;
