@@ -4369,6 +4369,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // booking. One tap creates the document and it appears in the list.
       let docCreateKind = "quote";
       const docCreateModal = document.getElementById("doc-create-modal");
+      let _docCreateTrap = null;
+      function closeDocCreate() { if (_docCreateTrap) { _docCreateTrap(); _docCreateTrap = null; } docCreateModal.classList.remove("open"); }
 
       function openDocCreate(kind) {
         docCreateKind = kind;
@@ -4380,6 +4382,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("doc-create-status").textContent = "";
         renderDocCreateList();
         docCreateModal.classList.add("open");
+        _docCreateTrap = trapFocus(docCreateModal);
         setTimeout(() => document.getElementById("doc-create-search").focus(), 50);
       }
 
@@ -4422,8 +4425,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       document.getElementById("doc-new-quote")?.addEventListener("click", () => openDocCreate("quote"));
       document.getElementById("doc-new-invoice")?.addEventListener("click", () => openDocCreate("invoice"));
-      document.getElementById("doc-create-close")?.addEventListener("click", () => docCreateModal.classList.remove("open"));
-      docCreateModal?.addEventListener("click", (e) => { if (e.target === docCreateModal) docCreateModal.classList.remove("open"); });
+      document.getElementById("doc-create-close")?.addEventListener("click", closeDocCreate);
+      docCreateModal?.addEventListener("click", (e) => { if (e.target === docCreateModal) closeDocCreate(); });
       document.getElementById("doc-create-search")?.addEventListener("input", debounce(renderDocCreateList, 120));
       document.getElementById("doc-create-list")?.addEventListener("click", async (e) => {
         const btn = e.target.closest("[data-doc-create-id]");
@@ -4435,7 +4438,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         try {
           if (docCreateKind === "quote") await postJson(`/api/leads/${id}/quote`, {});
           else await postJson(`/api/bookings/${id}/invoice`, {});
-          docCreateModal.classList.remove("open");
+          closeDocCreate();
           toast(`${docCreateKind === "quote" ? "Quote" : "Invoice"} created — it's in your list, ready to send.`, "success");
           await refreshSession();
           await loadDocuments();
@@ -4550,6 +4553,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       // ─── Document edit modal ───
       const docEditModal = document.getElementById("doc-edit-modal");
+      let _docEditTrap = null;
       function addLineItemRow(label = "", amount = "") {
         const wrap = document.getElementById("doc-edit-lineitems");
         const row = document.createElement("div");
@@ -4574,6 +4578,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("doc-edit-quote-extras").style.display = kind === "quote" ? "" : "none";
         if (kind === "quote") loadQuotePackagesPicker();
         docEditModal.classList.add("open");
+        _docEditTrap = trapFocus(docEditModal);
       }
 
       // Saved quote packages → one-tap line items in the quote editor.
@@ -4602,7 +4607,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("doc-edit-amount").value = "";
         toast(`"${pkg.name}" applied — ${pkg.items.length} line items.`, "success");
       });
-      function closeDocEdit() { docEditModal.classList.remove("open"); }
+      function closeDocEdit() { if (_docEditTrap) { _docEditTrap(); _docEditTrap = null; } docEditModal.classList.remove("open"); }
       document.getElementById("doc-edit-close").addEventListener("click", closeDocEdit);
       docEditModal.addEventListener("click", (e) => { if (e.target === docEditModal) closeDocEdit(); });
       document.getElementById("doc-edit-additem").addEventListener("click", () => addLineItemRow());
@@ -10262,6 +10267,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // ─── Record payment modal ───
       const paymentModal = document.getElementById("payment-modal");
       let paymentModalBookingId = "";
+      let _paymentTrap = null;
 
       function openPaymentModal(bookingId) {
         const b = (sessionState?.dashboard?.bookings || []).find((x) => x.bookingId === bookingId);
@@ -10294,10 +10300,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("pay-note").value = "";
         document.getElementById("payment-form-status").textContent = "";
         paymentModal.classList.add("open");
+        _paymentTrap = trapFocus(paymentModal);
         setTimeout(() => amountInput.focus(), 50);
       }
 
-      function closePaymentModal() { paymentModal.classList.remove("open"); }
+      function closePaymentModal() { if (_paymentTrap) { _paymentTrap(); _paymentTrap = null; } paymentModal.classList.remove("open"); }
 
       // Remove a mis-entered payment line. Confirms first (it changes what the
       // client owes), then refreshes so the ledger and balance reflect the fix.
