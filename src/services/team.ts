@@ -125,6 +125,31 @@ export async function deactivateArtist(email: string, tokens: Credentials, artis
   return artist;
 }
 
+export async function reactivateArtist(email: string, tokens: Credentials, artistId: string) {
+  const workspace = await getWorkspaceByEmail(email);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.artists}!A2:${toColumn(artistHeaders.length)}`,
+  });
+  const rows = response.data.values ?? [];
+  const index = rows.findIndex((row) => row[0] === artistId);
+  if (index < 0) throw new Error("Artist not found");
+
+  const artist = rowToArtist(rows[index]);
+  artist.active = "Yes";
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.artists}!A${index + 2}:${toColumn(artistHeaders.length)}${index + 2}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [artistToRow(artist)] },
+  });
+
+  return artist;
+}
+
 function artistToRow(artist: ArtistRecord) {
   return [
     artist.artistId,

@@ -69,7 +69,7 @@ import {
   parseInstagramLeadSignalsFromMessage,
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
-import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
+import { deactivateArtist, reactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability, getPublicArtists } from "./services/public-booking.js";
 import { buildServicesContext, computeInsights } from "./services/insights.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
@@ -2006,6 +2006,22 @@ app.post("/api/team/:artistId/deactivate", async (req, res, next) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
     const artist = await deactivateArtist(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.artistId,
+    );
+    res.json({ ok: true, artist });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/team/:artistId/reactivate", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const artist = await reactivateArtist(
       req.session.profile.email,
       req.session.googleTokens,
       req.params.artistId,
@@ -6000,6 +6016,26 @@ app.post("/api/products/:productId/archive", async (req, res, next) => {
     const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
       ...p,
       status: "Archived" as const,
+    }));
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bring an archived product back — archiving was previously a one-way trip with
+// no UI path to recover a mis-archived item.
+app.post("/api/products/:productId/restore", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
+      ...p,
+      status: "Active" as const,
     }));
     if (!r.ok) return res.status(r.status).json({ error: r.error });
     res.json({ ok: true });
