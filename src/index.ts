@@ -40,6 +40,7 @@ import {
   type LeadRecord,
   updateLeadRecord,
   updatePaymentStatus,
+  travelCostForDistance,
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
@@ -73,6 +74,7 @@ import { deactivateArtist, reactivateArtist, listArtists, upsertArtist } from ".
 import { buildAvailability, createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability, getPublicArtists } from "./services/public-booking.js";
 import { buildServicesContext, computeInsights } from "./services/insights.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
+import { resolveTravelIntelligence } from "./services/maps.js";
 import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply, listGmbPosts, createGmbPost, getReputationSummary } from "./services/gmb.js";
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
@@ -493,6 +495,28 @@ app.get("/api/public/:workspaceId/profile", async (req, res, next) => {
       return res.status(404).json({ error: "Booking page not found" });
     }
     res.json({ ok: true, profile });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Live travel-fee estimate for the public booking page. Called when the client
+// types their venue so the sticky price bar can show "Incl. ₹X travel" before
+// they submit — no surprises in the quote. Returns 0 when travel isn't
+// configured or the venue string is too vague to geocode.
+app.get("/api/public/:workspaceId/travel", publicReadLimiter, async (req, res, next) => {
+  try {
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace) return res.json({ ok: true, travelFee: 0 });
+    const venue = String(req.query.venue ?? "").trim();
+    if (!venue || venue.length < 3) return res.json({ ok: true, travelFee: 0 });
+    const { config } = workspace;
+    const originCity = config.city || "";
+    if (!originCity) return res.json({ ok: true, travelFee: 0 });
+    const outstationThresholdKm = Number(config.travelOutstationThresholdKm) || 100;
+    const travel = await resolveTravelIntelligence({ originCity, destinationText: venue, outstationThresholdKm });
+    const travelFee = travelCostForDistance(config, travel.distanceKm);
+    res.json({ ok: true, travelFee, distanceKm: Math.round(travel.distanceKm) });
   } catch (error) {
     next(error);
   }

@@ -334,6 +334,7 @@
         <div class="cta-bar-price">
           <span class="lbl" id="cta-label">Select a service</span>
           <span class="amt" id="cta-amount">—</span>
+          <span id="cta-travel" style="display:none;font-size:11px;color:var(--muted);margin-top:1px;"></span>
         </div>
         <button type="button" class="cta-go" id="cta-go">Request booking</button>
       </div>
@@ -892,16 +893,36 @@
         if (fb) { fb.textContent = ""; }
       }
 
+      // Travel fee estimate: fetched when client types their venue so the bar
+      // shows "Incl. ₹X travel" before they submit — no surprise in the quote.
+      let travelFeeEstimate = 0;
+      let _travelTimer = null;
+      el("locationText")?.addEventListener("input", () => {
+        clearTimeout(_travelTimer);
+        const venue = el("locationText").value.trim();
+        if (venue.length < 4) { travelFeeEstimate = 0; updateCta(); return; }
+        _travelTimer = setTimeout(async () => {
+          try {
+            const r = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/travel?venue=${encodeURIComponent(venue)}`);
+            const data = await r.json();
+            travelFeeEstimate = (data.ok && data.travelFee > 0) ? data.travelFee : 0;
+          } catch { travelFeeEstimate = 0; }
+          updateCta();
+        }, 600);
+      });
+
       // Keep the sticky bar's price live as the client picks a package / add-ons,
       // so they always see what they're about to request — no surprises, no
       // scrolling to find the total.
       function updateCta() {
         const lbl = el("cta-label");
         const amt = el("cta-amount");
+        const travelNote = el("cta-travel");
         if (!lbl || !amt) return;
         if (!selectedEventType) {
           lbl.textContent = "Select a service";
           amt.textContent = "—";
+          if (travelNote) travelNote.style.display = "none";
           return;
         }
         const base = currentOrderAmount();
@@ -911,11 +932,21 @@
         if (!total) {
           lbl.textContent = "Estimated";
           amt.textContent = "Price on request";
+          if (travelNote) travelNote.style.display = "none";
           return;
         }
         const hasVariant = !!document.querySelector("#variants-list input[name='serviceVariant']:checked");
-        lbl.textContent = (hasVariant || addonTotal > 0) ? "Estimated total" : "Starting from";
-        amt.textContent = "₹" + Number(total).toLocaleString("en-IN");
+        const hasTravelOrAddon = hasVariant || addonTotal > 0 || travelFeeEstimate > 0;
+        lbl.textContent = hasTravelOrAddon ? "Estimated total" : "Starting from";
+        amt.textContent = "₹" + Number(total + travelFeeEstimate).toLocaleString("en-IN");
+        if (travelNote) {
+          if (travelFeeEstimate > 0) {
+            travelNote.textContent = `Incl. ₹${Number(travelFeeEstimate).toLocaleString("en-IN")} travel`;
+            travelNote.style.display = "";
+          } else {
+            travelNote.style.display = "none";
+          }
+        }
       }
 
       // Bring the section that needs attention into view when the client taps
