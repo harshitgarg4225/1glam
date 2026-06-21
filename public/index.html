@@ -3006,7 +3006,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
           <h2>Teach the AI to write like you</h2>
           <p class="muted" style="margin:0 0 8px;font-size:13.5px;">
             Paste a few of your own past replies to clients — at least 3, ideally 8–10 — and the AI learns how <em>you</em> write: your warmth, language mix (English/Hindi/Hinglish), emojis, and sign-off. Separate messages with a blank line.
-            <br><span id="tone-source-hint" style="opacity:.8;">Tip: once WhatsApp/Instagram are connected, you'll be able to pick past conversations here instead of pasting.</span>
+            <br><span id="tone-source-hint" style="opacity:.8;">Tip: copy real replies from your WhatsApp — the more genuine the examples, the more it sounds like you.</span>
           </p>
           <textarea id="aiToneSamples" name="aiToneSamples" form="config-form" rows="6" placeholder="Hi Priya! So glad you reached out 💕 Could you share your wedding date and venue?
 
@@ -4155,8 +4155,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (savedValue !== undefined) sel.dataset.saved = String(savedValue || "No") === "Yes" ? "Yes" : "No";
         const saved = sel.dataset.saved === "Yes";
         const current = sel.value === "Yes";
+        const mc = sessionState?.workspace?.metaConnections;
+        const channelConnected = mc?.whatsapp?.status === "connected" || mc?.instagram?.status === "connected";
         if (current !== saved) {
           status.innerHTML = `<span style="color:var(--warning);">Not saved yet — click <strong>Save AI settings</strong> to turn auto-reply ${current ? "ON" : "OFF"}.</span>`;
+        } else if (saved && !channelConnected) {
+          // Auto-reply has nothing to reply to without a connected inbox — say so
+          // instead of claiming it's "answering messages live."
+          status.innerHTML = `<span style="color:var(--warning);">● Auto-reply is on, but no inbox is connected yet — <button type="button" class="link-btn" data-go-tab="channels" style="background:none;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;padding:0;font:inherit;">connect WhatsApp or Instagram</button> for it to work.</span>`;
         } else {
           status.innerHTML = saved
             ? `<span style="color:#1e7a3f;">● Auto-reply is ON — your AI is answering messages live.</span>`
@@ -4690,12 +4696,23 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // ─── Settings search: find a field without knowing which section it's in ───
       document.getElementById("settings-search")?.addEventListener("input", debounce((e) => {
         const q = String(e.target.value || "").trim().toLowerCase();
+        const form = document.getElementById("config-form");
         const sections = document.querySelectorAll("#config-form details.collapse");
         sections.forEach((d) => {
           if (!q) { d.style.display = ""; return; }
           const matches = d.textContent.toLowerCase().includes(q);
           d.style.display = matches ? "" : "none";
-          if (matches) d.open = true;
+          if (matches) {
+            d.open = true;
+            // Open ancestor sections too, so a field nested inside a closed
+            // sub-section ("More pricing options…") is actually revealed, not
+            // just its outer section.
+            let p = d.parentElement;
+            while (p && p !== form) {
+              if (p.tagName === "DETAILS") { p.open = true; p.style.display = ""; }
+              p = p.parentElement;
+            }
+          }
         });
       }, 150));
 
@@ -8404,6 +8421,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
       });
       recoverBtn?.addEventListener("click", async () => {
+        // Re-links the workspace to a different Sheet in Drive — a data-integrity
+        // action that doesn't belong on a single unguarded tap.
+        if (!(await showConfirm("Recover your data sheet?", "This re-links your workspace to the best matching sheet in your Google Drive (or creates a fresh one if none is found). Only use this if your sheet was deleted or disconnected.", "Recover"))) return;
         setLoading(recoverBtn, "Scanning…");
         protectStatus.textContent = "";
         try {
@@ -8433,7 +8453,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const dis = e.target.closest("button[data-meta-disconnect]");
         if (!dis) return;
         const channel = dis.getAttribute("data-meta-disconnect");
-        try { await postJson(`/api/meta/disconnect/${channel}`, {}); await refreshSession(); } catch (error) { loginState.textContent = error.message; }
+        const label = channel === "instagram" ? "Instagram" : "WhatsApp";
+        // One unconfirmed tap shouldn't sever an integration — auto-replies,
+        // reminders and review requests on that channel stop until reconnected.
+        if (!(await showConfirm(`Disconnect ${label}?`, `Your AI auto-replies, automated reminders and review requests on ${label} will stop until you reconnect it.`, "Disconnect"))) return;
+        try { await postJson(`/api/meta/disconnect/${channel}`, {}); toast(`${label} disconnected.`, "info"); await refreshSession(); } catch (error) { toast(error.message, "error"); }
       });
 
       const params = new URLSearchParams(window.location.search);
@@ -8832,6 +8856,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.getElementById("wa-templates-setup-btn")?.addEventListener("click", async (e) => {
         const btn = e.currentTarget;
         const box = document.getElementById("wa-templates-results");
+        // Templates can only be created on a connected WhatsApp Business account.
+        // Catch it here with a clear nudge instead of a confusing "go to the
+        // Channels tab" error fired from the Channels tab itself.
+        if (sessionState?.workspace?.metaConnections?.whatsapp?.status !== "connected") {
+          box.innerHTML = `<p class="muted" style="font-size:13px;">Connect your WhatsApp Business account first (the <strong>Connect</strong> button above), then tap this to create your templates.</p>`;
+          return;
+        }
         setLoading(btn, "Creating templates…");
         box.innerHTML = "";
         try {
@@ -10065,7 +10096,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           }
           await postJson("/api/workspace/config", cfg);
           closeQuickSetup();
-          toast("You're set up! Clients can now book and pay you.", "success");
+          // Don't claim "clients can pay you" when no payment method was set up.
+          const canTakePayment = String(cfg.upiId || "").trim() || String(cfg.razorpayKeyId || "").trim();
+          toast(canTakePayment
+            ? "You're set up! Clients can now book and pay you."
+            : "You're set up — clients can book you now. Add a UPI ID (Settings → Your prices) when you're ready to take payments.", "success");
           await refreshSession();
         } catch (error) {
           status.textContent = error.message;
