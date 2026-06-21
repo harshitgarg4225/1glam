@@ -3206,6 +3206,7 @@ app.get("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next)
       brandColor: workspace.config.brandColor || "#C26B45",
       booking: {
         bookingId: booking.bookingId,
+        leadId: booking.leadId || "",
         clientName: booking.clientName,
         eventType: booking.eventType,
         eventDate: booking.eventDate,
@@ -3336,6 +3337,7 @@ app.get("/api/public/:workspaceId/cancel/:bookingId", async (req, res, next) => 
       cancellationPolicy: workspace.config.cancellationPolicy || "",
       booking: {
         clientName: booking.clientName,
+        leadId: booking.leadId || "",
         eventType: booking.eventType,
         eventDate: booking.eventDate,
         eventTime: booking.eventTime,

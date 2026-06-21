@@ -27,6 +27,8 @@
     .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; color: #fff; transition: opacity .15s, transform .08s ease; touch-action: manipulation; }
     .btn:active:not(:disabled) { transform: scale(.98); }
     .btn-danger { background: var(--danger); }
+    .btn-danger.armed { background: #7f1414; animation: armed-pulse 1s ease-in-out infinite; }
+    @keyframes armed-pulse { 0%,100% { opacity: 1; } 50% { opacity: .82; } }
     .btn-keep { background: transparent; color: var(--muted); border: 1px solid var(--line); margin-top: 10px; font-weight: 600; }
     .btn:disabled { opacity: .55; cursor: not-allowed; }
     .status { margin-top: 14px; text-align: center; font-size: 14px; }
@@ -110,8 +112,31 @@
         <button class="btn btn-keep" id="keep-btn" type="button">Keep my booking</button>
         <div class="status" id="status"></div>
       `;
-      document.getElementById("confirm-btn").addEventListener("click", submitCancel);
-      document.getElementById("keep-btn").addEventListener("click", () => { location.href = "/"; });
+      // Cancelling a (possibly paid) booking is irreversible — require a second,
+      // deliberate tap rather than firing on a single fat-finger.
+      let cancelArmed = false;
+      const confirmBtn = document.getElementById("confirm-btn");
+      confirmBtn.addEventListener("click", () => {
+        if (!cancelArmed) {
+          cancelArmed = true;
+          confirmBtn.textContent = "Tap again to confirm cancellation";
+          confirmBtn.classList.add("armed");
+          setTimeout(() => {
+            if (cancelArmed) { cancelArmed = false; confirmBtn.textContent = "Cancel my booking"; confirmBtn.classList.remove("armed"); }
+          }, 4000);
+          return;
+        }
+        submitCancel();
+      });
+      // "Keep" should return the client to their appointment, never dump them on
+      // the marketing root where they can't get back to their booking.
+      document.getElementById("keep-btn").addEventListener("click", () => {
+        if (b.leadId) {
+          location.href = `/appointment/${encodeURIComponent(workspaceId)}/${encodeURIComponent(b.leadId)}`;
+        } else {
+          renderDone("Your booking is unchanged.", "Glad you're still coming — see you then! You can close this page.");
+        }
+      });
     }
 
     async function submitCancel() {

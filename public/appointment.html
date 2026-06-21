@@ -121,8 +121,11 @@
       }
       render(data.details);
     } catch {
+      // A network blip is not "appointment not found" — say so, and invite a retry.
       document.getElementById("loading").classList.add("hidden");
       document.getElementById("error-card").classList.remove("hidden");
+      document.getElementById("error-msg").textContent =
+        "We couldn't load your appointment — please check your connection and refresh.";
     }
   }
 
@@ -136,10 +139,12 @@
     const statusMap = {
       "Confirmed": ["confirmed", "✅ Confirmed"],
       "Payment Received": ["confirmed", "✅ Confirmed & Paid"],
+      "Completed": ["confirmed", "✅ Completed — thank you!"],
       "Awaiting Client": ["pending", "⏳ Awaiting your payment"],
       "Payment Pending": ["pending", "⏳ Payment under review"],
     };
-    const [cls, label] = statusMap[d.leadStatus] || ["pending", d.leadStatus];
+    // Never leak a raw internal status (e.g. "New", "Sent", "Lost") to the client.
+    const [cls, label] = statusMap[d.leadStatus] || ["pending", "⏳ In progress"];
     banner.className = "status-banner " + cls;
     banner.textContent = label;
 

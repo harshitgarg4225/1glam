@@ -96,6 +96,8 @@
         background: var(--accent); transition: background 0.15s;
       }
       .button:hover { background: var(--accent-hover); }
+      .button.secondary { background: var(--surface); color: var(--accent); border: 1px solid var(--line); }
+      .button.secondary:hover { background: var(--line); }
       .button:disabled { opacity: 0.6; cursor: not-allowed; }
       .status { min-height: 22px; margin-top: 10px; color: var(--danger); font-size: 14px; }
       .hidden { display: none; }
@@ -285,7 +287,7 @@
             </div>
             <div>
               <label for="clientWhatsApp">WhatsApp number</label>
-              <input type="tel" id="clientWhatsApp" placeholder="+91…" required />
+              <input type="tel" id="clientWhatsApp" inputmode="tel" autocomplete="tel" placeholder="+91…" required />
             </div>
           </div>
 
@@ -501,7 +503,7 @@
           ["🗓️", "Your date is held while " + profile.businessName + " reviews"],
         ];
         el("trust-strip").innerHTML = trust.map(([icon, text]) =>
-          `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface);font-size:12.5px;color:var(--text);">${icon} ${text.replace(/</g, "&lt;")}</span>`
+          `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface);font-size:12.5px;color:var(--text);">${icon} ${esc(text)}</span>`
         ).join("");
 
         if (profile.aboutText) {
@@ -526,7 +528,7 @@
           card.innerHTML =
             imgHtml +
             '<div class="service-body">' +
-            '<div class="name">' + type.label + "</div>" +
+            '<div class="name">' + esc(type.label) + "</div>" +
             '<div class="price">' + formatPriceRange(type) +
               (durationLabel ? ' <span style="color:var(--muted);">· ⏱ ' + durationLabel + "</span>" : "") +
             "</div>" +
@@ -776,11 +778,11 @@
             const item = document.createElement("label");
             item.className = "variant-item" + (i === 0 ? " selected" : "");
             item.innerHTML =
-              `<input type="radio" name="serviceVariant" id="${safeId}" value="${v.name.replace(/"/g, "&quot;")}" data-price="${v.price}" ${i === 0 ? "checked" : ""} />` +
+              `<input type="radio" name="serviceVariant" id="${safeId}" value="${esc(v.name)}" data-price="${v.price}" ${i === 0 ? "checked" : ""} />` +
               `<div>` +
-              `<div class="variant-name">${v.name}</div>` +
+              `<div class="variant-name">${esc(v.name)}</div>` +
               `<div class="variant-price">₹${Number(v.price).toLocaleString("en-IN")}</div>` +
-              (v.description ? `<div class="variant-desc">${v.description}</div>` : "") +
+              (v.description ? `<div class="variant-desc">${esc(v.description)}</div>` : "") +
               `</div>`;
             variantsList.appendChild(item);
           });
@@ -796,8 +798,8 @@
             const label = document.createElement("label");
             label.className = "addon-item";
             label.innerHTML =
-              '<input type="checkbox" id="' + safeId + '" value="' + addon.name.replace(/"/g, "&quot;") + '" data-price="' + (Number(addon.price) || 0) + '" />' +
-              '<span>' + addon.name +
+              '<input type="checkbox" id="' + safeId + '" value="' + esc(addon.name) + '" data-price="' + (Number(addon.price) || 0) + '" />' +
+              '<span>' + esc(addon.name) +
               (addon.price > 0 ? ' <span class="addon-price">+₹' + Number(addon.price).toLocaleString("en-IN") + '</span>' : '') +
               '</span>';
             addonsList.appendChild(label);
@@ -826,7 +828,7 @@
               if (!questions.length) return;
               intakeQs.innerHTML = questions.map((q, i) => `
                 <div style="margin-bottom:10px;">
-                  <label style="font-size:13.5px;display:block;margin-bottom:4px;font-weight:500;">${q}</label>
+                  <label style="font-size:13.5px;display:block;margin-bottom:4px;font-weight:500;" data-intake-label="${i}">${esc(q)}</label>
                   <input data-intake-q="${i}" name="intakeQ${i}" class="intake-answer" style="width:100%;box-sizing:border-box;" placeholder="Your answer" />
                 </div>`).join("");
               intakeWrap.style.display = "";
@@ -962,12 +964,32 @@
           return;
         }
 
+        // Name + WhatsApp are far above the sticky CTA, so the native "required"
+        // bubble can fire on an off-screen field with no scroll. Validate them
+        // explicitly and bring the offending field into view.
+        if (!el("clientName").value.trim()) {
+          statusEl.textContent = "Please add your name so the artist knows who's booking.";
+          scrollToEl("clientName"); el("clientName").focus();
+          return;
+        }
+        if (el("clientWhatsApp").value.replace(/\D/g, "").length < 8) {
+          statusEl.textContent = "Please add a valid WhatsApp number — it's how the artist confirms your date.";
+          scrollToEl("clientWhatsApp"); el("clientWhatsApp").focus();
+          return;
+        }
+
         const checkedAddons = [...document.querySelectorAll("#addons-list input:checked")]
           .map((cb) => cb.value).join(", ");
         // Collect intake form answers into ownerNotes prefix
         const intakeAnswers = [...document.querySelectorAll(".intake-answer")]
-          .map((inp) => inp.placeholder + ": " + inp.value.trim())
-          .filter((s) => s.includes(": ") && s.split(": ")[1]);
+          .map((inp) => {
+            const idx = inp.getAttribute("data-intake-q");
+            const labelEl = document.querySelector(`[data-intake-label="${idx}"]`);
+            const question = (labelEl ? labelEl.textContent.trim() : "Question").replace(/\s+/g, " ");
+            const answer = inp.value.trim();
+            return answer ? question + ": " + answer : "";
+          })
+          .filter(Boolean);
         const intakeNote = intakeAnswers.length ? "Intake: " + intakeAnswers.join(" | ") : "";
         // Collect selected variant
         const selectedVariant = document.querySelector("#variants-list input[name='serviceVariant']:checked");

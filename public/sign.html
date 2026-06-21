@@ -106,7 +106,9 @@
     function fmtMoney(v) { return "₹" + Number(v || 0).toLocaleString("en-IN"); }
     function fmtDay(v) {
       if (!v) return "To be confirmed";
-      const d = new Date(v);
+      // Parse date-only strings at local midnight so the day never shifts back
+      // across the UTC boundary (e.g. showing the 20th for a "2026-06-21" event).
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v + "T00:00:00") : new Date(v);
       if (isNaN(d)) return v;
       return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
     }

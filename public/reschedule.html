@@ -61,6 +61,7 @@
     const bookingId = pathParts[pathParts.length - 1];
     const sig = params.get("sig");
     const exp = params.get("exp");
+    let rescheduleLeadId = "";
 
     const card = document.getElementById("card");
 
@@ -75,6 +76,7 @@
       }
 
       const b = data.booking;
+      rescheduleLeadId = b.leadId || "";
       const accent = data.brandColor || "#C26B45";
       document.documentElement.style.setProperty("--accent", accent);
       document.getElementById("brand-name").className = "";
@@ -127,6 +129,7 @@
             <div class="done-icon">🎉</div>
             <h2>All set!</h2>
             <p>Your booking has been moved to <strong>${formatDate(eventDate)}</strong>${eventTime ? ` at ${eventTime}` : ""}.<br>The studio will be in touch to confirm details.</p>
+            ${rescheduleLeadId ? `<a class="btn" style="margin-top:18px;display:inline-block;text-decoration:none;" href="/appointment/${encodeURIComponent(workspaceId)}/${encodeURIComponent(rescheduleLeadId)}">View my appointment</a>` : ""}
           </div>
         `;
       } catch (err) {
