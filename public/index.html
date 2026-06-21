@@ -5420,7 +5420,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                   <button class="button small secondary" data-doc-url="/api/bookings/${booking.bookingId}/contract/preview" data-doc-title="Contract preview" data-doc-pdf="1">👁 Contract</button>
                   <button class="button small secondary" data-booking-action="send-invoice" data-booking-id="${booking.bookingId}">Send invoice</button>
                   <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
-                  <button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync status</button>
+                  ${sessionState?.workspace?.config?.contractTemplateUrl ? `<button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync status</button>` : ""}
                   <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask review</button>
                   <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Advance reminder</button>
                   <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance reminder</button>
