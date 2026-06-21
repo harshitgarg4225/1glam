@@ -595,6 +595,7 @@
       }
 
       /* ─── Toast notifications ─── */
+      .img-unavailable { display: inline-block; padding: 16px 20px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 13px; background: var(--surface); }
       .toast-shelf { position: fixed; bottom: 28px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; pointer-events: none; }
       .toast { padding: 13px 18px; border-radius: 12px; font-size: 14px; font-weight: 500; line-height: 1.4; box-shadow: 0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1); pointer-events: auto; max-width: 360px; animation: toast-in 0.22s cubic-bezier(.22,.68,0,1.2); background: #1C1917; color: #fff; }
       .toast.success { background: var(--success); }
@@ -2214,7 +2215,7 @@
             <div id="analytics-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:28px;"></div>
             <h3 style="margin-bottom:14px;font-size:16px;">Revenue (last 12 months)</h3>
             <div id="chart-revenue" style="margin-bottom:28px;"></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;flex-wrap:wrap;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px;">
               <div>
                 <h3 style="margin-bottom:12px;font-size:16px;">Leads by source</h3>
                 <div id="chart-source"></div>
@@ -3155,7 +3156,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
       </div><!-- /tab-panels -->
     </main>
-    <div class="toast-shelf" id="toast-shelf"></div>
+    <div class="toast-shelf" id="toast-shelf" role="status" aria-live="polite" aria-atomic="false"></div>
 
     <!-- Pull-to-refresh indicator (mobile) -->
     <div id="bd-ptr"><div class="bd-ptr-spinner"></div></div>
@@ -5092,7 +5093,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           : lead.quoteGeneratedAt
           ? `<span class="pill" style="font-size:11px;">Quote ready</span>`
           : "";
-        const payLabels = { "Not Started": "", "Advance Paid": "💰 Advance in", "Paid in Full": "✅ Fully paid", "Advance Due": "Advance due" };
+        const payLabels = { "Not Started": "", "Advance Paid": "💰 Advance received", "Paid in Full": "✅ Fully paid", "Advance Due": "Advance due" };
         const payText = payLabels[lead.paymentStatus] !== undefined ? payLabels[lead.paymentStatus] : lead.paymentStatus;
         const payChip = payText
           ? `<span class="${pillClass(lead.paymentStatus)}" style="font-size:11px;">${escapeHtml(payText)}</span>`
@@ -5398,7 +5399,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const payPill = booking.paymentStatus === "Paid in Full"
             ? `<span class="pay-pill paid">✓ Paid in full</span>`
             : booking.paymentStatus === "Advance Paid"
-              ? `<span class="pay-pill partial">Advance in · ${formatMoney(owed)} due</span>`
+              ? `<span class="pay-pill partial">Advance received · ${formatMoney(owed)} due</span>`
               : `<span class="pay-pill due">Advance unpaid</span>`;
           const isOverdueInvoice = booking.invoiceDueDate && booking.paymentStatus !== "Paid in Full"
             && new Date(booking.invoiceDueDate) < new Date();
@@ -5839,11 +5840,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const range = [];
         const cursor = new Date(start + "T00:00:00");
         const stop = new Date(end + "T00:00:00");
-        while (cursor <= stop && range.length < 90) {
+        while (cursor <= stop && range.length <= 366) {
           range.push(cursor.toISOString().slice(0, 10));
           cursor.setDate(cursor.getDate() + 1);
         }
-        if (range.length >= 90) { toast("That's more than 90 days — double-check the dates.", "error"); return; }
+        // A full quarter or a maternity-leave block is legitimate; only a typo
+        // (e.g. the wrong year) blows past a year.
+        if (range.length > 366) { toast("That's over a year — double-check the dates.", "error"); return; }
         const existing = parseBlockedDates();
         const fresh = range.filter((d) => !existing.includes(d));
         if (!fresh.length) { toast(range.length > 1 ? "Those days are already blocked." : "That day is already blocked.", "error"); return; }
@@ -7324,7 +7327,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                     ? `/api/media/whatsapp/${encodeURIComponent(ref.slice(3))}`
                     : ref.slice(4);
                   const captionHtml = caption ? `<div style="margin-top:4px;font-size:13px;">${escapeHtml(caption)}</div>` : "";
-                  msgHtml = `<img src="${escapeHtml(imgSrc)}" loading="lazy" style="max-width:220px;max-height:280px;border-radius:8px;display:block;" onerror="this.alt='Image unavailable';this.style.display='none';" />${captionHtml}`;
+                  msgHtml = `<img src="${escapeHtml(imgSrc)}" loading="lazy" style="max-width:220px;max-height:280px;border-radius:8px;display:block;" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'img-unavailable',textContent:'📷 Image unavailable'}))" />${captionHtml}`;
                 } else {
                   msgHtml = escapeHtml(m.message);
                 }
@@ -7676,6 +7679,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const overlay = document.createElement("div");
           overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;";
           const card = document.createElement("div");
+          card.setAttribute("role", "dialog");
+          card.setAttribute("aria-modal", "true");
+          card.setAttribute("aria-label", "Decline this request");
           card.style.cssText = "background:#fff;border-radius:14px;padding:24px;max-width:340px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);";
           card.innerHTML = `
             <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;">Decline ${escapeHtml(clientName)}?</h3>
@@ -7690,13 +7696,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           `;
           overlay.appendChild(card);
           document.body.appendChild(overlay);
-          const cleanup = (result) => { document.body.removeChild(overlay); resolve(result); };
+          const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); cleanup(null); } };
+          const cleanup = (result) => { document.removeEventListener("keydown", onKey, true); document.body.removeChild(overlay); resolve(result); };
           card.querySelector("#lost-confirm-btn").addEventListener("click", () => {
             const v = card.querySelector("#lost-reason-select").value;
             cleanup(v === "No reason" ? "" : v);
           });
           card.querySelector("#lost-cancel-btn").addEventListener("click", () => cleanup(null));
           overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(null); });
+          document.addEventListener("keydown", onKey, true);
           setTimeout(() => card.querySelector("#lost-reason-select").focus(), 40);
         });
       }
@@ -8142,6 +8150,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.addEventListener("keydown", (e) => {
         if (e.key !== "Escape") return;
         document.querySelectorAll(".modal-overlay.open, .confirm-overlay.open").forEach((m) => m.classList.remove("open"));
+        // Stop the (possibly large) preview PDF from rendering in the background
+        // after the viewer is dismissed via Escape, mirroring the close button.
+        const docIframe = document.getElementById("doc-viewer-iframe");
+        if (docIframe && docIframe.src) docIframe.src = "";
       });
 
       // Handle drawer action buttons.
