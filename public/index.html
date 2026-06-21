@@ -9147,7 +9147,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const leadId = document.getElementById("le-lead-id").value;
         setLoading(btn, "Saving…");
         try {
-          await postJson(`/api/leads/${leadId}/details`, {
+          const res = await postJson(`/api/leads/${leadId}/details`, {
             clientName: document.getElementById("le-name").value.trim(),
             clientWhatsApp: document.getElementById("le-phone").value.trim(),
             clientInstagram: document.getElementById("le-instagram").value.trim(),
@@ -9159,7 +9159,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           });
           leadEditModal.classList.remove("open");
           closeLeadDrawer();
-          toast("Details updated — booking and calendar follow automatically.", "success");
+          toast(res?.notified
+            ? "Details updated — booking, calendar and the client's WhatsApp all updated. ✅"
+            : "Details updated — booking and calendar follow automatically.", "success");
           await refreshSession();
         } catch (error) {
           document.getElementById("le-status").textContent = error.message;
@@ -9197,13 +9199,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const bookingId = document.getElementById("rs-booking-id").value;
         setLoading(btn, "Moving…");
         try {
-          await postJson(`/api/bookings/${bookingId}/reschedule`, {
+          const res = await postJson(`/api/bookings/${bookingId}/reschedule`, {
             eventDate: document.getElementById("rs-date").value,
             eventTime: document.getElementById("rs-time").value || undefined,
             venue: document.getElementById("rs-venue").value.trim() || undefined,
           });
           rescheduleModal.classList.remove("open");
-          toast("Booking updated — your calendar follows. Remember to tell the client!", "success");
+          toast(res?.notified
+            ? "Booking moved — calendar updated and the client has been messaged the new details. ✅"
+            : "Booking moved — your calendar follows. (Couldn't auto-message the client — drop them a quick note.)",
+            "success");
           await refreshSession();
         } catch (error) {
           document.getElementById("rs-status").textContent = error.message;

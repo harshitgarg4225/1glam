@@ -2211,7 +2211,12 @@ app.post("/api/bookings/:bookingId/reschedule", async (req, res, next) => {
       req.params.bookingId,
       { eventDate, eventTime, venue },
     );
-    res.json({ ok: true, booking });
+    // Auto-tell the client the new details instead of leaving it to the artist.
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const notified = workspace
+      ? await notifyClientOfReschedule(req.session.profile.email, req.session.googleTokens, workspace, booking)
+      : false;
+    res.json({ ok: true, booking, notified });
   } catch (error) {
     next(error);
   }
@@ -2262,6 +2267,7 @@ app.post("/api/leads/:leadId/details", async (req, res, next) => {
       clientTags: parsed.clientTags ?? lead.clientTags,
     }));
 
+    let notified = false;
     if (before.bookingId) {
       const scheduleChanged =
         (parsed.eventDate && parsed.eventDate !== before.eventDate) ||
@@ -2270,11 +2276,16 @@ app.post("/api/leads/:leadId/details", async (req, res, next) => {
       if (scheduleChanged) {
         // Reads the just-updated lead, so the recreated calendar event carries
         // the new venue/time even when only one of them changed.
-        await rescheduleBooking(email, tokens, before.bookingId, {
+        const movedBooking = await rescheduleBooking(email, tokens, before.bookingId, {
           eventDate: updated.eventDate,
           eventTime: updated.eventTime,
           venue: updated.locationText,
-        }).catch(() => {});
+        }).catch(() => null);
+        // A date/venue edit is a reschedule from the client's side — notify them.
+        if (movedBooking) {
+          const ws = await getWorkspaceByEmail(email);
+          if (ws) notified = await notifyClientOfReschedule(email, tokens, ws, movedBooking).catch(() => false);
+        }
       }
       if ((parsed.clientName && parsed.clientName !== before.clientName) ||
           (parsed.clientWhatsApp && parsed.clientWhatsApp !== before.clientWhatsApp)) {
@@ -2286,7 +2297,7 @@ app.post("/api/leads/:leadId/details", async (req, res, next) => {
       }
     }
 
-    res.json({ ok: true, lead: updated });
+    res.json({ ok: true, lead: updated, notified });
   } catch (error) {
     next(error);
   }
@@ -7542,6 +7553,66 @@ function buildContractShareMessage(_workspace: NonNullable<Awaited<ReturnType<ty
   }
 
   return `Hi ${booking.clientName || "love"}, your booking agreement has been initiated through Leegality. Please check the contract link shared with you there and sign it when convenient.`;
+}
+
+function buildRescheduleNotice(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {
+  const biz = workspace.config.businessName || workspace.config.ownerName || "your artist";
+  // Parse the date at local midnight so the weekday/day never shifts across the
+  // UTC boundary the way `new Date("YYYY-MM-DD")` (which is UTC) would.
+  const parsed = new Date(`${booking.eventDate}T00:00:00`);
+  const dateStr = Number.isNaN(parsed.getTime())
+    ? booking.eventDate
+    : parsed.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const timeStr = booking.eventTime ? ` at ${booking.eventTime}` : "";
+  const venueStr = booking.venue ? `\n📍 ${booking.venue}` : "";
+  return [
+    `Hi ${booking.clientName || "love"} 🙏`,
+    "",
+    `Your ${booking.eventType} booking has been updated. Here are the new details:`,
+    "",
+    `📅 ${dateStr}${timeStr}${venueStr}`,
+    "",
+    `See you then!\n— ${biz}`,
+  ].join("\n");
+}
+
+// Tell the client when their booking moves. The artist just changed the one
+// thing the client most needs to know (date/time/venue), so send it through the
+// same compliant path used for invoices/contracts instead of a "remember to
+// tell the client" prompt. Best-effort: a messaging failure never blocks the
+// reschedule. Returns whether a message was actually dispatched.
+async function notifyClientOfReschedule(
+  email: string,
+  tokens: Credentials,
+  workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>,
+  booking: BookingRecord,
+): Promise<boolean> {
+  try {
+    if (!booking.leadId) return false;
+    const lead = await getLeadRecord(email, tokens, booking.leadId);
+    if (!lead) return false;
+    const ctx = resolveLeadMessagingContext(workspace, lead);
+    if (!ctx) return false;
+    const message = buildRescheduleNotice(workspace, booking);
+    await sendBusinessMessage({
+      workspace,
+      connection: ctx.connection,
+      channel: ctx.channel,
+      actorId: ctx.actorId,
+      message,
+    });
+    await logInteractionForWorkspace(email, tokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: ctx.channel,
+      actor: ctx.actorId,
+      message,
+      aiSummary: "Reschedule notice sent",
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildReviewRequestMessage(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {
