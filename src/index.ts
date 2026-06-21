@@ -651,14 +651,21 @@ app.post("/api/public/:workspaceId/payment/:leadId/verify", publicWriteLimiter, 
       // Prefer the per-booking ledger (keeps collected/outstanding exact);
       // fall back to the coarse status flip for leads without a booking row.
       if (lead.bookingId && serviceInr > 0) {
-        await recordBookingPayment(workspace.email, tokens, lead.bookingId, {
+        const paidBooking = await recordBookingPayment(workspace.email, tokens, lead.bookingId, {
           amount: serviceInr,
           method: "Razorpay",
           note: `Online ${purpose} payment`,
           ref: paymentId,
         }).catch(async () => {
           await updatePaymentStatus(workspace.email, tokens, leadId, targetStatus);
+          return null;
         });
+        // Same branded receipt (WhatsApp template + email) a manually-recorded
+        // payment gets — an online payer shouldn't be the only one left without
+        // a confirmation showing what's paid and what's still due.
+        if (paidBooking) {
+          sendPaymentReceipt(workspace, tokens, paidBooking, serviceInr).catch(() => undefined);
+        }
       } else {
         await updatePaymentStatus(workspace.email, tokens, leadId, targetStatus);
       }
