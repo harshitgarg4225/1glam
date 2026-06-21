@@ -4249,6 +4249,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
         try { return d.toLocaleDateString("en-IN", opts); } catch { return value; }
       }
+      // Parse a "YYYY-MM-DD" event date at LOCAL midnight. Bare new Date("YYYY-MM-DD")
+      // parses as UTC midnight, which in IST (+5:30) lands at 5:30am the same day —
+      // so day-level comparisons against a local-midnight `today` slip a day late at
+      // night ("is this event past?", "days away", "upcoming within N days"). Routing
+      // every comparison through this keeps the artist's dashboard correct after dark.
+      function parseDay(value) {
+        if (!value) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(value + "T00:00:00");
+        const d = new Date(value);
+        return isNaN(d) ? null : d;
+      }
       function formatMoney(value) { return `₹${Number(value || 0).toLocaleString("en-IN")}`; }
       function pillClass(status) {
         if (["Confirmed", "Payment Received", "Advance Paid", "Paid in Full", "Paid", "Accepted", "Signed", "Completed"].includes(status)) return "pill success";
@@ -4926,8 +4937,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
         // Advance payments overdue (event date passed, advance still due)
         const overdueAdvance = bookings.filter((b) => {
-          const d = new Date(b.eventDate); d.setHours(0,0,0,0);
-          return d < today && (b.paymentStatus || "") === "Advance Due";
+          const d = parseDay(b.eventDate);
+          return d && d < today && (b.paymentStatus || "") === "Advance Due";
         });
         if (overdueAdvance.length) {
           items.push({ icon: "💸", title: `${overdueAdvance.length} booking${overdueAdvance.length > 1 ? "s" : ""} with advance payment still outstanding`, sub: overdueAdvance.map((b) => b.clientName).join(", "), tab: "bookings", danger: true });
@@ -4935,8 +4946,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
         // Events in next 48 hours with advance not collected
         const imminent = bookings.filter((b) => {
-          const d = new Date(b.eventDate); d.setHours(0,0,0,0);
-          const daysAway = Math.ceil((d - today) / 86400000);
+          const d = parseDay(b.eventDate);
+          if (!d) return false;
+          const daysAway = Math.round((d - today) / 86400000);
           return daysAway >= 0 && daysAway <= 2 && (b.paymentStatus || "") === "Advance Due";
         });
         if (imminent.length) {
@@ -5028,9 +5040,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       function daysUntil(dateStr) {
-        if (!dateStr) return null;
-        const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
-        return diff;
+        const d = parseDay(dateStr);
+        if (!d) return null;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        return Math.round((d - today) / 86400000);
       }
 
       // For an artist who travels between cities, the biggest real-world risk is
@@ -5228,8 +5241,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             if (!hay.includes(q)) return false;
           }
           if (dateRange) {
-            const d = l.eventDate ? new Date(l.eventDate) : null;
-            if (!d || isNaN(d)) return dateRange !== "past";
+            const d = parseDay(l.eventDate);
+            if (!d) return dateRange !== "past";
             if (dateRange === "past") return d < today;
             const days = parseInt(dateRange, 10);
             const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + days);
@@ -5381,13 +5394,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             if (!hay.includes(q)) return false;
           }
           if (dateRange) {
-            const d = b.eventDate ? new Date(b.eventDate) : null;
+            const d = parseDay(b.eventDate);
             // "Upcoming" is the everyday view: future jobs that are still on.
             if (dateRange === "upcoming") {
               if (["Cancelled", "Completed"].includes(b.status)) return false;
-              return !d || isNaN(d) || d >= today;
+              return !d || d >= today;
             }
-            if (!d || isNaN(d)) return dateRange !== "past";
+            if (!d) return dateRange !== "past";
             if (dateRange === "past") return d < today;
             const days = parseInt(dateRange, 10);
             const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + days);
@@ -5588,7 +5601,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (!box) return;
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const upcoming = (bookings || [])
-          .filter((b) => { const d = new Date(b.eventDate); return !isNaN(d) && d >= today; })
+          .filter((b) => { const d = parseDay(b.eventDate); return d && d >= today; })
           .sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate))
           .slice(0, 5);
         if (!upcoming.length) {
@@ -7552,27 +7565,42 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         return refreshSessionInflight;
       }
 
+      // A logged-out visitor must stay on the public landing page — never
+      // auto-redirect to Google sign-in (that makes the homepage look "behind
+      // a login page" to users and to Google's OAuth-verification crawler).
+      function setSignedOut() {
+        document.body.classList.remove("authenticated");
+        loginState.textContent = "Not signed in";
+        connectLink.style.display = "inline-flex";
+        logoutButton.style.display = "none";
+      }
+
       async function doRefreshSession() {
-        const response = await fetch("/api/session");
-        // A logged-out visitor must stay on the public landing page — never
-        // auto-redirect to Google sign-in (that makes the homepage look "behind
-        // a login page" to users and to Google's OAuth-verification crawler).
-        if (response.status === 401 || !response.ok) {
-          document.body.classList.remove("authenticated");
-          loginState.textContent = "Not signed in";
-          connectLink.style.display = "inline-flex";
-          logoutButton.style.display = "none";
-          return;
+        let response;
+        try {
+          response = await fetchWithTimeout("/api/session");
+        } catch {
+          // Network blip or timeout. NEVER sign out an active session over a
+          // transient error — that would silently dump a working artist back to
+          // the landing page mid-shift. Keep the dashboard as-is; on first load
+          // (not yet authenticated) fall through to the signed-out view.
+          if (document.body.classList.contains("authenticated")) return;
+          return setSignedOut();
         }
-        const payload = await response.json();
+        // 401 is the ONLY response that genuinely means "not signed in". A
+        // transient 5xx must not masquerade as a logout for a live session.
+        if (response.status === 401) return setSignedOut();
+        if (!response.ok) {
+          if (document.body.classList.contains("authenticated")) return;
+          return setSignedOut();
+        }
+        const payload = await response.json().catch(() => null);
+        if (!payload) {
+          if (document.body.classList.contains("authenticated")) return;
+          return setSignedOut();
+        }
         sessionState = payload;
-        if (!payload.authenticated) {
-          document.body.classList.remove("authenticated");
-          loginState.textContent = "Not signed in";
-          connectLink.style.display = "inline-flex";
-          logoutButton.style.display = "none";
-          return;
-        }
+        if (!payload.authenticated) return setSignedOut();
         logoutButton.style.display = "inline-flex";
         connectLink.style.display = "none";
         const settingsIconBtn = document.getElementById("settings-icon-btn");

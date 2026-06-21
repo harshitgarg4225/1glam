@@ -3255,9 +3255,10 @@ app.get("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next)
 });
 
 // Client submits their chosen new date on the reschedule page.
-app.post("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next) => {
+app.post("/api/public/:workspaceId/reschedule/:bookingId", publicWriteLimiter, async (req, res, next) => {
   try {
-    const { workspaceId, bookingId } = req.params;
+    const workspaceId = String(req.params.workspaceId);
+    const bookingId = String(req.params.bookingId);
     const { sig, exp } = req.query as { sig?: string; exp?: string };
     if (!verifyRescheduleToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
       return res.status(410).json({ error: "Link expired" });
@@ -3288,10 +3289,18 @@ app.post("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next
 
 // ── Client self-service cancellation ─────────────────────────────────────────
 
-// Days between today and the event (UTC, date-only), floored at 0.
+// Today's date in the studio's operating zone (IST), as "YYYY-MM-DD". Anchoring
+// to IST rather than UTC matters: for the last 5.5h of an IST day a UTC "today"
+// is already tomorrow, which would flip cancellation-fee windows and overdue
+// tags a day early for everyone in India. en-CA formats as ISO YYYY-MM-DD.
+function istToday(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+// Days between today and the event (date-only, IST-anchored), floored at 0.
 function daysUntilEvent(eventDate: string): number {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return Number.POSITIVE_INFINITY;
-  const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
+  const today = new Date(istToday() + "T00:00:00Z").getTime();
   const event = new Date(eventDate + "T00:00:00Z").getTime();
   return Math.max(0, Math.round((event - today) / 86_400_000));
 }
@@ -4534,7 +4543,13 @@ app.get("/i/:workspaceId/:bookingId", async (req, res, next) => {
       ? `<div class="pay-row"><span>Due Date</span><span>${escI(booking.invoiceDueDate)}</span></div>`
       : "";
 
-    const isOverdue = booking.invoiceDueDate && !isPaid && new Date(booking.invoiceDueDate) < new Date();
+    // Overdue starts the day AFTER the due date, in IST. A date-only due date
+    // compared against a full `new Date()` timestamp would otherwise flash
+    // "Overdue" to the client from 05:30 IST on the morning it's actually due.
+    const isOverdue = Boolean(booking.invoiceDueDate) && !isPaid &&
+      (/^\d{4}-\d{2}-\d{2}$/.test(booking.invoiceDueDate)
+        ? booking.invoiceDueDate < istToday()
+        : new Date(booking.invoiceDueDate) < new Date());
     const overdueTag = isOverdue ? `<div class="overdue-tag">⚠️ Overdue</div>` : "";
 
     const paidBlock = `<div class="paid-block">✅ Paid in full — thank you, ${escI(booking.clientName)}!</div>`;
