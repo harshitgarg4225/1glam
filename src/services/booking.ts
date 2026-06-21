@@ -631,6 +631,22 @@ async function notifyTeamOfBooking(
 // the Google Calendar event in lockstep: the old event is removed and a fresh
 // one created on the new date (delete+create is simpler and as reliable as a
 // patch for all-day-style events).
+// When a booking moves, every reminder keyed to the EVENT date must re-arm for
+// the new date: the pre-event reminders (numeric day markers like "7"/"1") and
+// the T-2 balance reminder ("paybal"). Markers keyed to the booking-creation
+// date (advance nudges "payadv*") or fired post-event ("rebook") are unaffected
+// by the move and are kept, so the client is never re-nagged about money they
+// were already chased for. Without this, a rescheduled client silently gets no
+// reminder because the old date's marker still reads as "already sent".
+export function remindersSentAfterReschedule(remindersSent: string): string {
+  return (remindersSent || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((marker) => !/^\d+$/.test(marker) && marker !== "paybal")
+    .join(",");
+}
+
 export async function rescheduleBooking(
   email: string,
   tokens: Credentials,
@@ -663,6 +679,8 @@ export async function rescheduleBooking(
     eventTime,
     venue,
     confirmedCalendarEventId: newEventId,
+    // Re-arm event-date-relative reminders for the new date.
+    remindersSent: remindersSentAfterReschedule(booking.record.remindersSent),
   };
   await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
 
