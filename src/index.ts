@@ -70,7 +70,7 @@ import {
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
 import { deactivateArtist, reactivateArtist, listArtists, upsertArtist } from "./services/team.js";
-import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability, getPublicArtists } from "./services/public-booking.js";
+import { buildAvailability, createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability, getPublicArtists } from "./services/public-booking.js";
 import { buildServicesContext, computeInsights } from "./services/insights.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
 import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply, listGmbPosts, createGmbPost, getReputationSummary } from "./services/gmb.js";
@@ -1153,6 +1153,26 @@ app.post("/api/workspace/config", async (req, res, next) => {
     );
 
     res.json({ ok: true, workspace: scrubWorkspaceTokens(workspace) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Live slug-availability check so the booking-page slug input gives instant
+// feedback before the artist saves — avoids the frustrating "name taken" error
+// only appearing on submit.
+app.get("/api/workspace/slug-check", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const raw = String(req.query.slug ?? "");
+    const slug = normalizeSlug(raw);
+    if (!slug) return res.json({ ok: true, available: false, reason: "invalid" });
+    if (RESERVED_SLUGS.has(slug)) return res.json({ ok: true, available: false, reason: "reserved" });
+    const all = await listWorkspaces();
+    const taken = all.some(
+      (w) => w.email !== req.session.profile!.email && normalizeSlug(w.config?.bookingSlug || "") === slug,
+    );
+    res.json({ ok: true, available: !taken });
   } catch (error) {
     next(error);
   }
@@ -3229,6 +3249,7 @@ app.get("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next)
         eventTime: booking.eventTime,
         venue: booking.venue,
       },
+      availability: buildAvailability(workspace.config),
     });
   } catch (error) { next(error); }
 });

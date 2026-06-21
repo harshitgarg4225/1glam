@@ -538,6 +538,12 @@
             document.querySelectorAll(".service").forEach((s) => s.classList.remove("selected"));
             card.classList.add("selected");
             renderServiceDetail(type);
+            // Switch to event-specific slots (e.g. Bridal only at 09:00 and 11:00)
+            // or fall back to the global list when no per-event slots are set.
+            if (availability) {
+              const perEvent = availability.timeSlotsByEvent && availability.timeSlotsByEvent[type.key];
+              renderTimeSlots(perEvent && perEvent.length ? perEvent : (availability.timeSlots || []));
+            }
             // Slot availability is duration-aware, so it depends on the service.
             refreshSlotAvailability();
             updateCta();
@@ -547,33 +553,9 @@
 
         if (availability) {
           initCalendar(availability);
-
-          // Time slots: show the fixed-slot picker OR the free-text time input,
-          // never both. Both start hidden so a slow profile fetch never flashes
-          // a redundant time picker before we know which mode applies.
-          const slots = availability.timeSlots || [];
-          if (slots.length > 0) {
-            show("time-slots-wrap");
-            hide("time-free-wrap");
-            const slotsContainer = el("time-slots");
-            slotsContainer.innerHTML = "";
-            slots.forEach((slot) => {
-              const btn = document.createElement("button");
-              btn.type = "button";
-              btn.className = "slot";
-              btn.textContent = formatSlotTime(slot);
-              btn.dataset.value = slot;
-              btn.addEventListener("click", () => {
-                document.querySelectorAll(".slot").forEach((s) => s.classList.remove("selected"));
-                btn.classList.add("selected");
-                el("eventTime").value = slot;
-              });
-              slotsContainer.appendChild(btn);
-            });
-          } else {
-            hide("time-slots-wrap");
-            show("time-free-wrap");
-          }
+          // Initial render uses global slots; per-event slots applied when a
+          // service card is selected (see card.addEventListener below).
+          renderTimeSlots(availability.timeSlots || []);
         }
 
         hide("loading");
@@ -591,6 +573,35 @@
           const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
           return h12 + (m ? ":" + String(m).padStart(2, "0") : "") + " " + ampm;
         } catch { return t; }
+      }
+
+      // Render time slot buttons. Clears any previously selected slot so
+      // switching event types never leaves a stale time in the hidden input.
+      function renderTimeSlots(slots) {
+        const slotsContainer = el("time-slots");
+        if (!slotsContainer) return;
+        slotsContainer.innerHTML = "";
+        el("eventTime").value = "";
+        if (!slots || !slots.length) {
+          hide("time-slots-wrap");
+          show("time-free-wrap");
+          return;
+        }
+        show("time-slots-wrap");
+        hide("time-free-wrap");
+        slots.forEach((slot) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "slot";
+          btn.textContent = formatSlotTime(slot);
+          btn.dataset.value = slot;
+          btn.addEventListener("click", () => {
+            slotsContainer.querySelectorAll(".slot").forEach((s) => s.classList.remove("selected"));
+            btn.classList.add("selected");
+            el("eventTime").value = slot;
+          });
+          slotsContainer.appendChild(btn);
+        });
       }
 
       // ---- Portfolio gallery + lightbox ----

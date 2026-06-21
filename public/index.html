@@ -2576,9 +2576,24 @@
                 </div>
                 <div><label for="bookingWeeklyOffDays">Your days off each week</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
                 <div><label for="bookingLeadTimeDays">Minimum notice (days)</label><input id="bookingLeadTimeDays" name="bookingLeadTimeDays" type="number" min="0" placeholder="2" /></div>
-                <div class="wide"><label for="bookingTimeSlots">Times you offer (leave empty for flexible)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
+                <div class="wide"><label for="bookingTimeSlots">Default times you offer (leave empty for flexible)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
                 <div class="wide"><label for="bookingBlockedDates">Dates you're not available</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
               </div>
+
+              <details class="collapse" style="margin-top:8px;">
+                <summary>Time slots per event type</summary>
+                <div class="collapse-body">
+                  <p class="muted" style="font-size:13px;margin-bottom:14px;">Leave blank to use the default list above. Set these only for services that need different times — e.g. Bridal only at 9 AM and 11 AM, Party any time from 6 PM.</p>
+                  <div class="section-grid">
+                    <div><label for="timeSlotsBridal">Bridal</label><input id="timeSlotsBridal" name="timeSlotsBridal" placeholder="09:00,11:00" /></div>
+                    <div><label for="timeSlotsEngagement">Engagement</label><input id="timeSlotsEngagement" name="timeSlotsEngagement" placeholder="09:00,11:00,14:00" /></div>
+                    <div><label for="timeSlotsReception">Reception</label><input id="timeSlotsReception" name="timeSlotsReception" placeholder="14:00,16:00,18:00" /></div>
+                    <div><label for="timeSlotsParty">Party / Event</label><input id="timeSlotsParty" name="timeSlotsParty" placeholder="14:00,17:00,19:00" /></div>
+                    <div><label for="timeSlotsShoot">Photoshoot</label><input id="timeSlotsShoot" name="timeSlotsShoot" placeholder="08:00,10:00,14:00" /></div>
+                    <div><label for="timeSlotsOther">Other</label><input id="timeSlotsOther" name="timeSlotsOther" placeholder="10:00,14:00" /></div>
+                  </div>
+                </div>
+              </details>
 
               <details class="collapse" style="margin-top:16px;">
                 <summary>Advanced scheduling — max per day, buffer &amp; waitlist</summary>
@@ -2980,7 +2995,10 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
           <input type="hidden" name="portfolioImages" value="" />
           <input type="hidden" name="aboutText" value="" />
           <div class="settings-save-bar" style="margin-top:14px;">
-            <div class="action-row"><button class="button" type="submit">Save settings</button></div>
+            <div class="action-row" style="align-items:center;gap:12px;">
+              <button class="button" type="submit">Save settings</button>
+              <span id="config-dirty-banner" style="display:none;font-size:13px;color:var(--warning,#92400e);font-weight:600;">● Unsaved changes</span>
+            </div>
             <div class="status" id="form-status"></div>
           </div>
         </form>
@@ -5248,13 +5266,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
       }
 
-      function renderLeadList(leads) {
+      const LIST_PAGE_SIZE = 50;
+      function renderLeadList(leads, showAll = false) {
         if (!leads.length) {
           leadsBoard.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>No matches</h3><p>Try adjusting your filters above.</p></div>`;
           return;
         }
         const sorted = applyLeadSort(leads);
-        leadsBoard.innerHTML = `<div class="lead-list">${sorted.map((lead) => {
+        const visible = showAll ? sorted : sorted.slice(0, LIST_PAGE_SIZE);
+        const remaining = sorted.length - visible.length;
+        leadsBoard.innerHTML = `<div class="lead-list">${visible.map((lead) => {
           const days = daysUntil(lead.eventDate);
           const daysStr = days === null ? "" :
             days < 0 ? `<span class="pill danger" style="font-size:11px;">${Math.abs(days)}d ago</span>` :
@@ -5282,7 +5303,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 <div style="display:flex;align-items:center;gap:6px;">${daysStr}<span class="status-dot ${dot}"></span></div>
               </div>
             </div>`;
-        }).join("")}</div>`;
+        }).join("")}${remaining > 0
+          ? `<button type="button" class="button secondary" style="margin:12px auto;display:block;" data-show-all-leads>Show ${remaining} more</button>`
+          : ""
+        }</div>`;
+        if (remaining > 0) {
+          leadsBoard.querySelector("[data-show-all-leads]")?.addEventListener("click", () => renderLeadList(leads, true));
+        }
       }
 
       function renderLeads() {
@@ -5394,7 +5421,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             : `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🔍</div><h3>No bookings match your filters</h3><p>Try a different search or payment filter.</p><button class="button secondary" type="button" id="clear-booking-filters" style="margin-top:10px;">Clear filters</button></div></td></tr>`;
           return;
         }
-        bookingsBody.innerHTML = applyBookingSort(bookings).map((booking) => {
+        const _allSortedBookings = applyBookingSort(bookings);
+        function _renderBookingRows(items, showAllRows = false) {
+          const visible = showAllRows ? items : items.slice(0, LIST_PAGE_SIZE);
+          const rem = items.length - visible.length;
+          bookingsBody.innerHTML = visible.map((booking) => {
           const paid = bookingPaidTotal(booking);
           const owed = Math.max(0, Number(booking.finalPrice || 0) - paid);
           const payPill = booking.paymentStatus === "Paid in Full"
@@ -5478,7 +5509,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               </details>
             </td>
           </tr>`;
-        }).join("");
+          }).join("") +
+          (rem > 0 ? `<tr><td colspan="5" style="text-align:center;padding:12px;"><button type="button" class="button secondary" style="font-size:13px;" data-show-all-bookings>Show ${rem} more bookings</button></td></tr>` : "");
+          if (rem > 0) {
+            bookingsBody.querySelector("[data-show-all-bookings]")?.addEventListener("click", () => _renderBookingRows(items, true));
+          }
+        }
+        _renderBookingRows(_allSortedBookings);
       }
 
       // Tolerant client-side ledger parser (mirrors the server's).
@@ -7210,10 +7247,32 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.getElementById("copy-mypage-bio").addEventListener("click", (e) =>
         copyToClipboard(document.getElementById("mypage-bio").value, e.currentTarget));
 
+      let _slugCheckTimer = null;
       document.getElementById("mypage-slug")?.addEventListener("input", (e) => {
         const val = e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
         const preview = document.getElementById("mypage-slug-preview");
         if (preview) preview.textContent = val ? `${window.location.origin}/${val}` : "";
+        // Live availability check — debounced 500 ms so we don't hammer the server
+        const statusEl = document.getElementById("mypage-slug-status");
+        if (statusEl) statusEl.textContent = "";
+        clearTimeout(_slugCheckTimer);
+        if (val.length < 3) return;
+        _slugCheckTimer = setTimeout(async () => {
+          try {
+            const res = await fetchJson(`/api/workspace/slug-check?slug=${encodeURIComponent(val)}`);
+            if (!statusEl) return;
+            if (res.available) {
+              statusEl.textContent = "✓ Available";
+              statusEl.style.color = "var(--success,#166534)";
+            } else if (res.reason === "reserved") {
+              statusEl.textContent = "✗ That name is reserved — try another.";
+              statusEl.style.color = "var(--danger,#9b1c1c)";
+            } else {
+              statusEl.textContent = "✗ Already taken — try another.";
+              statusEl.style.color = "var(--danger,#9b1c1c)";
+            }
+          } catch { /* ignore network errors */ }
+        }, 500);
       });
 
       document.getElementById("save-mypage-slug")?.addEventListener("click", async (e) => {
@@ -7650,6 +7709,25 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
       // Styled confirmation dialog — replaces the browser's bare confirm() for
       // destructive actions. Returns a Promise<boolean>.
+      // Focus trap: keeps keyboard focus cycling within a dialog so screen-reader
+      // and keyboard users can't accidentally escape into the page behind the modal.
+      // Returns a cleanup function that removes the trap.
+      function trapFocus(el) {
+        const focusable = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+        function getTabs() { return Array.from(el.querySelectorAll(focusable)).filter((n) => !n.closest("[hidden]")); }
+        function onKey(e) {
+          if (e.key !== "Tab") return;
+          const tabs = getTabs();
+          if (!tabs.length) { e.preventDefault(); return; }
+          const first = tabs[0], last = tabs[tabs.length - 1];
+          if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
+          else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
+        }
+        el.addEventListener("keydown", onKey);
+        setTimeout(() => { const tabs = getTabs(); if (tabs.length) tabs[0].focus(); }, 30);
+        return () => el.removeEventListener("keydown", onKey);
+      }
+
       function showConfirm(title, message, confirmLabel = "Yes, do it") {
         return new Promise((resolve) => {
           const overlay = document.getElementById("confirm-overlay");
@@ -7658,8 +7736,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const okBtn = document.getElementById("confirm-ok");
           okBtn.textContent = confirmLabel;
           overlay.classList.add("open");
+          const releaseTrap = trapFocus(overlay);
           const done = (result) => {
             overlay.classList.remove("open");
+            releaseTrap();
             okBtn.removeEventListener("click", onOk);
             document.getElementById("confirm-cancel").removeEventListener("click", onCancel);
             overlay.removeEventListener("click", onBackdrop);
@@ -7671,7 +7751,6 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           okBtn.addEventListener("click", onOk);
           document.getElementById("confirm-cancel").addEventListener("click", onCancel);
           overlay.addEventListener("click", onBackdrop);
-          setTimeout(() => okBtn.focus(), 40);
         });
       }
 
@@ -7704,7 +7783,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           overlay.appendChild(card);
           document.body.appendChild(overlay);
           const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); cleanup(null); } };
-          const cleanup = (result) => { document.removeEventListener("keydown", onKey, true); document.body.removeChild(overlay); resolve(result); };
+          const releaseTrap = trapFocus(card);
+          const cleanup = (result) => { releaseTrap(); document.removeEventListener("keydown", onKey, true); document.body.removeChild(overlay); resolve(result); };
           card.querySelector("#lost-confirm-btn").addEventListener("click", () => {
             const v = card.querySelector("#lost-reason-select").value;
             cleanup(v === "No reason" ? "" : v);
@@ -7712,9 +7792,22 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           card.querySelector("#lost-cancel-btn").addEventListener("click", () => cleanup(null));
           overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(null); });
           document.addEventListener("keydown", onKey, true);
-          setTimeout(() => card.querySelector("#lost-reason-select").focus(), 40);
         });
       }
+
+      // Unsaved-changes guard: track when the settings form has been touched
+      // so the artist doesn't lose edits by switching tabs or closing the page.
+      let _configDirty = false;
+      function _setConfigDirty(dirty) {
+        _configDirty = dirty;
+        const banner = document.getElementById("config-dirty-banner");
+        if (banner) banner.style.display = dirty ? "" : "none";
+      }
+      configForm.addEventListener("input", () => _setConfigDirty(true));
+      configForm.addEventListener("change", () => _setConfigDirty(true));
+      window.addEventListener("beforeunload", (e) => {
+        if (_configDirty) { e.preventDefault(); e.returnValue = ""; }
+      });
 
       configForm.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -7723,6 +7816,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         formStatus.textContent = "";
         try {
           await postJson("/api/workspace/config", Object.fromEntries(new FormData(configForm).entries()));
+          _setConfigDirty(false);
           toast("Settings saved.", "success");
           quotePackagesCache = null; // saved packages may have changed
           await refreshSession();
@@ -8620,7 +8714,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             : `<div class="empty-state"><div class="empty-icon">👥</div><h3>No clients yet</h3><p>Everyone who requests a date or books with you appears here automatically.</p></div>`;
           return;
         }
-        list.innerHTML = clients.map((c, i) => {
+        const visibleClients = clients.slice(0, LIST_PAGE_SIZE);
+        const remClients = clients.length - visibleClients.length;
+        list.innerHTML = visibleClients.map((c, i) => {
           const initial = (c.name || "?")[0].toUpperCase();
           return `
             <div class="client-row" data-client-index="${i}">
@@ -8635,8 +8731,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 <button class="button tiny secondary" data-book-again-name="${escapeHtml(c.name || "")}" data-book-again-phone="${escapeHtml(c.phone || "")}">🔁 Book again</button>
               </div>
             </div>`;
-        }).join("");
+        }).join("") +
+        (remClients > 0 ? `<div style="text-align:center;padding:14px;"><button type="button" class="button secondary" style="font-size:13px;" data-show-all-clients>Show ${remClients} more clients</button></div>` : "");
         list._clients = clients;
+        if (remClients > 0) {
+          list.querySelector("[data-show-all-clients]")?.addEventListener("click", () => {
+            list.innerHTML = clients.map((c, i) => {
+              const initial = (c.name || "?")[0].toUpperCase();
+              return `<div class="client-row" data-client-index="${i}"><div class="lead-avatar" style="width:38px;height:38px;font-size:15px;flex-shrink:0;">${escapeHtml(initial)}</div><div class="client-row-main"><div class="client-row-name">${escapeHtml(c.name || "Unknown")}</div><div class="client-row-sub">${c.phone ? escapeHtml(c.phone) + " · " : ""}${c.lastEventDate ? escapeHtml(c.lastEventType) + " · " + escapeHtml(formatDay(c.lastEventDate)) : "No event yet"}</div></div><div class="client-row-stats">${c.totalBooked > 0 ? `<span class="client-row-spend">${formatMoney(c.totalBooked)}</span>` : `<span class="client-row-spend muted" style="font-weight:500;font-size:12.5px;">Nothing booked yet</span>`}<span class="client-row-visits">${c.bookings} ${c.bookings === 1 ? "booking" : "bookings"} · ${c.requests} ${c.requests === 1 ? "request" : "requests"}</span><button class="button tiny secondary" data-book-again-name="${escapeHtml(c.name || "")}" data-book-again-phone="${escapeHtml(c.phone || "")}">🔁 Book again</button></div></div>`;
+            }).join("");
+            list._clients = clients;
+          });
+        }
       }
       document.getElementById("client-search")?.addEventListener("input", renderClients);
       document.getElementById("clients-list")?.addEventListener("click", (e) => {

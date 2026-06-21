@@ -168,5 +168,11 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     servicePartyImageUrl: "",
     serviceShootImageUrl: "",
     serviceOtherImageUrl: "",
+    timeSlotsBridal: "",
+    timeSlotsEngagement: "",
+    timeSlotsReception: "",
+    timeSlotsParty: "",
+    timeSlotsShoot: "",
+    timeSlotsOther: "",
   };
 }

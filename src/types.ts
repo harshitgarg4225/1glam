@@ -195,6 +195,14 @@ export type WorkspaceConfig = PricingRuleConfig & {
   servicePartyImageUrl: string;
   serviceShootImageUrl: string;
   serviceOtherImageUrl: string;
+  // Per-event time slots (comma-separated HH:MM). When set, overrides the
+  // global bookingTimeSlots for that service type on the public booking page.
+  timeSlotsBridal: string;
+  timeSlotsEngagement: string;
+  timeSlotsReception: string;
+  timeSlotsParty: string;
+  timeSlotsShoot: string;
+  timeSlotsOther: string;
 };
 
 export type WalletLedgerEntry = {

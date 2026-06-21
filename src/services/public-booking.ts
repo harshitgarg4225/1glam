@@ -50,6 +50,9 @@ export type PublicAvailability = {
   blockedDates: string[];
   timeSlots: string[];
   waitlistEnabled: boolean;
+  // Per-event-type time slots; keyed by event key (e.g. "Bridal"). When
+  // present for a given key, overrides the global timeSlots for that service.
+  timeSlotsByEvent: Record<string, string[]>;
 };
 
 export type PublicBusinessProfile = {
@@ -177,9 +180,32 @@ function parseTimeSlots(raw: string): string[] {
   ].sort();
 }
 
-function buildAvailability(config: WorkspaceConfig): PublicAvailability {
+// Returns event-specific time slots for a given event type, falling back to
+// an empty array when no per-event override is configured (caller should then
+// use the global bookingTimeSlots).
+function getEventTimeSlots(config: WorkspaceConfig, eventType: string): string[] {
+  const fieldKey = ({
+    Bridal: "timeSlotsBridal",
+    Engagement: "timeSlotsEngagement",
+    Reception: "timeSlotsReception",
+    Party: "timeSlotsParty",
+    Shoot: "timeSlotsShoot",
+    Other: "timeSlotsOther",
+  } as Record<string, keyof WorkspaceConfig>)[eventType];
+  if (!fieldKey) return [];
+  return parseTimeSlots(String(config[fieldKey] || ""));
+}
+
+export function buildAvailability(config: WorkspaceConfig): PublicAvailability {
   const leadTime = Math.max(0, Number(config.bookingLeadTimeDays) || 0);
   const maxAdvance = Number(config.bookingMaxAdvanceDays) > 0 ? Number(config.bookingMaxAdvanceDays) : 365;
+
+  const timeSlotsByEvent: Record<string, string[]> = {};
+  for (const event of ["Bridal", "Engagement", "Reception", "Party", "Shoot", "Other"]) {
+    const slots = getEventTimeSlots(config, event);
+    if (slots.length > 0) timeSlotsByEvent[event] = slots;
+  }
+
   return {
     enabled: String(config.bookingPageEnabled || "Yes").toLowerCase() !== "no",
     minDate: addDaysIso(leadTime),
@@ -188,6 +214,7 @@ function buildAvailability(config: WorkspaceConfig): PublicAvailability {
     blockedDates: parseBlockedDates(config.bookingBlockedDates),
     timeSlots: parseTimeSlots(config.bookingTimeSlots),
     waitlistEnabled: String(config.bookingWaitlistEnabled || "No").toLowerCase() === "yes",
+    timeSlotsByEvent,
   };
 }
 
@@ -360,7 +387,8 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     throw new Error("That date is unavailable. Please choose another.");
   }
 
-  const timeSlots = parseTimeSlots(workspace.config.bookingTimeSlots);
+  const eventSlots = getEventTimeSlots(workspace.config, input.eventType);
+  const timeSlots = eventSlots.length > 0 ? eventSlots : parseTimeSlots(workspace.config.bookingTimeSlots);
   if (timeSlots.length > 0 && input.eventTime) {
     if (!timeSlots.includes(input.eventTime)) {
       throw new Error("Please choose one of the available time slots.");
@@ -796,7 +824,8 @@ export async function getPublicSlotsForDate(
   if (!workspace) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return { slots: [] };
 
-  const timeSlots = parseTimeSlots(workspace.config.bookingTimeSlots);
+  const eventSlots = getEventTimeSlots(workspace.config, eventType);
+  const timeSlots = eventSlots.length > 0 ? eventSlots : parseTimeSlots(workspace.config.bookingTimeSlots);
   if (!timeSlots.length) return { slots: [] };
 
   const tokens = await getWorkspaceCredentials(workspace.email);
@@ -843,7 +872,8 @@ export async function checkPublicAvailability(
   if (busyAllDay) {
     return { ok: false, error: "That date is unavailable. Please choose another." };
   }
-  const timeSlots = parseTimeSlots(workspace.config.bookingTimeSlots);
+  const eventSlots = getEventTimeSlots(workspace.config, eventType);
+  const timeSlots = eventSlots.length > 0 ? eventSlots : parseTimeSlots(workspace.config.bookingTimeSlots);
   if (timeSlots.length > 0 && eventTime) {
     if (!timeSlots.includes(eventTime)) {
       return { ok: false, error: "Please choose one of the available time slots." };

@@ -183,6 +183,13 @@ export const workspaceConfigSchema = z.object({
   servicePartyImageUrl: z.string().optional().default(""),
   serviceShootImageUrl: z.string().optional().default(""),
   serviceOtherImageUrl: z.string().optional().default(""),
+  // Per-event time slots (comma-separated HH:MM overrides for the booking page)
+  timeSlotsBridal: z.string().optional().default(""),
+  timeSlotsEngagement: z.string().optional().default(""),
+  timeSlotsReception: z.string().optional().default(""),
+  timeSlotsParty: z.string().optional().default(""),
+  timeSlotsShoot: z.string().optional().default(""),
+  timeSlotsOther: z.string().optional().default(""),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

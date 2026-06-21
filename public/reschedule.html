@@ -62,8 +62,30 @@
     const sig = params.get("sig");
     const exp = params.get("exp");
     let rescheduleLeadId = "";
+    let avail = null;
+    let selectedSlotTime = "";
 
     const card = document.getElementById("card");
+
+    function dateError(iso) {
+      if (!avail || !iso) return null;
+      if (avail.minDate && iso < avail.minDate) return "That date is too soon — please pick a later one.";
+      if (avail.maxDate && iso > avail.maxDate) return "That date is too far ahead.";
+      const weekday = new Date(iso + "T00:00:00Z").getUTCDay();
+      const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+      if ((avail.offWeekdays || []).includes(weekday)) return `The artist isn't available on ${DAY_NAMES[weekday]}s.`;
+      if ((avail.blockedDates || []).includes(iso)) return "That date is unavailable — please choose another.";
+      return null;
+    }
+
+    function formatSlot(t) {
+      try {
+        const [h, m] = t.split(":").map(Number);
+        const ap = h < 12 ? "AM" : "PM";
+        const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+        return h12 + (m ? ":" + String(m).padStart(2,"0") : "") + " " + ap;
+      } catch { return t; }
+    }
 
     async function init() {
       const url = `/api/public/${encodeURIComponent(workspaceId)}/reschedule/${encodeURIComponent(bookingId)}?sig=${encodeURIComponent(sig || "")}&exp=${encodeURIComponent(exp || "")}`;
@@ -76,14 +98,20 @@
       }
 
       const b = data.booking;
+      avail = data.availability || null;
       rescheduleLeadId = b.leadId || "";
       const accent = data.brandColor || "#C26B45";
       document.documentElement.style.setProperty("--accent", accent);
       document.getElementById("brand-name").className = "";
       document.getElementById("brand-name").textContent = data.businessName;
 
-      const today = new Date().toISOString().slice(0, 10);
-      const minDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const minDate = (avail && avail.minDate) || new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const maxDate = (avail && avail.maxDate) || "";
+
+      // Determine time input: slot picker if slots configured, free-text otherwise
+      const eventSlots = (avail && avail.timeSlotsByEvent && avail.timeSlotsByEvent[b.eventType])
+        || (avail && avail.timeSlots) || [];
+      const hasSlots = eventSlots.length > 0;
 
       document.getElementById("main-content").innerHTML = `
         <h1>Reschedule your booking</h1>
@@ -94,12 +122,55 @@
           ${b.venue ? `<div class="info-row"><span class="info-label">Venue</span><span class="info-value">${escHtml(b.venue)}</span></div>` : ""}
         </div>
         <label for="new-date">New date</label>
-        <input type="date" id="new-date" min="${minDate}" required />
-        <label for="new-time">Preferred time (optional)</label>
-        <input type="time" id="new-time" value="${b.eventTime ? b.eventTime.slice(0,5) : ""}" />
+        <input type="date" id="new-date" min="${minDate}" ${maxDate ? `max="${maxDate}"` : ""} required />
+        <div class="status" id="date-hint" style="margin-top:-8px;margin-bottom:10px;"></div>
+        ${hasSlots
+          ? `<label>Preferred time</label>
+             <div class="slots" id="time-slots" style="margin:6px 0 14px;"></div>
+             <input type="hidden" id="new-time" />`
+          : `<label for="new-time">Preferred time (optional)</label>
+             <input type="time" id="new-time" value="${b.eventTime ? b.eventTime.slice(0,5) : ""}" />`
+        }
         <button class="btn" id="submit-btn" type="button">Confirm new date</button>
         <div class="status" id="status"></div>
       `;
+
+      if (hasSlots) {
+        const slotsEl = document.getElementById("time-slots");
+        eventSlots.forEach((slot) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "slot";
+          btn.style.cssText = "padding:9px 18px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;font:inherit;font-size:14px;transition:border-color .15s,background .15s;";
+          btn.textContent = formatSlot(slot);
+          btn.dataset.value = slot;
+          if (b.eventTime && b.eventTime.slice(0,5) === slot) {
+            btn.style.borderColor = "var(--accent)";
+            btn.style.background = "#FBF0EA";
+            btn.style.fontWeight = "600";
+            selectedSlotTime = slot;
+            document.getElementById("new-time").value = slot;
+          }
+          btn.addEventListener("click", () => {
+            slotsEl.querySelectorAll(".slot").forEach((s) => {
+              s.style.borderColor = ""; s.style.background = ""; s.style.fontWeight = "";
+            });
+            btn.style.borderColor = "var(--accent)";
+            btn.style.background = "#FBF0EA";
+            btn.style.fontWeight = "600";
+            selectedSlotTime = slot;
+            document.getElementById("new-time").value = slot;
+          });
+          slotsEl.appendChild(btn);
+        });
+      }
+
+      document.getElementById("new-date").addEventListener("change", (e) => {
+        const hint = document.getElementById("date-hint");
+        const err = dateError(e.target.value);
+        hint.textContent = err || "";
+        hint.className = "status" + (err ? " error" : "");
+      });
 
       document.getElementById("submit-btn").addEventListener("click", submitReschedule);
     }
@@ -110,6 +181,8 @@
       const eventDate = document.getElementById("new-date").value;
       const eventTime = document.getElementById("new-time").value;
       if (!eventDate) { statusEl.textContent = "Please pick a date."; statusEl.className = "status error"; return; }
+      const err = dateError(eventDate);
+      if (err) { statusEl.textContent = err; statusEl.className = "status error"; return; }
 
       btn.disabled = true;
       btn.innerHTML = `<span class="spinner"></span>Confirming…`;
@@ -128,7 +201,7 @@
           <div class="done-screen">
             <div class="done-icon">🎉</div>
             <h2>All set!</h2>
-            <p>Your booking has been moved to <strong>${formatDate(eventDate)}</strong>${eventTime ? ` at ${eventTime}` : ""}.<br>The studio will be in touch to confirm details.</p>
+            <p>Your booking has been moved to <strong>${formatDate(eventDate)}</strong>${eventTime ? ` at ${formatSlot(eventTime)}` : ""}.<br>The studio will be in touch to confirm details.</p>
             ${rescheduleLeadId ? `<a class="btn" style="margin-top:18px;display:inline-block;text-decoration:none;" href="/appointment/${encodeURIComponent(workspaceId)}/${encodeURIComponent(rescheduleLeadId)}">View my appointment</a>` : ""}
           </div>
         `;
