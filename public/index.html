@@ -10709,6 +10709,39 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       });
 
       // ───────────────────────────────────────────────────────────────────
+      // Mobile keyboard optimisation: assign the right virtual keyboard to each
+      // field so entering a price, a percentage, or a phone number on a phone
+      // brings up the matching keypad (decimal pad / number pad / tel pad)
+      // instead of the full QWERTY. One pass over the static forms; semantic by
+      // field name so future fields are covered too. Desktop is unaffected —
+      // inputmode is only consulted by on-screen keyboards.
+      // ───────────────────────────────────────────────────────────────────
+      (function applyMobileInputModes() {
+        const setAttr = (el, k, v) => { if (!el.hasAttribute(k)) el.setAttribute(k, v); };
+        document.querySelectorAll("input").forEach((el) => {
+          const key = ((el.name || "") + " " + (el.id || "")).toLowerCase();
+          const type = (el.getAttribute("type") || "text").toLowerCase();
+          if (type === "email" || /email/.test(key)) {
+            setAttr(el, "inputmode", "email");
+            setAttr(el, "autocomplete", "email");
+            return;
+          }
+          // Phone / WhatsApp → tel pad with autofill.
+          if (/whats|phone|mobile|\btel\b|ownerwhatsapp/.test(key)) {
+            setAttr(el, "inputmode", "tel");
+            setAttr(el, "autocomplete", "tel");
+            return;
+          }
+          if (type === "number") {
+            // Money, rates and multipliers can be fractional → decimal pad.
+            // Counts, days, percentages, ports and thresholds are whole → number pad.
+            const fractional = /price|amount|value|rate|multiplier|travel|fee|tip|reward|balance|deposit|advance|gst/.test(key);
+            setAttr(el, "inputmode", fractional ? "decimal" : "numeric");
+          }
+        });
+      })();
+
+      // ───────────────────────────────────────────────────────────────────
       // Native gesture layer (mobile): haptics, drag-to-dismiss sheets,
       // swipe-away drawer and pull-to-refresh. Every gesture is gated to touch
       // + small screens and bails the moment intent is unclear, so it never
