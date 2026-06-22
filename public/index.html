@@ -4837,7 +4837,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const timeOfDay = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
         document.getElementById("greeting-line").textContent = `${timeOfDay}${firstName ? ", " + firstName : ""} ✨`;
 
-        const todayStr = new Date().toISOString().slice(0, 10);
+        // IST, not UTC: toISOString() is UTC, so between midnight and 5:30am IST
+        // it returns yesterday's date and the greeting would hide today's jobs.
+        const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
         const todayJobs = bookings.filter((b) => bookingIsActive(b) && b.eventDate === todayStr);
         const newRequests = leads.filter((l) => l.status === "New").length;
         const month = new Date().getMonth() + 1; // 1-12
@@ -10401,7 +10403,11 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           toast(type === "refund" ? `Refund of ${formatMoney(amount)} recorded.` : nowPaid ? `🎉 ${res.booking.clientName} is fully paid — lovely!` : `Payment of ${formatMoney(amount)} recorded.`, "success");
           await refreshSession();
         } catch (error) {
+          // Surface in BOTH the modal and a toast: recording money is the one
+          // place a silently-swallowed failure means the artist thinks a client
+          // paid when the ledger never saved it.
           document.getElementById("payment-form-status").textContent = error.message;
+          toast(`Couldn't record that payment — ${error.message}`, "error");
         } finally {
           clearLoading(btn, "Save payment");
         }

@@ -397,31 +397,6 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
 
   const tokens = await getWorkspaceCredentials(workspace.email);
 
-  // Duration-aware slot conflict: a 4-hour bridal at 09:00 occupies 09:00-13:00,
-  // so an 11:00 request must be refused (or waitlisted) even when the day-level
-  // capacity isn't reached yet. Fails open on a Sheets hiccup — the artist can
-  // still resolve a rare double-request manually, but a flaky read should never
-  // block a client from booking.
-  let slotConflict = false;
-  if (timeSlots.length > 0 && input.eventTime) {
-    const busy = await listActiveLeadsForDate(workspace.email, tokens, input.eventDate).catch(() => []);
-    const slots = computeSlotAvailability({
-      timeSlots,
-      serviceDurations: workspace.config.serviceDurations,
-      requestedEventType: input.eventType,
-      busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
-      bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
-    });
-    const requested = slots.find((slot) => slot.time === input.eventTime);
-    if (requested && !requested.available) {
-      const waitlistEnabled = String(workspace.config.bookingWaitlistEnabled || "No").toLowerCase() === "yes";
-      if (!waitlistEnabled) {
-        throw new Error("That time slot was just taken. Please pick another time.");
-      }
-      slotConflict = true;
-    }
-  }
-
   // Personal-calendar guard: an all-day event on her confirmed Google Calendar
   // ("OUT OF TOWN", a family wedding) blocks the date even if she forgot to
   // block it in the app. Timed events don't block — a 1-hour errand shouldn't
@@ -434,12 +409,39 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
   const maxPerDay = Number(workspace.config.bookingMaxPerDay) || 0;
   const inboundMessage = buildInboundMessage(input);
 
-  // Serialize the capacity check + lead creation per (workspace, date) so two
-  // simultaneous requests for the same fully-booked date can't both slip past
-  // the max-per-day cap. The lock is a no-op in single-instance/file mode.
+  // Serialize the slot-conflict check + capacity check + lead creation per
+  // (workspace, date) so two simultaneous requests for the same date can't both
+  // slip past the max-per-day cap OR both grab the same time slot. The check
+  // MUST run inside the lock: done outside it, two clients racing for 09:00 each
+  // read the slot as free before either commits, and both double-book. The lock
+  // is a no-op in single-instance/file mode.
   const lockKey = lockKeyFromString(`book:${workspace.workspaceId}:${input.eventDate}`);
   const { waitlisted, result } = await withSerializedLock(lockKey, async () => {
-    let waitlisted = slotConflict;
+    let waitlisted = false;
+
+    // Duration-aware slot conflict: a 4-hour bridal at 09:00 occupies
+    // 09:00-13:00, so an 11:00 request must be refused (or waitlisted) even when
+    // the day-level capacity isn't reached yet. Fails open on a Sheets hiccup —
+    // a flaky read should never block a client from booking.
+    if (timeSlots.length > 0 && input.eventTime) {
+      const busy = await listActiveLeadsForDate(workspace.email, tokens, input.eventDate).catch(() => []);
+      const slots = computeSlotAvailability({
+        timeSlots,
+        serviceDurations: workspace.config.serviceDurations,
+        requestedEventType: input.eventType,
+        busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+        bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
+      });
+      const requested = slots.find((slot) => slot.time === input.eventTime);
+      if (requested && !requested.available) {
+        const waitlistEnabled = String(workspace.config.bookingWaitlistEnabled || "No").toLowerCase() === "yes";
+        if (!waitlistEnabled) {
+          throw new Error("That time slot was just taken. Please pick another time.");
+        }
+        waitlisted = true;
+      }
+    }
+
     if (maxPerDay > 0) {
       const activeCount = await countActiveLeadsForDate(workspace.email, tokens, input.eventDate);
       if (activeCount >= maxPerDay) {

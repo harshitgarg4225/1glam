@@ -1020,8 +1020,11 @@
           scrollToEl("clientName"); el("clientName").focus();
           return;
         }
-        if (el("clientWhatsApp").value.replace(/\D/g, "").length < 8) {
-          statusEl.textContent = "Please add a valid WhatsApp number — it's how the artist confirms your date.";
+        // Indian mobile numbers are 10 digits (12 with the +91 country code).
+        // Anything shorter can't receive the artist's WhatsApp confirmation, so
+        // the client would book and then silently never hear back.
+        if (el("clientWhatsApp").value.replace(/\D/g, "").length < 10) {
+          statusEl.textContent = "Please add a valid 10-digit WhatsApp number — it's how the artist confirms your date.";
           scrollToEl("clientWhatsApp"); el("clientWhatsApp").focus();
           return;
         }

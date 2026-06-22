@@ -559,7 +559,12 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     ).catch(() => {});
   }
 
-  await updateLeadRow(workspace, tokens, lead.rowNumber, updatedLead);
+  // Best-effort, as the comment above says: the booking row is already the
+  // committed source of truth. Swallow a failure here rather than throwing —
+  // throwing would discard a successful booking and let a retry create a
+  // DUPLICATE booking row (the lead's bookingId never got set). A stale lead
+  // row self-heals on the next dashboard refresh.
+  await updateLeadRow(workspace, tokens, lead.rowNumber, updatedLead).catch(() => {});
 
   void notifyTeamOfBooking(workspace, tokens, booking);
 
@@ -879,14 +884,23 @@ export async function recordBookingPayment(
   let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
   const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
     const log = parsePaymentsLog(current.paymentsLog);
-    log.push({
-      amount: Math.round(input.amount),
-      method: String(input.method ?? "UPI").slice(0, 30),
-      note: String(input.note ?? "").slice(0, 120),
-      at: new Date().toISOString(),
-      kind: input.type === "refund" ? "refund" : input.type === "tip" ? "tip" : "payment",
-      ...(input.ref ? { ref: String(input.ref).slice(0, 60) } : {}),
-    });
+    const kind = input.type === "refund" ? "refund" : input.type === "tip" ? "tip" : "payment";
+    // Idempotency for online payments: Razorpay entries carry the gateway
+    // payment_id as `ref`. If a retried /verify or a webhook race lands the
+    // same ref twice, don't record it again — just recompute status from the
+    // log we already have. Manual entries have no ref and are never deduped,
+    // so two legitimate cash instalments still both count.
+    const isDuplicate = Boolean(input.ref) && log.some((e) => e.ref === String(input.ref).slice(0, 60) && e.kind === kind);
+    if (!isDuplicate) {
+      log.push({
+        amount: Math.round(input.amount),
+        method: String(input.method ?? "UPI").slice(0, 30),
+        note: String(input.note ?? "").slice(0, 120),
+        at: new Date().toISOString(),
+        kind,
+        ...(input.ref ? { ref: String(input.ref).slice(0, 60) } : {}),
+      });
+    }
     const paidTotal = paymentsTotal(log);
     derived = derivePaymentStatus(current.finalPrice, current.advanceAmount, paidTotal);
     return {
