@@ -15,7 +15,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-text-size-adjust: 100%; }
     * { -webkit-tap-highlight-color: transparent; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); padding: 20px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px)); }
     .wrap { max-width: 440px; margin: 0 auto; }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; box-shadow: var(--shadow); margin-bottom: 16px; }
     .kicker { text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
@@ -60,7 +60,7 @@
   <div id="loading"><p class="loading">Loading your appointment…</p></div>
   <div id="error-card" class="hidden"><p class="error-state" id="error-msg">Appointment not found.</p></div>
   <div id="main" class="hidden">
-    <div id="status-banner" class="status-banner confirmed"></div>
+    <div id="status-banner" class="status-banner confirmed" role="status" aria-live="polite"></div>
 
     <div class="card">
       <div class="kicker" id="biz-kicker">Your appointment</div>
@@ -103,7 +103,10 @@
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-  const fmt = (n) => "₹" + Number(n).toLocaleString("en-IN");
+  const fmt = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
+  // Server-sourced URLs go straight into href — neutralise any non-http(s)/relative
+  // scheme (e.g. a "javascript:" payload) before it can execute on click.
+  const safeUrl = (u) => (/^(https?:\/\/|\/)/i.test(String(u || "")) ? String(u) : "#");
   const fmtDate = (s) => {
     if (!s) return "";
     const d = new Date(s + "T00:00:00");
@@ -171,7 +174,7 @@
 
     // Payment card
     document.getElementById("total-amount").textContent = fmt(d.finalApprovedPrice);
-    const paidAmount = Math.max(0, d.finalApprovedPrice - d.balanceDue);
+    const paidAmount = Math.max(0, Number(d.finalApprovedPrice || 0) - Number(d.balanceDue || 0));
     document.getElementById("advance-paid").textContent = fmt(paidAmount);
     document.getElementById("balance-due").textContent = fmt(d.balanceDue);
     if (d.balanceDue <= 0) {
@@ -194,13 +197,13 @@
     // pre-signed URLs the server hands back rather than building bare paths
     // (which would land the client on a "link expired" page).
     if (d.signUrl) {
-      btns.push(`<a class="action-btn secondary" href="${esc(d.signUrl)}">📝 View / sign contract</a>`);
+      btns.push(`<a class="action-btn secondary" href="${esc(safeUrl(d.signUrl))}"><span aria-hidden="true">📝</span> View / sign contract</a>`);
     }
     if (d.rescheduleUrl) {
-      btns.push(`<a class="action-btn secondary" href="${esc(d.rescheduleUrl)}">📆 Reschedule</a>`);
+      btns.push(`<a class="action-btn secondary" href="${esc(safeUrl(d.rescheduleUrl))}"><span aria-hidden="true">📆</span> Reschedule</a>`);
     }
     if (d.cancelUrl) {
-      btns.push(`<a class="action-btn danger" href="${esc(d.cancelUrl)}">✕ Cancel appointment</a>`);
+      btns.push(`<a class="action-btn danger" href="${esc(safeUrl(d.cancelUrl))}"><span aria-hidden="true">✕</span> Cancel appointment</a>`);
     }
 
     if (d.paymentTerms) {

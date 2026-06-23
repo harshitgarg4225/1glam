@@ -17,7 +17,7 @@
       --surface: #F4F0EA;
       --card: #FFFFFF;
       --text: #1C1917;
-      --muted: #78716C;
+      --muted: #6B635B;
       --line: #E8E2DA;
       --accent: #C26B45;
       --accent-hover: #A85A38;
@@ -27,9 +27,10 @@
       --shadow: 0 4px 16px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); display: flex; align-items: center; justify-content: center; padding: 20px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); display: flex; align-items: flex-start; justify-content: center; padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px)); }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 36px 32px; max-width: 640px; width: 100%; box-shadow: var(--shadow); }
     .contract-frame { width: 100%; height: 46vh; min-height: 280px; border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 18px; }
+    @media (max-width: 640px) { .contract-frame { height: 38vh; min-height: 220px; } .card { padding: 28px 20px; } }
     .sent-note { text-align: center; font-size: 12.5px; color: var(--muted); margin-bottom: 16px; }
     .kicker { text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
     h1 { font-size: 26px; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }
@@ -96,7 +97,7 @@
           <span>I have read the contract and I agree to its terms. Typing my name above is my digital signature.</span>
         </label>
         <button class="sign-btn" type="submit" id="sign-btn">Sign &amp; accept</button>
-        <div class="status" id="status"></div>
+        <div class="status" id="status" role="alert" aria-live="assertive"></div>
       </form>
     </div>
     <div id="error" class="loading" style="display:none;color:var(--danger);"></div>

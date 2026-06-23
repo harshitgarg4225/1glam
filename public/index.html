@@ -205,7 +205,10 @@
         transition: border-color 0.15s;
         outline: none;
       }
-      input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+      input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      /* Any touch device (incl. tablets at 768px+) zooms when a focused field is
+         under 16px — gate on the pointer, not just phone width, so iPads are covered. */
+      @media (pointer: coarse) { input, textarea, select { font-size: 16px; } }
       textarea { min-height: 96px; resize: vertical; }
       .status { min-height: 22px; color: var(--success); font-size: 14px; }
       .workspace-links, .action-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -314,7 +317,7 @@
       .mcal-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
       .mcal-num { font-size: 13px; font-weight: 600; }
       .mcal-dots { display: flex; gap: 3px; align-items: center; min-height: 8px; }
-      .mcal-more { font-size: 9.5px; color: var(--muted); }
+      .mcal-more { font-size: 11px; color: var(--muted); }
       .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
       .dot-confirmed { background: #2e7d4f; }
       .dot-hold { background: #d99a3d; }
@@ -737,7 +740,7 @@
 
       @media (max-width: 640px) {
         .board:not(.list-mode) .board-col { flex: 0 0 calc(100vw - 72px); }
-        .toast-shelf { bottom: 88px; right: 12px; left: 12px; }
+        .toast-shelf { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); right: 12px; left: 12px; }
         .toast { max-width: none; }
         .filter-bar { gap: 7px; }
         .view-toggle-btn { padding: 6px 10px; font-size: 12px; }
@@ -939,6 +942,7 @@
         /* Comfortable, thumb-sized tap targets. */
         .button { min-height: 46px; }
         .button.small { min-height: 40px; }
+        .button.tiny { min-height: 40px; padding: 8px 12px; }
         .modal-close { width: 44px; height: 44px; }
 
         /* Dialogs become bottom sheets: full-width, anchored to the bottom
@@ -1764,7 +1768,7 @@
         <div class="panel section" style="margin-bottom:20px;">
           <div class="kicker">Campaigns</div>
           <h2>Send to a group</h2>
-          <p class="muted" style="margin:-4px 0 14px;font-size:13.5px;">Reach past clients or open enquiries in one send — festive offers, new date availability, Diwali greetings. Requires WhatsApp Business connected.</p>
+          <p class="muted" style="margin:-4px 0 14px;font-size:13.5px;">Reach past clients or open requests in one send — festive offers, new date availability, Diwali greetings. Requires WhatsApp Business connected.</p>
           <div class="section-grid" style="margin-bottom:12px;">
             <div>
               <label for="campaign-segment">Who to reach</label>
@@ -1778,8 +1782,8 @@
                 <optgroup label="All clients">
                   <option value="past-clients">Past clients (completed bookings)</option>
                   <option value="confirmed-this-year">Confirmed bookings this year</option>
-                  <option value="pending-leads">Open enquiries</option>
-                  <option value="all-past-leads">Everyone who has enquired</option>
+                  <option value="pending-leads">Open requests</option>
+                  <option value="all-past-leads">Everyone who's requested before</option>
                 </optgroup>
               </select>
             </div>
@@ -2151,7 +2155,7 @@
           </div>
           <div id="wallet-low-banner" style="display:none;margin-top:14px;font-size:13px;background:#FDF4E3;border:1px solid #E0A23C;color:#9A6516;border-radius:10px;padding:11px 13px;font-weight:500;">⚠️ Your credits are running low. Top up below so your messages and AI keep flowing.</div>
           <div id="wallet-test-banner" class="muted" style="display:none;margin-top:14px;font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;">🧪 Test mode — no real money is charged. Use Razorpay test cards to try top-ups.</div>
-          <div id="wallet-not-configured" class="muted" style="display:none;margin-top:14px;font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;">Top-ups aren't switched on yet. Add your Razorpay keys (<code>RAZORPAY_KEY_ID</code>, <code>RAZORPAY_KEY_SECRET</code>) to start selling credits.</div>
+          <div id="wallet-not-configured" class="muted" style="display:none;margin-top:14px;font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;">Top-ups aren't switched on yet. Connect your Razorpay account in payment settings to start buying credits.</div>
         </div>
 
         <div class="panel section" style="margin-bottom:20px;">
@@ -2222,7 +2226,7 @@
         </div>
         <div class="panel section">
           <div class="kicker">Business Insights</div>
-          <h2>Analytics</h2>
+          <h2>Insights</h2>
           <div id="analytics-loading" style="color:var(--muted);padding:24px 0;"><span class="bd-spinner"></span>Loading…</div>
           <div id="analytics-body" class="hidden">
             <div id="analytics-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:28px;"></div>
@@ -2230,7 +2234,7 @@
             <div id="chart-revenue" style="margin-bottom:28px;"></div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px;">
               <div>
-                <h3 style="margin-bottom:12px;font-size:16px;">Leads by source</h3>
+                <h3 style="margin-bottom:12px;font-size:16px;">Where your requests come from</h3>
                 <div id="chart-source"></div>
               </div>
               <div>
@@ -2724,7 +2728,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             <summary>WhatsApp message templates (advanced, optional)</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:13.5px;">
-                You don't need any of this to get started. WhatsApp only lets businesses send automated messages using <strong>pre-approved templates</strong> (created in Meta Business Manager). If you add the matching template names below, your quotes, reminders and review requests will send reliably at any time. Leave them blank and 1Glam sends normal text instead (which WhatsApp only delivers within 24 hours of the client's last message). The one-tap <strong>Notify team</strong> and <strong>WhatsApp</strong> buttons always work with no setup.
+                You don't need any of this to get started. WhatsApp only lets businesses send automated messages using <strong>pre-approved templates</strong> (created in Meta Business Manager). If you add the matching template names below, your quotes, reminders and review requests will send reliably at any time. Leave them blank and BusyDays sends normal text instead (which WhatsApp only delivers within 24 hours of the client's last message). The one-tap <strong>Notify team</strong> and <strong>WhatsApp</strong> buttons always work with no setup.
               </p>
               <div class="section-grid">
                 <div><label for="bookingConfirmTemplate">Booking request template</label><input id="bookingConfirmTemplate" name="bookingConfirmTemplate" placeholder="booking_confirmation" /></div>
@@ -2768,7 +2772,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
               <div class="section-grid">
                 <div><label for="confirmedCalendarId">Confirmed bookings calendar (managed automatically)</label><input id="confirmedCalendarId" name="confirmedCalendarId" readonly /></div>
                 <div><label for="tentativeCalendarId">Tentative holds calendar (managed automatically)</label><input id="tentativeCalendarId" name="tentativeCalendarId" readonly /></div>
-                <div><label for="contractTemplateUrl">Leegality contract template ID / URL</label><input id="contractTemplateUrl" name="contractTemplateUrl" /></div>
+                <div><label for="contractTemplateUrl">E-signing template ID / URL</label><input id="contractTemplateUrl" name="contractTemplateUrl" placeholder="For Leegality e-signatures — leave blank if not used" /></div>
                 <div><label for="holdExpiryHours">How long a tentative hold lasts (hours)</label><input id="holdExpiryHours" name="holdExpiryHours" type="number" /></div>
                 <div><label for="scarcityThresholdSoft">Soft scarcity threshold</label><input id="scarcityThresholdSoft" name="scarcityThresholdSoft" type="number" /></div>
                 <div><label for="scarcityThresholdHard">Hard scarcity threshold</label><input id="scarcityThresholdHard" name="scarcityThresholdHard" type="number" /></div>
@@ -2929,7 +2933,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             <summary>🔄 Recurring appointments</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
-                Allow scheduling a series of bookings in one go (weekly, bi-weekly, or monthly). A "Schedule recurring" button will appear in the Leads tab.
+                Allow scheduling a series of bookings in one go (weekly, bi-weekly, or monthly). A "Schedule recurring" button will appear in the Requests tab.
               </p>
               <div class="form-grid">
                 <div>
@@ -3748,11 +3752,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       const snapshotContent = document.getElementById("snapshot-content");
       const leadsBoard = document.getElementById("leads-board");
       // Mobile swipe hint: shown until she discovers the columns scroll sideways.
-      if (!localStorage.getItem("bd-board-swiped")) {
+      // localStorage access can throw in Safari Private mode — never let that
+      // crash the board render.
+      let boardSwiped = false;
+      try { boardSwiped = !!localStorage.getItem("bd-board-swiped"); } catch {}
+      if (!boardSwiped) {
         document.getElementById("board-swipe-hint")?.classList.add("visible");
         leadsBoard.addEventListener("scroll", function onFirstScroll() {
           if (leadsBoard.scrollLeft > 30) {
-            localStorage.setItem("bd-board-swiped", "1");
+            try { localStorage.setItem("bd-board-swiped", "1"); } catch {}
             document.getElementById("board-swipe-hint")?.classList.remove("visible");
             leadsBoard.removeEventListener("scroll", onFirstScroll);
           }
@@ -4251,8 +4259,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // Friendly event-date label: "Mon, 15 Jun" (or with year if not this year).
       function formatDay(value) {
         if (!value) return "";
-        const d = new Date(value);
-        if (isNaN(d)) return value;
+        const d = parseDay(value);
+        if (!d || isNaN(d)) return value;
         const opts = { weekday: "short", day: "numeric", month: "short" };
         if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
         try { return d.toLocaleDateString("en-IN", opts); } catch { return value; }
@@ -4942,7 +4950,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           return ds !== null && ds >= 3;
         });
         if (staleLeads.length) {
-          items.push({ icon: "⏳", title: `${staleLeads.length} lead${staleLeads.length > 1 ? "s" : ""} with no contact in 3+ days`, sub: staleLeads.map((l) => l.clientName).slice(0, 3).join(", ") + (staleLeads.length > 3 ? ` +${staleLeads.length - 3} more` : ""), tab: "leads", danger: false });
+          items.push({ icon: "⏳", title: `${staleLeads.length} request${staleLeads.length > 1 ? "s" : ""} with no contact in 3+ days`, sub: staleLeads.map((l) => l.clientName).slice(0, 3).join(", ") + (staleLeads.length > 3 ? ` +${staleLeads.length - 3} more` : ""), tab: "leads", danger: false });
         }
 
         // Advance payments overdue (event date passed, advance still due)
@@ -5185,7 +5193,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 ${urgencyBtn}
                 ${urgencyPill}
                 <div class="card-menu-wrap">
-                  <button class="card-menu-trigger" data-menu-for="${lead.leadId}" title="More options" type="button">⋮</button>
+                  <button class="card-menu-trigger" data-menu-for="${lead.leadId}" aria-label="More options for ${escapeHtml(lead.clientName)}" title="More options" type="button">⋮</button>
                   <div class="card-menu" id="menu-${lead.leadId}">
                     <div class="card-menu-section">
                       <span class="field-label">Adjust price</span>
@@ -5502,7 +5510,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
                     <button class="button small" data-booking-record-payment="${booking.bookingId}" style="background:var(--sage);">💰 Record payment</button>
                   </div>`}
-              ${!["Cancelled", "Completed"].includes(booking.status) && booking.eventDate && new Date(booking.eventDate) < new Date(new Date().toDateString())
+              ${!["Cancelled", "Completed"].includes(booking.status) && booking.eventDate && parseDay(booking.eventDate) < new Date(new Date().toDateString())
                 ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
                     <button class="button small secondary" data-booking-action="complete" data-booking-id="${booking.bookingId}">🎉 Mark completed</button>
                   </div>`
@@ -5525,8 +5533,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                   <button class="button small secondary" data-booking-action="send-contract" data-booking-id="${booking.bookingId}">Send contract</button>
                   ${sessionState?.workspace?.config?.contractTemplateUrl ? `<button class="button small secondary" data-booking-action="sync-contract" data-booking-id="${booking.bookingId}">Sync status</button>` : ""}
                   <button class="button small secondary" data-booking-action="review" data-booking-id="${booking.bookingId}">Ask review</button>
-                  <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Advance reminder</button>
-                  <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Balance reminder</button>
+                  <button class="button small secondary" data-booking-action="advance-reminder" data-booking-id="${booking.bookingId}">Send advance reminder</button>
+                  <button class="button small secondary" data-booking-action="balance-reminder" data-booking-id="${booking.bookingId}">Send balance reminder</button>
                 </div>
                 <div class="action-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:5px;">
                   <button class="button small secondary" data-booking-appt-link="${escapeHtml(booking.leadId)}">🔗 Client portal</button>
@@ -5535,7 +5543,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                   <button class="button small secondary" data-booking-cancel-link="${booking.bookingId}">🔗 Send cancel link</button>
                   <button class="button small secondary" data-booking-expenses="${booking.bookingId}">💸 Expenses</button>
                   <button class="button small secondary" data-book-again-name="${escapeHtml(booking.clientName)}" data-book-again-phone="${escapeHtml(booking.clientWhatsApp)}">🔁 Book again</button>
-                  <button class="button small secondary" data-booking-no-show="${booking.bookingId}" title="Mark as no-show">🚫 No show</button>
+                  <button class="button small secondary" data-booking-no-show="${booking.bookingId}" title="Mark as no-show">🚫 Mark no-show</button>
                   <button class="button small secondary danger" data-booking-cancel="${booking.bookingId}">✕ Cancel booking</button>
                 </div>
               </details>
@@ -5958,7 +5966,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       let commissionReport = [];
       async function loadCommissionReport() {
         try {
-          const data = await fetchJson("/api/team/commission-report");
+          const data = await getJson("/api/team/commission-report");
           if (data.ok) commissionReport = data.report || [];
         } catch { /* non-critical */ }
       }
@@ -6661,7 +6669,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const note = document.getElementById("loyalty-config-note");
         if (!section || !listEl) return;
         try {
-          const data = await fetchJson("/api/loyalty");
+          const data = await getJson("/api/loyalty");
           section.style.display = "";
           if (!data.enabled) {
             note.textContent = "Enable the loyalty program in Settings → Loyalty & Retention to start rewarding repeat clients.";
@@ -6718,13 +6726,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (cfg.giftCardsEnabled !== "Yes") { section.style.display = "none"; return; }
         section.style.display = "";
         try {
-          const data = await fetchJson("/api/gift-cards");
+          const data = await getJson("/api/gift-cards");
           const cards = data.cards || [];
           if (!cards.length) {
             listEl.innerHTML = `<p class="muted" style="font-size:13.5px;">No gift cards yet. Tap "Create gift card" to generate one.</p>`;
             return;
           }
-          listEl.innerHTML = `<div class="table-wrap"><table>
+          listEl.innerHTML = `<div class="table-wrap cards-on-mobile"><table>
             <thead><tr><th>Code</th><th>Value</th><th>Purchaser</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>${cards.map((c) => `<tr>
               <td data-label="Code"><code style="font-size:15px;font-weight:700;letter-spacing:.05em;">${escapeHtml(c.code)}</code></td>
@@ -7291,7 +7299,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (val.length < 3) return;
         _slugCheckTimer = setTimeout(async () => {
           try {
-            const res = await fetchJson(`/api/workspace/slug-check?slug=${encodeURIComponent(val)}`);
+            const res = await getJson(`/api/workspace/slug-check?slug=${encodeURIComponent(val)}`);
             if (!statusEl) return;
             if (res.available) {
               statusEl.textContent = "✓ Available";
@@ -8537,8 +8545,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         try {
           if (action === "invoice") { await postJson(`/api/bookings/${bookingId}/invoice`, {}); toast("Invoice generated.", "success"); }
           else if (action === "send-invoice") { await postJson(`/api/bookings/${bookingId}/send-invoice`, {}); toast("Invoice sent to client.", "success"); }
-          else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); toast("Contract sent to Leegality.", "success"); }
-          else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); toast("Contract message sent.", "success"); }
+          else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); toast("Contract sent for e-signing — the client will get an email to sign it.", "success"); }
+          else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); toast("Contract sent to client.", "success"); }
           else if (action === "sync-contract") { const r = await postJson(`/api/bookings/${bookingId}/contract/sync`, {}); toast(`Contract: ${r.booking?.contractStatus || "Updated"}.`, "success"); }
           else if (action === "review") { await postJson(`/api/bookings/${bookingId}/send-review`, {}); toast("Review request sent.", "success"); }
           else if (action === "advance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); toast("Advance reminder sent.", "success"); }
@@ -10074,7 +10082,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           if (titleEl) titleEl.textContent = `${recap.month} — business recap`;
           const fmt = (n) => Number(n).toLocaleString("en-IN");
           statsEl.innerHTML = [
-            { label: "Enquiries", value: recap.newLeads, note: "new this month" },
+            { label: "Requests", value: recap.newLeads, note: "new this month" },
             { label: "Bookings", value: recap.confirmedBookings, note: "confirmed" },
             recap.newClients > 0 ? { label: "New clients", value: recap.newClients, note: "first-timers" } : null,
             { label: "Revenue", value: `₹${fmt(recap.totalRevenue)}`, note: "booked" },
@@ -10515,7 +10523,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             `<button class="sort-option-btn${src===v?" selected":""}" type="button" data-lead-source-filter="${v}">${l}</button>`
           ).join("")}`;
         sheet.classList.add("open");
-        sheet.addEventListener("click", function filterHandler(e) {
+        // Re-opening the sheet without selecting would otherwise stack a fresh
+        // listener each time — keep exactly one by removing any prior handler.
+        if (sheet._leadFilterHandler) sheet.removeEventListener("click", sheet._leadFilterHandler);
+        sheet._leadFilterHandler = function filterHandler(e) {
           const dateBtn = e.target.closest("[data-lead-date-filter]");
           if (dateBtn) {
             const v = dateBtn.getAttribute("data-lead-date-filter");
@@ -10537,7 +10548,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             sheet.classList.remove("open");
             sheet.removeEventListener("click", filterHandler);
           }
-        });
+        };
+        sheet.addEventListener("click", sheet._leadFilterHandler);
       });
       document.getElementById("booking-filter-chip")?.addEventListener("click", () => {
         const cur = document.getElementById("booking-filter-date")?.value || "upcoming";
@@ -10554,7 +10566,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             `<button class="sort-option-btn${pay===v?" selected":""}" type="button" data-booking-pay-filter="${v}">${l}</button>`
           ).join("")}`;
         sheet.classList.add("open");
-        sheet.addEventListener("click", function bkFilterHandler(e) {
+        if (sheet._bkFilterHandler) sheet.removeEventListener("click", sheet._bkFilterHandler);
+        sheet._bkFilterHandler = function bkFilterHandler(e) {
           const dateBtn = e.target.closest("[data-booking-date-filter]");
           if (dateBtn) {
             const v = dateBtn.getAttribute("data-booking-date-filter");
@@ -10574,7 +10587,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             sheet.classList.remove("open");
             sheet.removeEventListener("click", bkFilterHandler);
           }
-        });
+        };
+        sheet.addEventListener("click", sheet._bkFilterHandler);
       });
 
       // ─── Check-in handler ───

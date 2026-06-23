@@ -78,7 +78,9 @@ export function validatePromo(promo: PromoCode | undefined, amount: number): Pro
   if (!promo) return { ok: false, reason: "That code isn't valid." };
   if (promo.status !== "Active") return { ok: false, reason: "This code is no longer active." };
   if (promo.expiresAt) {
-    const today = new Date().toISOString().slice(0, 10);
+    // Compare against the IST calendar date — a UTC "today" would expire codes
+    // up to 5.5h early for users in the 00:00–05:30 IST window.
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (promo.expiresAt < today) return { ok: false, reason: "This code has expired." };
   }
   if (promo.maxRedemptions > 0 && promo.timesRedeemed >= promo.maxRedemptions) {

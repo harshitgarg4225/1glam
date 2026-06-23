@@ -623,7 +623,9 @@ export async function getPublicPaymentDetails(
     leadStatus: lead.status,
     paymentStatus: lead.paymentStatus || "",
     onlinePayAvailable: Boolean(config.razorpayKeyId && config.razorpayKeySecret),
-    razorpayKeyId: config.razorpayKeyId || "",
+    // Only expose the publishable key when online pay is actually enabled — no
+    // reason to hand a client the owner's processor identity otherwise.
+    razorpayKeyId: config.razorpayKeyId && config.razorpayKeySecret ? config.razorpayKeyId : "",
     tipsEnabled: config.tipsEnabled === "Yes",
     bookingId,
     signUrl,
@@ -785,33 +787,40 @@ async function applyPromoCode(
   const code = String(rawCode || "").trim().toUpperCase();
   if (!code || workspace.config.promoCodesEnabled !== "Yes") return null;
 
-  const { sheets } = createGoogleClients(tokens);
-  await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
-  const got = await sheets.spreadsheets.values.get({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.promoCodes}!A2:J`,
-  });
-  const rows = got.data.values ?? [];
-  const idx = rows.findIndex((r) => String(r[1] || "").toUpperCase() === code);
-  if (idx < 0) return null;
-
-  const promo = parsePromoCode(rows[idx]);
-  const result = validatePromo(promo, baseAmount);
-  if (!result.ok) return null;
-
-  // Increment the redemption counter (best-effort; the discount stands regardless).
-  promo.timesRedeemed += 1;
-  try {
-    await sheets.spreadsheets.values.update({
+  // Serialize the whole read → validate → increment per (workspace, code) so two
+  // concurrent bookings can't both pass the redemption-cap check and over-redeem.
+  const lockKey = lockKeyFromString(`promo:${workspace.workspaceId}:${code}`);
+  return withSerializedLock(lockKey, async () => {
+    const { sheets } = createGoogleClients(tokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    const got = await sheets.spreadsheets.values.get({
       spreadsheetId: workspace.spreadsheetId,
-      range: `${sheetNames.promoCodes}!A${idx + 2}:J${idx + 2}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [promoCodeToRow(promo)] },
+      range: `${sheetNames.promoCodes}!A2:J`,
     });
-  } catch {
-    // Counter is advisory; never block the booking on a write hiccup.
-  }
-  return { label: `Promo ${code} (${result.label})`, amount: -result.discount };
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => String(r[1] || "").toUpperCase() === code);
+    if (idx < 0) return null;
+
+    const promo = parsePromoCode(rows[idx]);
+    const result = validatePromo(promo, baseAmount);
+    if (!result.ok) return null;
+
+    // Increment the redemption counter while still holding the lock.
+    promo.timesRedeemed += 1;
+    try {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: workspace.spreadsheetId,
+        range: `${sheetNames.promoCodes}!A${idx + 2}:J${idx + 2}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [promoCodeToRow(promo)] },
+      });
+    } catch (error) {
+      // Counter is advisory; never block the booking on a write hiccup — but make
+      // the failure visible so a stuck counter can be noticed.
+      console.error(`Promo redemption counter write failed for ${code}:`, error);
+    }
+    return { label: `Promo ${code} (${result.label})`, amount: -result.discount };
+  });
 }
 
 // Time slots for a date with real availability: each configured slot, greyed

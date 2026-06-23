@@ -17,7 +17,7 @@
         --surface: #F4F0EA;
         --card: #FFFFFF;
         --text: #1C1917;
-        --muted: #78716C;
+        --muted: #6B635B;
         --line: #E8E2DA;
         --accent: #C26B45;
         --accent-hover: #A85A38;
@@ -85,7 +85,7 @@
       .staff-level { font-size: 12px; color: var(--muted); margin-top: 2px; }
       .staff-bio { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .slots { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
-      .slot { padding: 9px 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
+      .slot { padding: 9px 18px; min-height: 44px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
       .slot:hover { border-color: var(--accent); background: var(--accent-soft); }
       .slot.selected { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; color: var(--accent); }
       .slot:disabled { opacity: 0.4; cursor: not-allowed; text-decoration: line-through; background: var(--card); border-color: var(--line); }
@@ -97,6 +97,7 @@
       input:focus, textarea:focus { outline: none; border-color: var(--accent); }
       textarea { resize: vertical; min-height: 70px; }
       .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
       .button {
         display: inline-block; width: 100%; margin-top: 22px; padding: 14px 20px; cursor: pointer;
         border: none; border-radius: var(--radius-sm); font: inherit; font-size: 16px; font-weight: 600; color: #fff;
@@ -135,7 +136,7 @@
       .cal { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; background: var(--card); }
       .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
       .cal-head .m { font-weight: 600; font-size: 15px; }
-      .cal-nav { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); width: 36px; height: 36px; cursor: pointer; font-size: 17px; line-height: 1; color: var(--text); }
+      .cal-nav { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); width: 44px; height: 44px; cursor: pointer; font-size: 17px; line-height: 1; color: var(--text); }
       .cal-nav:hover:not(:disabled) { border-color: var(--accent); }
       .cal-nav:disabled { opacity: 0.3; cursor: not-allowed; }
       .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -333,8 +334,8 @@
     <div class="cta-bar" id="cta-bar">
       <div class="cta-bar-inner">
         <div class="cta-bar-price">
-          <span class="lbl" id="cta-label">Select a service</span>
-          <span class="amt" id="cta-amount">—</span>
+          <span class="lbl" id="cta-label" aria-live="polite">Select a service</span>
+          <span class="amt" id="cta-amount" aria-live="polite">—</span>
           <span id="cta-travel" style="display:none;font-size:11px;color:var(--muted);margin-top:1px;"></span>
         </div>
         <button type="button" class="cta-go" id="cta-go">Request booking</button>
@@ -530,6 +531,7 @@
           card.className = "service";
           card.dataset.key = type.key;
           const durationLabel = formatDuration(type.durationHours);
+          card.setAttribute("aria-label", type.label);
           const imgHtml = type.imageUrl
             ? '<img class="service-img" src="' + esc(type.imageUrl) + '" alt="" loading="lazy" />'
             : "";
@@ -603,9 +605,11 @@
           btn.className = "slot";
           btn.textContent = formatSlotTime(slot);
           btn.dataset.value = slot;
+          btn.setAttribute("aria-pressed", "false");
           btn.addEventListener("click", () => {
-            slotsContainer.querySelectorAll(".slot").forEach((s) => s.classList.remove("selected"));
+            slotsContainer.querySelectorAll(".slot").forEach((s) => { s.classList.remove("selected"); s.setAttribute("aria-pressed", "false"); });
             btn.classList.add("selected");
+            btn.setAttribute("aria-pressed", "true");
             el("eventTime").value = slot;
           });
           slotsContainer.appendChild(btn);
@@ -617,7 +621,7 @@
         const g = el("gallery");
         if (!images || !images.length) { hide("gallery"); return; }
         g.innerHTML = images
-          .map((src) => '<img loading="lazy" src="' + String(src).replace(/"/g, "&quot;") + '" alt="Portfolio work" />')
+          .map((src) => '<img loading="lazy" src="' + String(src).replace(/"/g, "&quot;") + '" alt="" />')
           .join("");
         show("gallery");
       }
@@ -650,7 +654,11 @@
         const row = el("quick-dates-row");
         const wrap = el("quick-dates-wrap");
         if (!row || !wrap) return;
-        const today = new Date(); today.setHours(0,0,0,0);
+        // Anchor "today" to the IST calendar date at UTC-midnight so it shares the
+        // same basis as minDate/maxDate (all parsed with "T00:00:00Z"). Using a
+        // local-midnight Date here made the first chip show yesterday in IST.
+        const todayIso = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        const today = new Date(todayIso + "T00:00:00Z");
         const start = avail.minDate ? new Date(avail.minDate + "T00:00:00Z") : today;
         const from = start > today ? start : today;
         const chips = [];
@@ -667,7 +675,7 @@
         wrap.style.display = "";
         const sel = el("eventDate").value;
         row.innerHTML = chips.map((c) =>
-          `<button class="quick-date-chip${c.iso === sel ? " selected" : ""}" type="button" data-qd-iso="${c.iso}">
+          `<button class="quick-date-chip${c.iso === sel ? " selected" : ""}" type="button" data-qd-iso="${c.iso}" aria-pressed="${c.iso === sel}" aria-label="${c.day} ${c.date} ${c.mon}">
             <span class="qd-day">${c.day}</span><span class="qd-date">${c.date}</span><span class="qd-mon">${c.mon}</span>
           </button>`
         ).join("");
@@ -678,7 +686,11 @@
           el("eventDate").value = iso;
           el("selected-date").textContent = "Selected: " + iso;
           document.querySelectorAll(".cal-day").forEach((c) => c.classList.toggle("selected", c.dataset.iso === iso));
-          document.querySelectorAll(".quick-date-chip").forEach((c) => c.classList.toggle("selected", c.dataset.qdIso === iso));
+          document.querySelectorAll(".quick-date-chip").forEach((c) => {
+            const on = c.dataset.qdIso === iso;
+            c.classList.toggle("selected", on);
+            c.setAttribute("aria-pressed", String(on));
+          });
           // Scroll cal to the right month
           if (calState) {
             const dt = new Date(iso + "T00:00:00Z");
@@ -718,9 +730,9 @@
         }
         el("calendar").innerHTML =
           '<div class="cal-head">' +
-            '<button type="button" class="cal-nav" data-cal-step="-1"' + (prevDisabled ? " disabled" : "") + ">&#8249;</button>" +
+            '<button type="button" class="cal-nav" aria-label="Previous month" data-cal-step="-1"' + (prevDisabled ? " disabled" : "") + ">&#8249;</button>" +
             '<span class="m">' + MONTHS[m] + " " + y + "</span>" +
-            '<button type="button" class="cal-nav" data-cal-step="1"' + (nextDisabled ? " disabled" : "") + ">&#8250;</button>" +
+            '<button type="button" class="cal-nav" aria-label="Next month" data-cal-step="1"' + (nextDisabled ? " disabled" : "") + ">&#8250;</button>" +
           "</div>" +
           '<div class="cal-grid">' + DOW.map((d) => '<div class="cal-dow">' + d + "</div>").join("") + cells + "</div>";
       }
@@ -958,11 +970,14 @@
       }
       el("promo-apply")?.addEventListener("click", async () => {
         const fb = el("promo-feedback");
+        const applyBtn = el("promo-apply");
         const code = el("promo-code").value.trim().toUpperCase();
         if (!code) { fb.style.color = ""; fb.textContent = "Enter a code first."; return; }
         if (!selectedEventType) { fb.style.color = "#b91c1c"; fb.textContent = "Choose a service first."; return; }
+        if (applyBtn.disabled) return;
         const amount = currentOrderAmount();
         fb.style.color = ""; fb.textContent = "Checking…";
+        applyBtn.disabled = true;
         try {
           const res = await fetch("/api/public/" + encodeURIComponent(workspaceId) + "/promo/" + encodeURIComponent(code) + "?amount=" + amount);
           const data = await res.json();
@@ -974,6 +989,8 @@
           appliedPromoCode = "";
           fb.style.color = "#b91c1c";
           fb.textContent = err.message;
+        } finally {
+          applyBtn.disabled = false;
         }
       });
 

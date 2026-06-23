@@ -508,8 +508,10 @@ app.get("/api/public/:workspaceId/travel", publicReadLimiter, async (req, res, n
   try {
     const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
     if (!workspace) return res.json({ ok: true, travelFee: 0 });
-    const venue = String(req.query.venue ?? "").trim();
-    if (!venue || venue.length < 3) return res.json({ ok: true, travelFee: 0 });
+    // Cap length before it reaches the external Maps API — a multi-KB "venue"
+    // is never a real address and would just burn quota.
+    const venue = String(req.query.venue ?? "").trim().slice(0, 200);
+    if (venue.length < 3) return res.json({ ok: true, travelFee: 0 });
     const { config } = workspace;
     const originCity = config.city || "";
     if (!originCity) return res.json({ ok: true, travelFee: 0 });
@@ -524,7 +526,7 @@ app.get("/api/public/:workspaceId/travel", publicReadLimiter, async (req, res, n
 
 // Live time-slot availability for a date: each configured slot, marked taken
 // when an existing job (with its configured service duration) overlaps it.
-app.get("/api/public/:workspaceId/slots", async (req, res, next) => {
+app.get("/api/public/:workspaceId/slots", publicReadLimiter, async (req, res, next) => {
   try {
     const result = await getPublicSlotsForDate(
       String(req.params.workspaceId),
@@ -3641,8 +3643,11 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
     booking = await ensureInvoiceNumber(req.session.profile.email, req.session.googleTokens, booking);
     const invoice = await generateInvoiceDocument(workspace, req.session.googleTokens, booking);
     const dueDays = Number(workspace.config.invoiceDueDays) || 0;
+    // Anchor the due date to the IST calendar day, not UTC — otherwise a "due in
+    // N days" set late in the IST evening lands a day early.
+    const dueBase = new Date(`${istToday()}T00:00:00+05:30`);
     const invoiceDueDate = booking.invoiceDueDate || (dueDays > 0
-      ? new Date(Date.now() + dueDays * 86400000).toISOString().slice(0, 10)
+      ? new Date(dueBase.getTime() + dueDays * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })
       : "");
     const updatedBooking = await updateBookingRecord(
       req.session.profile.email,

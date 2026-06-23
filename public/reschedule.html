@@ -28,12 +28,13 @@
     .info-value { font-weight: 600; }
     label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
     input[type=date], input[type=time] { width: 100%; padding: 11px 14px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 15px; background: var(--card); color: var(--text); appearance: none; -webkit-appearance: none; margin-bottom: 14px; }
-    input[type=date]:focus, input[type=time]:focus { outline: none; border-color: var(--accent); }
+    input[type=date]:focus, input[type=time]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    input, select, textarea { font-size: 16px; }
     .btn { width: 100%; padding: 13px; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; margin-top: 6px; transition: opacity .15s; }
     .btn:hover { opacity: .9; }
     .btn:disabled { opacity: .55; cursor: not-allowed; }
     .status { margin-top: 14px; text-align: center; font-size: 14px; }
-    .status.error { color: #dc2626; }
+    .status.error { color: var(--danger); }
     .status.success { color: #16a34a; }
     .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 8px; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -104,7 +105,7 @@
       const res = await fetch(url);
       const data = await res.json();
       if (!data.ok) {
-        document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:#dc2626;font-size:15px;">${data.error || "This link has expired. Please ask the studio for a new one."}</p>`;
+        document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:var(--danger);font-size:15px;">${data.error || "This link has expired. Please ask the studio for a new one."}</p>`;
         document.getElementById("brand-name").textContent = "BusyDays";
         return;
       }
@@ -138,13 +139,13 @@
         <div class="status" id="date-hint" style="margin-top:-8px;margin-bottom:10px;"></div>
         ${hasSlots
           ? `<label>Preferred time</label>
-             <div class="slots" id="time-slots" style="margin:6px 0 14px;"></div>
+             <div class="slots" id="time-slots" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px;"></div>
              <input type="hidden" id="new-time" />`
           : `<label for="new-time">Preferred time (optional)</label>
              <input type="time" id="new-time" value="${b.eventTime ? b.eventTime.slice(0,5) : ""}" />`
         }
         <button class="btn" id="submit-btn" type="button">Confirm new date</button>
-        <div class="status" id="status"></div>
+        <div class="status" id="status" role="alert" aria-live="assertive"></div>
       `;
 
       let renderSlots = null;
@@ -251,7 +252,7 @@
     }
 
     init().catch((err) => {
-      document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:#dc2626;">${escHtml(err.message)}</p>`;
+      document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:var(--danger);">${escHtml(err.message)}</p>`;
       document.getElementById("brand-name").textContent = "BusyDays";
     });
   </script>

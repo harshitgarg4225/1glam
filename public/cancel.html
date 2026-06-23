@@ -29,8 +29,8 @@
     .info-label { color: var(--muted); flex-shrink: 0; }
     .info-value { font-weight: 600; text-align: right; }
     .fee-note { border-radius: 10px; padding: 13px 15px; margin-bottom: 18px; font-size: 13.5px; line-height: 1.55; }
-    .fee-note.warn { background: #fdf4e3; border: 1px solid #efd9ae; color: #9a6b1f; }
-    .fee-note.ok { background: #e8f7ee; border: 1px solid #bfe6cd; color: #1e7a3f; }
+    .fee-note.warn { background: #FEF3C7; border: 1px solid #FDE68A; color: #92400E; }
+    .fee-note.ok { background: var(--success-soft); border: 1px solid #A7E3BC; color: var(--success); }
     .policy { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-bottom: 18px; }
     .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; color: #fff; transition: opacity .15s, transform .08s ease; touch-action: manipulation; }
     .btn:active:not(:disabled) { transform: scale(.98); }
@@ -118,7 +118,7 @@
         ${data.cancellationPolicy ? `<p class="policy">${escHtml(data.cancellationPolicy)}</p>` : ""}
         <button class="btn btn-danger" id="confirm-btn" type="button">Cancel my booking</button>
         <button class="btn btn-keep" id="keep-btn" type="button">Keep my booking</button>
-        <div class="status" id="status"></div>
+        <div class="status" id="status" role="alert" aria-live="assertive"></div>
       `;
       // Cancelling a (possibly paid) booking is irreversible — require a second,
       // deliberate tap rather than firing on a single fat-finger.
