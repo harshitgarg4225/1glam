@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Appointment</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/brand.css" />
+  <meta name="theme-color" content="#C26B45" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="BusyDays" />
+  <style>
+    :root {
+      --bg: #FAF8F5; --surface: #F4F0EA; --card: #FFFFFF;
+      --text: #1C1917; --muted: #78716C; --line: #E8E2DA;
+      --accent: #C26B45; --accent-hover: #A85A38; --accent-soft: #FBF0EA;
+      --danger: #9B1C1C; --success: #166534;
+      --shadow: 0 4px 16px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); padding: 20px; }
+    .wrap { max-width: 440px; margin: 0 auto; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; box-shadow: var(--shadow); margin-bottom: 16px; }
+    .kicker { text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+    h1 { font-size: 22px; font-weight: 700; line-height: 1.2; margin-bottom: 4px; }
+    .biz { font-size: 14px; color: var(--muted); margin-bottom: 20px; }
+    .detail-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-icon { font-size: 18px; flex-shrink: 0; width: 24px; text-align: center; margin-top: 1px; }
+    .detail-label { color: var(--muted); font-size: 12px; }
+    .detail-value { font-weight: 600; }
+    .payment-bar { background: var(--surface); border-radius: 10px; padding: 16px 18px; margin-bottom: 8px; }
+    .payment-bar-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; margin-bottom: 6px; }
+    .payment-bar-row:last-child { margin-bottom: 0; }
+    .amount-big { font-size: 20px; font-weight: 700; color: var(--accent); }
+    .pill { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11.5px; font-weight: 600; }
+    .pill-success { background: #DCFCE7; color: var(--success); }
+    .pill-warn { background: #FEF9C3; color: #854D0E; }
+    .pill-default { background: var(--surface); color: var(--muted); }
+    .action-btn {
+      display: block; width: 100%; padding: 14px 20px; text-align: center; cursor: pointer;
+      border: none; border-radius: 10px; font: 600 16px/1 -apple-system, sans-serif;
+      text-decoration: none; margin-bottom: 10px; transition: background 0.15s, transform 0.08s ease;
+    }
+    .action-btn:active { transform: scale(0.98); }
+    .action-btn.primary { color: #fff; background: var(--accent); }
+    .action-btn.primary:hover { background: var(--accent-hover); }
+    .action-btn.secondary { color: var(--text); background: var(--surface); border: 1px solid var(--line); }
+    .action-btn.secondary:hover { background: var(--line); }
+    .action-btn.danger { color: var(--danger); background: #FEF2F2; border: 1px solid #FECACA; }
+    .loading { text-align: center; color: var(--muted); padding: 60px 0; font-size: 15px; }
+    .error-state { text-align: center; color: var(--danger); padding: 60px 20px; font-size: 15px; }
+    .hidden { display: none; }
+    .footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 12px; padding-bottom: 20px; }
+    .status-banner { border-radius: 10px; padding: 14px 18px; text-align: center; font-weight: 600; font-size: 15px; margin-bottom: 16px; }
+    .status-banner.confirmed { background: #DCFCE7; color: var(--success); border: 1px solid #BBF7D0; }
+    .status-banner.pending { background: #FEF9C3; color: #854D0E; border: 1px solid #FDE68A; }
+    .status-banner.cancelled { background: #FEF2F2; color: var(--danger); border: 1px solid #FECACA; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div id="loading"><p class="loading">Loading your appointment…</p></div>
+  <div id="error-card" class="hidden"><p class="error-state" id="error-msg">Appointment not found.</p></div>
+  <div id="main" class="hidden">
+    <div id="status-banner" class="status-banner confirmed"></div>
+
+    <div class="card">
+      <div class="kicker" id="biz-kicker">Your appointment</div>
+      <h1 id="event-type"></h1>
+      <p class="biz" id="biz-name"></p>
+      <div id="details-list"></div>
+    </div>
+
+    <div class="card" id="payment-card">
+      <div class="kicker">Payment</div>
+      <div class="payment-bar">
+        <div class="payment-bar-row">
+          <span style="color:var(--muted);">Total</span>
+          <span id="total-amount" class="amount-big"></span>
+        </div>
+        <div class="payment-bar-row">
+          <span style="color:var(--muted);">Advance paid</span>
+          <span id="advance-paid"></span>
+        </div>
+        <div class="payment-bar-row">
+          <span style="font-weight:600;">Balance due</span>
+          <span id="balance-due" style="font-weight:700;color:var(--accent);"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="actions"></div>
+  </div>
+  <p class="footer">Powered by BusyDays · <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></p>
+</div>
+<script>
+  const rawWorkspaceId = location.pathname.split("/")[2] || "";
+  const rawLeadId = location.pathname.split("/")[3] || "";
+  // Path segments are attacker-controllable, so encode them before they go into
+  // href URLs, and HTML-escape any server string before it touches innerHTML.
+  const workspaceId = encodeURIComponent(rawWorkspaceId);
+  const leadId = encodeURIComponent(rawLeadId);
+  const esc = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+  const fmt = (n) => "₹" + Number(n).toLocaleString("en-IN");
+  const fmtDate = (s) => {
+    if (!s) return "";
+    const d = new Date(s + "T00:00:00");
+    return d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  };
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/public/${workspaceId}/payment/${leadId}`);
+      const data = await res.json();
+      if (!data.ok || !data.details) {
+        document.getElementById("loading").classList.add("hidden");
+        document.getElementById("error-card").classList.remove("hidden");
+        document.getElementById("error-msg").textContent = "Appointment not found or link has expired.";
+        return;
+      }
+      render(data.details);
+    } catch {
+      // A network blip is not "appointment not found" — say so, and invite a retry.
+      document.getElementById("loading").classList.add("hidden");
+      document.getElementById("error-card").classList.remove("hidden");
+      document.getElementById("error-msg").textContent =
+        "We couldn't load your appointment — please check your connection and refresh.";
+    }
+  }
+
+  function render(d) {
+    document.getElementById("loading").classList.add("hidden");
+    document.getElementById("main").classList.remove("hidden");
+    document.title = `My ${d.eventType} — ${d.businessName}`;
+
+    // Status banner
+    const banner = document.getElementById("status-banner");
+    const statusMap = {
+      "Confirmed": ["confirmed", "✅ Confirmed"],
+      "Payment Received": ["confirmed", "✅ Confirmed & Paid"],
+      "Completed": ["confirmed", "✅ Completed — thank you!"],
+      "Awaiting Client": ["pending", "⏳ Awaiting your payment"],
+      "Payment Pending": ["pending", "⏳ Payment under review"],
+    };
+    // Never leak a raw internal status (e.g. "New", "Sent", "Lost") to the client.
+    const [cls, label] = statusMap[d.leadStatus] || ["pending", "⏳ In progress"];
+    banner.className = "status-banner " + cls;
+    banner.textContent = label;
+
+    // Header
+    document.getElementById("event-type").textContent = d.eventType;
+    document.getElementById("biz-name").textContent = d.businessName;
+
+    // Details rows
+    const rows = [
+      ["📅", "Date", fmtDate(d.eventDate)],
+      d.eventTime ? ["🕒", "Time", d.eventTime] : null,
+      d.venue ? ["📍", "Location", d.venue] : null,
+    ].filter(Boolean);
+    document.getElementById("details-list").innerHTML = rows.map(([icon, label, value]) =>
+      `<div class="detail-row">
+        <span class="detail-icon">${icon}</span>
+        <div>
+          <div class="detail-label">${esc(label)}</div>
+          <div class="detail-value">${esc(value)}</div>
+        </div>
+      </div>`
+    ).join("");
+
+    // Payment card
+    document.getElementById("total-amount").textContent = fmt(d.finalApprovedPrice);
+    const paidAmount = Math.max(0, d.finalApprovedPrice - d.balanceDue);
+    document.getElementById("advance-paid").textContent = fmt(paidAmount);
+    document.getElementById("balance-due").textContent = fmt(d.balanceDue);
+    if (d.balanceDue <= 0) {
+      document.getElementById("balance-due").style.color = "var(--success)";
+    }
+
+    // Actions
+    const actionsEl = document.getElementById("actions");
+    const btns = [];
+
+    if (d.balanceDue > 0 && ["Awaiting Client", "Confirmed"].includes(d.leadStatus)) {
+      btns.push(`<a class="action-btn primary" href="/pay/${workspaceId}/${leadId}">💳 Pay now</a>`);
+    }
+    // Sign / reschedule / cancel each need their own signed token, so we use the
+    // pre-signed URLs the server hands back rather than building bare paths
+    // (which would land the client on a "link expired" page).
+    if (d.signUrl) {
+      btns.push(`<a class="action-btn secondary" href="${esc(d.signUrl)}">📝 View / sign contract</a>`);
+    }
+    if (d.rescheduleUrl) {
+      btns.push(`<a class="action-btn secondary" href="${esc(d.rescheduleUrl)}">📆 Reschedule</a>`);
+    }
+    if (d.cancelUrl) {
+      btns.push(`<a class="action-btn danger" href="${esc(d.cancelUrl)}">✕ Cancel appointment</a>`);
+    }
+
+    if (d.paymentTerms) {
+      btns.push(`<details style="margin-top:8px;"><summary style="font-size:13px;color:var(--muted);cursor:pointer;padding:4px 0;">Payment terms</summary><p style="font-size:13px;color:var(--muted);line-height:1.6;margin-top:8px;">${esc(d.paymentTerms)}</p></details>`);
+    }
+
+    actionsEl.innerHTML = btns.join("");
+  }
+
+  load();
+</script>
+</body>
+</html>

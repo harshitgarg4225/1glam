@@ -6,6 +6,12 @@ export const sheetNames = {
   followUps: "FollowUps",
   interactionLog: "InteractionLog",
   reviews: "Reviews",
+  giftCards: "GiftCards",
+  promoCodes: "PromoCodes",
+  clientPackages: "Packages",
+  clientPhotos: "ClientPhotos",
+  products: "Products",
+  productSales: "ProductSales",
 } as const;
 
 export const leadHeaders = [
@@ -50,6 +56,10 @@ export const leadHeaders = [
   "Quote Number",
   "Quote Viewed At",
   "Quote Accepted At",
+  "Referred By",
+  "Lost Reason",
+  "Urgency Flag",
+  "Client Note",
 ] as const;
 
 export const bookingHeaders = [
@@ -88,6 +98,7 @@ export const bookingHeaders = [
   "Payments Log",
   "Invoice Viewed At",
   "Contract Viewed At",
+  "Invoice Due Date",
 ] as const;
 
 export const artistHeaders = [
@@ -101,6 +112,7 @@ export const artistHeaders = [
   "Luxury Eligible",
   "Primary Calendar ID",
   "Active",
+  "Bio",
 ] as const;
 
 export const followUpHeaders = [
@@ -135,4 +147,18 @@ export const reviewHeaders = [
   "Review Link Clicked",
   "Review Confirmed",
   "Notes",
+] as const;
+
+export const giftCardHeaders = [
+  "Card ID",
+  "Code",
+  "Amount",
+  "Message",
+  "Purchaser Name",
+  "Purchaser Email",
+  "Purchaser WhatsApp",
+  "Redeemed By Lead ID",
+  "Redeemed At",
+  "Created At",
+  "Status",
 ] as const;

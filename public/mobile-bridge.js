@@ -1,9 +1,10 @@
 // BusyDays mobile bridge. Loaded by every page but inert in browsers — it only
 // activates inside the native Capacitor shell (the iOS/Android app), where it:
-//   1. Routes Google sign-in through the system browser (Google blocks OAuth in
-//      webviews) and completes login from the busydays://auth deep link.
-//   2. Replaces web-push with native FCM push registration.
-//   3. Navigates to a notification's target URL when the user taps it.
+//   1. Signs in via the native Google account-picker (no browser needed); falls
+//      back to Chrome Custom Tab OAuth for new users who need Sheets/Calendar.
+//   2. Handles the busydays://auth deep-link return from the Custom Tab flow.
+//   3. Replaces web-push with native FCM push registration.
+//   4. Navigates to a notification's target URL when the user taps it.
 (function () {
   var cap = window.Capacitor;
   if (!cap || typeof cap.isNativePlatform !== "function" || !cap.isNativePlatform()) return;
@@ -12,6 +13,7 @@
   var App = plugins.App;
   var Browser = plugins.Browser;
   var Push = plugins.PushNotifications;
+  var NativeGoogleSignIn = plugins.NativeGoogleSignIn;
 
   document.documentElement.classList.add("native-app");
 
@@ -24,29 +26,87 @@
     });
   }
 
-  // ── 1. Google sign-in via system browser ──────────────────────────────────
-  // Intercept every /auth/google* link (login, business-profile consent) and
-  // open it externally with ?mobile=1 so the server finishes with a deep link.
+  // ── 1. Google sign-in ─────────────────────────────────────────────────────
+  // For the main /auth/google link, try the native account-picker bottom sheet
+  // first. The native flow returns an ID token which the server verifies
+  // without any browser. Existing users get signed in immediately; new users
+  // (no workspace yet, need Sheets/Calendar scopes) fall through to the Chrome
+  // Custom Tab OAuth flow.
+  // Non-sign-in Google auth links (business-profile consent, etc.) always go
+  // to the Custom Tab since they need specific OAuth scopes.
+
+  var googleClientId = null;  // fetched lazily from /api/push/config
+
+  function fetchGoogleClientId() {
+    if (googleClientId !== null) return Promise.resolve(googleClientId);
+    return fetch("/api/push/config", { credentials: "same-origin" })
+      .then(function (res) { return res.ok ? res.json() : {}; })
+      .then(function (cfg) {
+        googleClientId = (cfg && cfg.googleClientId) || "";
+        return googleClientId;
+      })
+      .catch(function () { return ""; });
+  }
+
+  function openOAuthBrowser(href) {
+    var url = new URL(href, window.location.origin);
+    url.searchParams.set("mobile", "1");
+    if (Browser && Browser.open) {
+      Browser.open({ url: url.toString() });
+    } else {
+      window.open(url.toString(), "_system");
+    }
+  }
+
+  function tryNativeSignIn(href) {
+    if (!NativeGoogleSignIn) { openOAuthBrowser(href); return; }
+    fetchGoogleClientId()
+      .then(function (clientId) {
+        if (!clientId) { openOAuthBrowser(href); return; }
+        return NativeGoogleSignIn.signIn({ webClientId: clientId })
+          .then(function (result) {
+            return postJson("/api/auth/google/id-token", { idToken: result.idToken });
+          })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              // Existing user signed in natively — reload straight into the app.
+              window.location.replace("/");
+            } else {
+              // New user: needs full OAuth for Sheets/Calendar provisioning.
+              openOAuthBrowser(href);
+            }
+          });
+      })
+      .catch(function () {
+        // User cancelled, Play Services missing, or sign-in error — fall back.
+        openOAuthBrowser(href);
+      });
+  }
+
   document.addEventListener(
     "click",
     function (event) {
-      var anchor = event.target && event.target.closest ? event.target.closest("a[href^='/auth/google']") : null;
+      var anchor = event.target && event.target.closest
+        ? event.target.closest("a[href^='/auth/google']")
+        : null;
       if (!anchor) return;
       event.preventDefault();
       event.stopPropagation();
-      var url = new URL(anchor.getAttribute("href"), window.location.origin);
-      url.searchParams.set("mobile", "1");
-      if (Browser && Browser.open) {
-        Browser.open({ url: url.toString() });
+      var href = anchor.getAttribute("href");
+      var isMainSignIn = href === "/auth/google" || href.startsWith("/auth/google?") || href.startsWith("/auth/google#");
+      if (isMainSignIn) {
+        tryNativeSignIn(href);
       } else {
-        window.open(url.toString(), "_system");
+        // Business-profile and other Google auth links need the full browser flow.
+        openOAuthBrowser(href);
       }
     },
     true,
   );
 
-  // Deep-link return: busydays://auth?ott=... → exchange for a session cookie
-  // inside this webview, then reload into the logged-in app.
+  // Deep-link return from Chrome Custom Tab: busydays://auth?ott=...
+  // Chrome Custom Tab issues a 302 to the custom scheme; the OS routes it here.
   if (App && App.addListener) {
     App.addListener("appUrlOpen", function (event) {
       var ott = null;
@@ -73,7 +133,7 @@
     });
   }
 
-  // ── 2 & 3. Native push ─────────────────────────────────────────────────────
+  // ── 2 & 3. Native push ────────────────────────────────────────────────────
   var registrationListenerAdded = false;
   function ensurePushListeners() {
     if (registrationListenerAdded || !Push) return;
@@ -87,8 +147,8 @@
     Push.addListener("pushNotificationActionPerformed", function (action) {
       var url =
         action && action.notification && action.notification.data && action.notification.data.url;
-      // Same-origin paths only — a notification must not be able to steer the
-      // webview to an arbitrary external site.
+      // Same-origin paths only — a notification must not steer the webview to
+      // an arbitrary external site.
       if (typeof url === "string" && url.charAt(0) === "/") window.location.href = url;
     });
   }
@@ -104,9 +164,7 @@
       })
       .then(function (perm) {
         if (perm.receive !== "granted") return false;
-        return Push.register().then(function () {
-          return true;
-        });
+        return Push.register().then(function () { return true; });
       });
   }
 
@@ -116,23 +174,21 @@
   function initNativePushPanel() {
     if (!Push) return;
     fetch("/api/push/config", { credentials: "same-origin" })
-      .then(function (res) {
-        return res.ok ? res.json() : null;
-      })
+      .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (cfg) {
         if (!cfg || !cfg.fcmEnabled) return;
+        // Cache googleClientId while we have the response.
+        if (cfg.googleClientId) googleClientId = cfg.googleClientId;
         var panel = document.getElementById("push-panel");
         var btn = document.getElementById("push-enable-btn");
         if (!panel || !btn) return;
         panel.hidden = false;
-        // Clone to strip the web-push click handler attached by the main script.
         var nativeBtn = btn.cloneNode(true);
         btn.replaceWith(nativeBtn);
         nativeBtn.disabled = false;
 
         Push.checkPermissions().then(function (perm) {
           if (perm.receive === "granted") {
-            // Already allowed — re-register silently (FCM tokens rotate).
             Push.register().catch(function () {});
             nativeBtn.textContent = "✓ Notifications are on";
             nativeBtn.disabled = true;

@@ -4,16 +4,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Reschedule your booking</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/brand.css" />
+  <meta name="theme-color" content="#C26B45" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="BusyDays" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root { --accent: #C26B45; --bg: #faf9f7; --card: #fff; --text: #1c1917; --muted: #78716c; --line: #e7e5e4; --radius: 14px; }
+    /* Design tokens come from /brand.css — keep this page in lockstep with the
+       rest of the product. Only page-specific values would live here. */
     body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 24px 16px 60px; }
-    .card { background: var(--card); border-radius: var(--radius); box-shadow: 0 2px 20px rgba(0,0,0,.07); width: 100%; max-width: 440px; padding: 32px 28px; }
+    .card { background: var(--card); border-radius: var(--radius-lg); box-shadow: var(--shadow); width: 100%; max-width: 440px; padding: 32px 28px; }
     .brand { text-align: center; margin-bottom: 24px; }
     .brand-name { font-size: 22px; font-weight: 700; color: var(--accent); }
     h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
     .sub { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
-    .info-box { background: #f5f3f0; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 14px; }
+    .info-box { background: var(--surface); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 14px; }
     .info-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--line); }
     .info-row:last-child { border: none; }
     .info-label { color: var(--muted); }
@@ -35,6 +43,12 @@
     .done-screen p { font-size: 14px; color: var(--muted); line-height: 1.6; }
     .skeleton { background: linear-gradient(90deg, #f0ece7 25%, #e8e3de 50%, #f0ece7 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }
     @keyframes shimmer { to { background-position: -200% 0; } }
+    /* Native-app polish */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    * { -webkit-tap-highlight-color: transparent; }
+    .btn { touch-action: manipulation; transition: opacity .15s, transform 0.08s ease; }
+    .btn:active:not(:disabled) { transform: scale(0.98); }
+    input[type=date], input[type=time] { font-size: 16px; }
   </style>
 </head>
 <body>
@@ -55,8 +69,31 @@
     const bookingId = pathParts[pathParts.length - 1];
     const sig = params.get("sig");
     const exp = params.get("exp");
+    let rescheduleLeadId = "";
+    let avail = null;
+    let selectedSlotTime = "";
 
     const card = document.getElementById("card");
+
+    function dateError(iso) {
+      if (!avail || !iso) return null;
+      if (avail.minDate && iso < avail.minDate) return "That date is too soon — please pick a later one.";
+      if (avail.maxDate && iso > avail.maxDate) return "That date is too far ahead.";
+      const weekday = new Date(iso + "T00:00:00Z").getUTCDay();
+      const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+      if ((avail.offWeekdays || []).includes(weekday)) return `The artist isn't available on ${DAY_NAMES[weekday]}s.`;
+      if ((avail.blockedDates || []).includes(iso)) return "That date is unavailable — please choose another.";
+      return null;
+    }
+
+    function formatSlot(t) {
+      try {
+        const [h, m] = t.split(":").map(Number);
+        const ap = h < 12 ? "AM" : "PM";
+        const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+        return h12 + (m ? ":" + String(m).padStart(2,"0") : "") + " " + ap;
+      } catch { return t; }
+    }
 
     async function init() {
       const url = `/api/public/${encodeURIComponent(workspaceId)}/reschedule/${encodeURIComponent(bookingId)}?sig=${encodeURIComponent(sig || "")}&exp=${encodeURIComponent(exp || "")}`;
@@ -69,13 +106,20 @@
       }
 
       const b = data.booking;
+      avail = data.availability || null;
+      rescheduleLeadId = b.leadId || "";
       const accent = data.brandColor || "#C26B45";
       document.documentElement.style.setProperty("--accent", accent);
       document.getElementById("brand-name").className = "";
       document.getElementById("brand-name").textContent = data.businessName;
 
-      const today = new Date().toISOString().slice(0, 10);
-      const minDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const minDate = (avail && avail.minDate) || new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const maxDate = (avail && avail.maxDate) || "";
+
+      // Determine time input: slot picker if slots configured, free-text otherwise
+      const eventSlots = (avail && avail.timeSlotsByEvent && avail.timeSlotsByEvent[b.eventType])
+        || (avail && avail.timeSlots) || [];
+      const hasSlots = eventSlots.length > 0;
 
       document.getElementById("main-content").innerHTML = `
         <h1>Reschedule your booking</h1>
@@ -86,12 +130,55 @@
           ${b.venue ? `<div class="info-row"><span class="info-label">Venue</span><span class="info-value">${escHtml(b.venue)}</span></div>` : ""}
         </div>
         <label for="new-date">New date</label>
-        <input type="date" id="new-date" min="${minDate}" required />
-        <label for="new-time">Preferred time (optional)</label>
-        <input type="time" id="new-time" value="${b.eventTime ? b.eventTime.slice(0,5) : ""}" />
+        <input type="date" id="new-date" min="${minDate}" ${maxDate ? `max="${maxDate}"` : ""} required />
+        <div class="status" id="date-hint" style="margin-top:-8px;margin-bottom:10px;"></div>
+        ${hasSlots
+          ? `<label>Preferred time</label>
+             <div class="slots" id="time-slots" style="margin:6px 0 14px;"></div>
+             <input type="hidden" id="new-time" />`
+          : `<label for="new-time">Preferred time (optional)</label>
+             <input type="time" id="new-time" value="${b.eventTime ? b.eventTime.slice(0,5) : ""}" />`
+        }
         <button class="btn" id="submit-btn" type="button">Confirm new date</button>
         <div class="status" id="status"></div>
       `;
+
+      if (hasSlots) {
+        const slotsEl = document.getElementById("time-slots");
+        eventSlots.forEach((slot) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "slot";
+          btn.style.cssText = "padding:9px 18px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;font:inherit;font-size:14px;transition:border-color .15s,background .15s;";
+          btn.textContent = formatSlot(slot);
+          btn.dataset.value = slot;
+          if (b.eventTime && b.eventTime.slice(0,5) === slot) {
+            btn.style.borderColor = "var(--accent)";
+            btn.style.background = "#FBF0EA";
+            btn.style.fontWeight = "600";
+            selectedSlotTime = slot;
+            document.getElementById("new-time").value = slot;
+          }
+          btn.addEventListener("click", () => {
+            slotsEl.querySelectorAll(".slot").forEach((s) => {
+              s.style.borderColor = ""; s.style.background = ""; s.style.fontWeight = "";
+            });
+            btn.style.borderColor = "var(--accent)";
+            btn.style.background = "#FBF0EA";
+            btn.style.fontWeight = "600";
+            selectedSlotTime = slot;
+            document.getElementById("new-time").value = slot;
+          });
+          slotsEl.appendChild(btn);
+        });
+      }
+
+      document.getElementById("new-date").addEventListener("change", (e) => {
+        const hint = document.getElementById("date-hint");
+        const err = dateError(e.target.value);
+        hint.textContent = err || "";
+        hint.className = "status" + (err ? " error" : "");
+      });
 
       document.getElementById("submit-btn").addEventListener("click", submitReschedule);
     }
@@ -102,6 +189,8 @@
       const eventDate = document.getElementById("new-date").value;
       const eventTime = document.getElementById("new-time").value;
       if (!eventDate) { statusEl.textContent = "Please pick a date."; statusEl.className = "status error"; return; }
+      const err = dateError(eventDate);
+      if (err) { statusEl.textContent = err; statusEl.className = "status error"; return; }
 
       btn.disabled = true;
       btn.innerHTML = `<span class="spinner"></span>Confirming…`;
@@ -120,7 +209,8 @@
           <div class="done-screen">
             <div class="done-icon">🎉</div>
             <h2>All set!</h2>
-            <p>Your booking has been moved to <strong>${formatDate(eventDate)}</strong>${eventTime ? ` at ${eventTime}` : ""}.<br>The studio will be in touch to confirm details.</p>
+            <p>Your booking has been moved to <strong>${formatDate(eventDate)}</strong>${eventTime ? ` at ${formatSlot(eventTime)}` : ""}.<br>The studio will be in touch to confirm details.</p>
+            ${rescheduleLeadId ? `<a class="btn" style="margin-top:18px;display:inline-block;text-decoration:none;" href="/appointment/${encodeURIComponent(workspaceId)}/${encodeURIComponent(rescheduleLeadId)}">View my appointment</a>` : ""}
           </div>
         `;
       } catch (err) {

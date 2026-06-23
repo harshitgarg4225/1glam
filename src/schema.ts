@@ -36,11 +36,16 @@ export const workspaceConfigSchema = z.object({
   travelNearbyCity: numberFromForm,
   travelOutstation: numberFromForm,
   travelOutstationThresholdKm: numberFromForm,
+  // Distance (km) where "within city" ends and the nearby-city fee starts.
+  travelNearbyThresholdKm: numberFromForm.optional().default(25),
+  // Optional ₹/km mode: when > 0 it replaces the three flat tiers entirely.
+  travelPerKmRate: numberFromForm.optional().default(0),
   profileLowMultiplier: numberFromForm,
   profileMidMultiplier: numberFromForm,
   profileHighMultiplier: numberFromForm,
   profileHighMinFollowers: numberFromForm,
   advancePercentage: numberFromForm,
+  depositPercentByService: z.string().optional().default(""),
   upiId: z.string().optional().default(""),
   qrImageUrl: z.string().optional().default(""),
   paymentTerms: z.string().min(1),
@@ -54,6 +59,7 @@ export const workspaceConfigSchema = z.object({
   bookingWeeklyOffDays: z.string().optional().default(""),
   bookingBlockedDates: z.string().optional().default(""),
   bookingMaxPerDay: numberFromForm.optional().default(0),
+  bufferMinutes: numberFromForm.optional().default(0),
   bookingConfirmTemplate: z.string().optional().default(""),
   bookingConfirmTemplateLang: z.string().optional().default("en"),
   approvalTemplate: z.string().optional().default(""),
@@ -73,6 +79,10 @@ export const workspaceConfigSchema = z.object({
   reminderTemplateLang: z.string().optional().default("en"),
   reminderDaysBefore: z.string().optional().default("7,1"),
   autoPaymentReminders: z.string().optional().default("Yes"),
+  // Morning push digest: today's jobs + what needs her attention.
+  dailyDigest: z.string().optional().default("Yes"),
+  waitlistOfferTemplate: z.string().optional().default(""),
+  waitlistOfferTemplateLang: z.string().optional().default("en"),
   ownerAlertTemplate: z.string().optional().default(""),
   ownerAlertTemplateLang: z.string().optional().default("en"),
   razorpayKeyId: z.string().optional().default(""),
@@ -96,6 +106,15 @@ export const workspaceConfigSchema = z.object({
   reviewRequestDaysAfter: z.string().optional().default(""),
   reviewTemplate: z.string().optional().default(""),
   reviewTemplateLang: z.string().optional().default("en"),
+  rebookNudgeDaysAfter: z.string().optional().default(""),
+  rebookTemplate: z.string().optional().default(""),
+  rebookTemplateLang: z.string().optional().default("en"),
+  winbackDaysAfter: z.string().optional().default(""),
+  winbackTemplate: z.string().optional().default(""),
+  winbackTemplateLang: z.string().optional().default("en"),
+  birthdayTemplate: z.string().optional().default(""),
+  birthdayTemplateLang: z.string().optional().default("en"),
+  customDomain: z.string().optional().default(""),
   documentTemplate: z.string().optional().default("classic"),
   quoteIntro: z.string().optional().default(""),
   cancellationPolicy: z.string().optional().default(""),
@@ -119,6 +138,58 @@ export const workspaceConfigSchema = z.object({
   gstPercentage: z.coerce.number().min(0).max(28).optional().default(0),
   cancellationWindowDays: z.coerce.number().min(0).max(365).optional().default(7),
   cancellationFeePercent: z.coerce.number().min(0).max(100).optional().default(50),
+  // Loyalty program
+  loyaltyEnabled: z.string().optional().default("No"),
+  loyaltyVisitsForReward: numberFromForm.optional().default(5),
+  loyaltyRewardValue: numberFromForm.optional().default(500),
+  loyaltyRewardNote: z.string().optional().default(""),
+  // Gift cards
+  giftCardsEnabled: z.string().optional().default("No"),
+  // Intake / consultation forms (one per service type — comma-separated questions)
+  intakeFormBridal: z.string().optional().default(""),
+  intakeFormEngagement: z.string().optional().default(""),
+  intakeFormReception: z.string().optional().default(""),
+  intakeFormParty: z.string().optional().default(""),
+  intakeFormShoot: z.string().optional().default(""),
+  intakeFormOther: z.string().optional().default(""),
+  // Commission / tips
+  commissionDefaultPercent: numberFromForm.optional().default(0),
+  tipsEnabled: z.string().optional().default("No"),
+  // No-show tracking
+  noShowFeePercent: numberFromForm.optional().default(0),
+  noShowPolicy: z.string().optional().default(""),
+  // Email channel
+  emailEnabled: z.string().optional().default("No"),
+  smtpHost: z.string().optional().default(""),
+  smtpPort: numberFromForm.optional().default(587),
+  smtpUser: z.string().optional().default(""),
+  smtpPass: z.string().optional().default(""),
+  smtpFrom: z.string().optional().default(""),
+  // Recurring appointments
+  recurringEnabled: z.string().optional().default("No"),
+  // Service variants JSON
+  serviceVariantsJson: z.string().optional().default("{}"),
+  // Promo codes
+  promoCodesEnabled: z.string().optional().default("No"),
+  // Payment receipt template sent to client after payment is recorded
+  receiptTemplate: z.string().optional().default(""),
+  receiptTemplateLang: z.string().optional().default("en"),
+  // Invoice due days (0 = due on receipt)
+  invoiceDueDays: numberFromForm.optional().default(0),
+  // Per-service cover images shown on the public booking page
+  serviceBridalImageUrl: z.string().optional().default(""),
+  serviceEngagementImageUrl: z.string().optional().default(""),
+  serviceReceptionImageUrl: z.string().optional().default(""),
+  servicePartyImageUrl: z.string().optional().default(""),
+  serviceShootImageUrl: z.string().optional().default(""),
+  serviceOtherImageUrl: z.string().optional().default(""),
+  // Per-event time slots (comma-separated HH:MM overrides for the booking page)
+  timeSlotsBridal: z.string().optional().default(""),
+  timeSlotsEngagement: z.string().optional().default(""),
+  timeSlotsReception: z.string().optional().default(""),
+  timeSlotsParty: z.string().optional().default(""),
+  timeSlotsShoot: z.string().optional().default(""),
+  timeSlotsOther: z.string().optional().default(""),
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

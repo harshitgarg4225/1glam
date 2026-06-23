@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign Contract — BusyDays</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/brand.css" />
+  <meta name="theme-color" content="#C26B45" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="BusyDays" />
   <style>
     :root {
       --bg: #FAF8F5;
@@ -47,6 +54,11 @@
     .signed-banner { background: var(--success-soft); border: 1px solid #A7E3BC; color: var(--success); border-radius: 12px; padding: 18px 20px; text-align: center; font-weight: 600; font-size: 15.5px; margin-bottom: 20px; line-height: 1.5; }
     .footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 24px; }
     .loading { text-align: center; color: var(--muted); padding: 40px 0; }
+    /* Native-app polish */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    * { -webkit-tap-highlight-color: transparent; }
+    .sign-btn { touch-action: manipulation; transition: background 0.15s, transform 0.08s ease; }
+    .sign-btn:active:not(:disabled) { transform: scale(0.98); }
   </style>
 </head>
 <body>
@@ -71,6 +83,7 @@
 
       <div id="signed-state" style="display:none;">
         <div class="signed-banner" id="signed-banner"></div>
+        <a class="sign-btn" id="hub-link" href="#" style="display:none;text-decoration:none;">View my appointment &amp; pay</a>
       </div>
 
       <form id="sign-form" style="display:none;">
@@ -87,7 +100,7 @@
       </form>
     </div>
     <div id="error" class="loading" style="display:none;color:var(--danger);"></div>
-    <div class="footer">Powered by BusyDays · Secure signing link</div>
+    <div class="footer">🔒 Secure signing link · <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></div>
   </div>
 
   <script>
@@ -95,11 +108,14 @@
     const wid = decodeURIComponent(parts[1] || "");
     const bid = decodeURIComponent(parts[2] || "");
     const sig = new URLSearchParams(window.location.search).get("sig") || "";
+    let leadIdForHub = "";
 
     function fmtMoney(v) { return "₹" + Number(v || 0).toLocaleString("en-IN"); }
     function fmtDay(v) {
       if (!v) return "To be confirmed";
-      const d = new Date(v);
+      // Parse date-only strings at local midnight so the day never shifts back
+      // across the UTC boundary (e.g. showing the 20th for a "2026-06-21" event).
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v + "T00:00:00") : new Date(v);
       if (isNaN(d)) return v;
       return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
     }
@@ -107,9 +123,19 @@
     function showSigned(name, at) {
       document.getElementById("sign-form").style.display = "none";
       document.getElementById("signed-state").style.display = "";
+      // On a long contract the success banner can render below the fold — bring
+      // it into view so the client knows signing actually worked.
+      setTimeout(() => document.getElementById("signed-banner").scrollIntoView({ behavior: "smooth", block: "center" }), 60);
       const when = at ? new Date(at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "";
       document.getElementById("signed-banner").textContent =
         `✓ Signed by ${name}${when ? " on " + when : ""}. You're all set — see you at the event!`;
+      // Signing is no longer a dead-end: give the client one tap back to their
+      // appointment hub, where they can pay the advance/balance and see status.
+      if (leadIdForHub) {
+        const hub = document.getElementById("hub-link");
+        hub.href = `/appointment/${encodeURIComponent(wid)}/${encodeURIComponent(leadIdForHub)}`;
+        hub.style.display = "";
+      }
     }
 
     async function load() {
@@ -119,8 +145,12 @@
         if (!r.ok) throw new Error(data.error || "Contract not found");
         document.getElementById("loading").style.display = "none";
         document.getElementById("content").style.display = "";
+        leadIdForHub = data.leadId || "";
         document.getElementById("biz").textContent = data.businessName;
         document.getElementById("client").textContent = data.clientName;
+        // The server already knows who's signing — pre-fill so signing is a
+        // one-tap confirm, not a "type your full legal name" chore (still editable).
+        if (data.clientName) document.getElementById("signer").value = data.clientName;
         document.getElementById("event").textContent = data.eventType;
         document.getElementById("date").textContent = fmtDay(data.eventDate) + (data.eventTime ? " · " + data.eventTime : "");
         if (data.venue) document.getElementById("venue").textContent = data.venue;

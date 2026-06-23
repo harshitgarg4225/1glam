@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pay Advance — BusyDays</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/brand.css" />
+  <meta name="theme-color" content="#C26B45" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="BusyDays" />
   <style>
     :root {
       --bg: #FAF8F5;
@@ -31,7 +38,7 @@
     .row .label { color: var(--muted); }
     .row .value { font-weight: 600; }
     .advance-row .value { font-size: 20px; color: var(--accent); }
-    .terms { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
+    .terms { font-size: 13px; color: var(--text); opacity: 0.82; line-height: 1.6; margin-bottom: 24px; }
     .pay-btn {
       display: block; width: 100%; padding: 16px 20px; text-align: center; cursor: pointer;
       border: none; border-radius: 8px; font: 600 17px/1 -apple-system, sans-serif;
@@ -63,6 +70,14 @@
     .upload-status.success { color: var(--success); }
     .upload-status.error { color: var(--danger); }
     .done-banner { background: #DCFCE7; border: 1px solid #BBF7D0; border-radius: 10px; padding: 16px 18px; text-align: center; color: var(--success); font-weight: 600; font-size: 15px; margin-top: 16px; display: none; }
+    .tip-btn { min-height: 44px; padding: 11px 16px; border: 1px solid var(--line); border-radius: 22px; background: var(--accent-soft); color: var(--accent); font: 600 14px/1 inherit; cursor: pointer; transition: all 0.15s; }
+    .tip-btn:hover, .tip-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+    /* Native-app polish */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    * { -webkit-tap-highlight-color: transparent; }
+    .pay-btn, .upload-btn, .tip-btn { touch-action: manipulation; transition: background 0.15s, transform 0.08s ease; }
+    .pay-btn:active:not(:disabled), .upload-btn:active:not(:disabled), .tip-btn:active { transform: scale(0.98); }
+    #tip-custom-input { font-size: 16px !important; }
   </style>
 </head>
 <body>
@@ -88,14 +103,35 @@
           <span class="label">Balance on event day</span>
           <span class="value" id="balance-due"></span>
         </div>
+        <div class="row hidden" id="tip-row">
+          <span class="label">Tip added</span>
+          <span class="value" id="tip-amount-display" style="color:var(--success);">₹0</span>
+        </div>
+      </div>
+
+      <!-- Tip prompt (shown when tipsEnabled) -->
+      <div id="tip-section" class="hidden" style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:20px;">
+        <p style="font-size:14px;font-weight:600;margin-bottom:10px;">Add a tip? 💛</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.5;">Tips are a wonderful way to show appreciation and go directly to your artist.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="tip-btn" type="button" data-tip-pct="10">10%</button>
+          <button class="tip-btn" type="button" data-tip-pct="15">15%</button>
+          <button class="tip-btn" type="button" data-tip-pct="20">20%</button>
+          <button class="tip-btn" type="button" data-tip-custom style="background:var(--card);">Custom</button>
+          <button class="tip-btn" type="button" data-tip-none style="background:var(--card);color:var(--muted);">No tip</button>
+        </div>
+        <div id="tip-custom-wrap" style="display:none;margin-top:8px;">
+          <input type="number" inputmode="decimal" id="tip-custom-input" placeholder="Enter amount ₹" min="0" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;" />
+        </div>
       </div>
 
       <p class="terms" id="payment-terms"></p>
 
       <div class="done-banner" id="already-paid-banner" style="margin:0 0 16px;">✓ Advance received — your date is locked!</div>
+      <div id="pay-error" role="alert" style="display:none;margin:0 0 16px;background:#FEF2F2;border:1px solid #FECACA;color:#9B1C1C;padding:12px 14px;border-radius:8px;font-size:14px;line-height:1.5;"></div>
 
       <button id="online-pay-btn" class="pay-btn hidden" type="button">Pay ₹<span id="online-amount"></span> online (UPI / card) →</button>
-      <p class="note hidden" id="online-note" style="margin-bottom:14px;">Instant confirmation — your slot locks the moment payment succeeds.</p>
+      <p class="note hidden" id="online-note" style="margin-bottom:14px;">🔒 Secured by Razorpay — pay by UPI or card. Instant confirmation; your slot locks the moment payment succeeds.</p>
 
       <a id="upi-btn" class="pay-btn hidden" href="#">Pay ₹<span id="upi-amount"></span> via UPI →</a>
       <p class="upi-id hidden" id="upi-id-row">UPI ID: <strong id="upi-id-text"></strong></p>
@@ -112,17 +148,21 @@
         <img class="upload-preview" id="upload-preview" alt="Screenshot preview" />
         <button class="upload-btn" id="upload-btn" disabled>Confirm payment</button>
         <div class="upload-status" id="upload-status"></div>
-        <div class="done-banner" id="done-banner">✓ Payment confirmed — your slot is secured!</div>
+        <div class="done-banner" id="done-banner">✓ Screenshot received — the artist will verify it and confirm your booking shortly.</div>
       </div>
     </div>
 
-    <p class="footer">Powered by BusyDays</p>
+    <p class="footer">Powered by BusyDays · <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></p>
   </div>
 
   <script>
     const parts = window.location.pathname.split("/").filter(Boolean);
     const workspaceId = parts[1] || "";
     const leadId = parts[2] || "";
+    // Which instalment this page is currently collecting — drives the Razorpay
+    // description and copy so the balance stage never says "advance".
+    let payStage = "advance";
+    const appointmentUrl = `/appointment/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}`;
 
     function inr(n) {
       return "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
@@ -159,6 +199,7 @@
       const advanceIn = (d.paymentStatus || "") === "Advance Paid";
       const balanceStage = advanceIn && Number(d.balanceDue) > 0;
       const stageAmount = balanceStage ? Number(d.balanceDue) : Number(d.advanceAmount);
+      payStage = balanceStage ? "balance" : "advance";
 
       if (fullyPaid || (advanceIn && !balanceStage)) {
         document.getElementById("already-paid-banner").textContent = fullyPaid
@@ -203,6 +244,7 @@
       }
 
       document.getElementById("payment-card").classList.remove("hidden");
+      setupTips(d);
     }
 
     // ─── Online payment (Razorpay Checkout, auto-confirmed) ───
@@ -222,7 +264,7 @@
       const original = btn.innerHTML;
       btn.textContent = "Starting secure payment…";
       try {
-        const res = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(leadId)}/order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const res = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(leadId)}/order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tipAmount: tipAmount || 0 }) });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || "Couldn't start the payment.");
         if (typeof Razorpay === "undefined") throw new Error("Payment window couldn't load. Check your connection and try again.");
@@ -232,7 +274,7 @@
           amount: data.amount,
           currency: data.currency,
           name: data.businessName,
-          description: "Advance to lock your date",
+          description: payStage === "balance" ? "Balance payment" : "Advance to lock your date",
           prefill: { name: data.clientName },
           theme: { color: "#C26B45" },
           handler: async (response) => {
@@ -249,23 +291,27 @@
               const vdata = await vres.json();
               if (!vres.ok || !vdata.ok) throw new Error(vdata.error || "Couldn't confirm the payment.");
               const banner = document.getElementById("already-paid-banner");
-              banner.textContent = vdata.paymentStatus === "Paid in Full"
+              banner.innerHTML = (vdata.paymentStatus === "Paid in Full"
                 ? "✓ Fully paid — thank you! See you at the event."
-                : "✓ Advance received — your date is locked!";
+                : "✓ Advance received — your date is locked!") +
+                `<br><a href="${appointmentUrl}" style="display:inline-block;margin-top:10px;font-size:14px;font-weight:600;color:var(--accent);text-decoration:none;">View my appointment →</a>`;
               banner.style.display = "block";
               document.getElementById("online-pay-btn").classList.add("hidden");
               document.getElementById("online-note").classList.add("hidden");
               document.getElementById("upi-btn").classList.add("hidden");
               document.getElementById("upi-id-row").classList.add("hidden");
               document.querySelector(".upload-section").style.display = "none";
+              banner.scrollIntoView({ behavior: "smooth", block: "center" });
             } catch (err) {
-              alert(err.message || "Payment made but confirmation failed — don't worry, the artist will confirm it manually.");
+              // Money may have left the account — never bury this in an alert() the
+              // client can dismiss and lose. Show a persistent, reassuring banner.
+              showPayError(err.message || "Payment made but confirmation is taking a moment — don't worry, the artist will confirm it manually. You can close this page.");
             }
           },
         });
         rzp.open();
       } catch (err) {
-        alert(err.message || "Couldn't start the payment. Please try again.");
+        showPayError(err.message || "Couldn't start the payment. Please try again.");
       } finally {
         btn.disabled = false;
         btn.innerHTML = original;
@@ -276,6 +322,72 @@
       document.getElementById("loading").classList.add("hidden");
       document.getElementById("error-msg").textContent = msg;
       document.getElementById("error-card").classList.remove("hidden");
+    }
+
+    // Inline, persistent payment error (never an alert() that can be dismissed
+    // and lost after money has moved).
+    function showPayError(msg) {
+      const el = document.getElementById("pay-error");
+      el.textContent = msg;
+      el.style.display = "block";
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    // ─── Tips ───
+    let tipAmount = 0;
+    let stageAmountGlobal = 0;
+
+    function updateTipDisplay() {
+      const display = document.getElementById("tip-amount-display");
+      const row = document.getElementById("tip-row");
+      if (tipAmount > 0) {
+        display.textContent = "₹" + Math.round(tipAmount).toLocaleString("en-IN");
+        row.classList.remove("hidden");
+      } else {
+        row.classList.add("hidden");
+      }
+    }
+
+    function setupTips(d) {
+      if (!d.tipsEnabled) return;
+      // Base the tip on what they're actually paying at THIS stage — on the
+      // balance stage a "15%" tip should be 15% of the balance, not the advance.
+      stageAmountGlobal = (payStage === "balance" ? Number(d.balanceDue) : Number(d.advanceAmount)) || 0;
+      document.getElementById("tip-section").classList.remove("hidden");
+      document.querySelectorAll(".tip-btn[data-tip-pct]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const pct = Number(btn.getAttribute("data-tip-pct")) / 100;
+          tipAmount = Math.round(stageAmountGlobal * pct);
+          document.getElementById("tip-custom-wrap").style.display = "none";
+          document.getElementById("tip-custom-input").value = "";
+          document.querySelectorAll(".tip-btn").forEach((b) => b.classList.remove("selected"));
+          btn.classList.add("selected");
+          updateTipDisplay();
+        });
+      });
+      document.querySelector(".tip-btn[data-tip-custom]").addEventListener("click", () => {
+        document.getElementById("tip-custom-wrap").style.display = "";
+        document.querySelectorAll(".tip-btn").forEach((b) => b.classList.remove("selected"));
+        document.querySelector(".tip-btn[data-tip-custom]").classList.add("selected");
+        document.getElementById("tip-custom-input").focus();
+      });
+      document.getElementById("tip-custom-input").addEventListener("input", (e) => {
+        // Cap the custom tip so a fat-fingered extra zero can't turn a ₹500 tip
+        // into ₹50,000. A tip above 3× the amount due is almost certainly a typo.
+        const cap = Math.max(20000, Math.round(stageAmountGlobal * 3));
+        let v = Math.round(Number(e.target.value) || 0);
+        if (v > cap) { v = cap; e.target.value = String(cap); }
+        tipAmount = Math.max(0, v);
+        updateTipDisplay();
+      });
+      document.querySelector(".tip-btn[data-tip-none]").addEventListener("click", () => {
+        tipAmount = 0;
+        document.getElementById("tip-custom-wrap").style.display = "none";
+        document.getElementById("tip-custom-input").value = "";
+        document.querySelectorAll(".tip-btn").forEach((b) => b.classList.remove("selected"));
+        document.querySelector(".tip-btn[data-tip-none]").classList.add("selected");
+        updateTipDisplay();
+      });
     }
 
     load();
@@ -302,6 +414,22 @@
     });
 
     function setFile(file) {
+      // Validate before the user waits through a long mobile-data upload that
+      // would only fail server-side.
+      if (!/^image\//.test(file.type)) {
+        uploadStatus.textContent = "Please attach an image (JPG or PNG screenshot).";
+        uploadStatus.className = "upload-status error";
+        uploadBtn.disabled = true;
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        uploadStatus.textContent = "That image is over 10 MB — please attach a smaller screenshot.";
+        uploadStatus.className = "upload-status error";
+        uploadBtn.disabled = true;
+        return;
+      }
+      uploadStatus.textContent = "";
+      uploadStatus.className = "upload-status";
       const reader = new FileReader();
       reader.onload = (e) => {
         preview.src = e.target.result;

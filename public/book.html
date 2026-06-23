@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/brand.css" />
+    <meta name="theme-color" content="#C26B45" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="BusyDays" />
     <!--OG_META-->
     <style>
       :root {
@@ -46,13 +53,16 @@
       .brand-meta { color: var(--muted); margin-bottom: 4px; font-size: 14px; }
       .services { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin: 12px 0 6px; }
       .service {
-        text-align: left; cursor: pointer; padding: 14px 16px;
+        text-align: left; cursor: pointer; padding: 0;
         border: 1px solid var(--line); border-radius: var(--radius);
         background: var(--card); color: var(--text); font: inherit;
+        overflow: hidden;
         transition: border-color 0.15s, background 0.15s;
       }
       .service:hover { border-color: var(--accent); background: var(--accent-soft); }
       .service.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .service-img { width: 100%; height: 110px; object-fit: cover; display: block; }
+      .service-body { padding: 12px 14px; }
       .service .name { font-size: 15px; font-weight: 600; }
       .service .price { font-size: 13px; color: var(--muted); margin-top: 4px; }
       .service-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin: 8px 0 16px; }
@@ -61,10 +71,24 @@
       .addon-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; cursor: pointer; font-size: 15px; }
       .addon-item input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
       .addon-price { color: var(--muted); font-size: 13px; }
+      .variant-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; cursor: pointer; background: var(--card); transition: border-color 0.15s, background 0.15s; }
+      .variant-item.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .variant-item input[type=radio] { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+      .variant-name { font-weight: 600; font-size: 14.5px; }
+      .variant-price { font-size: 13px; color: var(--accent); font-weight: 600; margin-top: 2px; }
+      .variant-desc { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+      .staff-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 10px 0 16px; }
+      .staff-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; cursor: pointer; background: var(--card); text-align: left; font: inherit; color: var(--text); transition: border-color 0.15s, background 0.15s; }
+      .staff-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+      .staff-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .staff-name { font-weight: 600; font-size: 14.5px; }
+      .staff-level { font-size: 12px; color: var(--muted); margin-top: 2px; }
+      .staff-bio { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .slots { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
       .slot { padding: 9px 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); cursor: pointer; font: inherit; font-size: 14px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
       .slot:hover { border-color: var(--accent); background: var(--accent-soft); }
       .slot.selected { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; color: var(--accent); }
+      .slot:disabled { opacity: 0.4; cursor: not-allowed; text-decoration: line-through; background: var(--card); border-color: var(--line); }
       label { display: block; margin: 16px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 600; }
       input, textarea {
         width: 100%; padding: 12px 14px; font: inherit; font-size: 15px; color: var(--text);
@@ -79,6 +103,8 @@
         background: var(--accent); transition: background 0.15s;
       }
       .button:hover { background: var(--accent-hover); }
+      .button.secondary { background: var(--surface); color: var(--accent); border: 1px solid var(--line); }
+      .button.secondary:hover { background: var(--line); }
       .button:disabled { opacity: 0.6; cursor: not-allowed; }
       .status { min-height: 22px; margin-top: 10px; color: var(--danger); font-size: 14px; }
       .hidden { display: none; }
@@ -120,6 +146,68 @@
       .cal-day.empty { cursor: default; }
       .cal-day.selected { background: var(--accent); color: #fff; font-weight: 600; }
       .selected-date { margin-top: 10px; font-size: 14px; }
+
+      /* Native-app polish */
+      html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+      * { -webkit-tap-highlight-color: transparent; }
+      .button, .service, .slot, .cal-day, .cal-nav { touch-action: manipulation; }
+      .button { transition: background 0.15s, transform 0.08s ease; }
+      .button:active:not(:disabled) { transform: scale(0.98); }
+      .service:active, .slot:active { transform: scale(0.98); }
+
+      /* Lightbox close affordance */
+      .lightbox-close {
+        position: absolute; top: 16px; right: 18px; width: 42px; height: 42px;
+        border-radius: 50%; border: none; background: rgba(255,255,255,0.16);
+        color: #fff; font-size: 26px; line-height: 1; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+      }
+
+      /* Sticky booking bar — keeps the price and the primary action in view
+         the whole way down the page, so the client always knows what they'll
+         pay and can request without hunting for the button. */
+      .cta-bar {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+        background: rgba(255,255,255,0.93);
+        -webkit-backdrop-filter: saturate(180%) blur(12px);
+        backdrop-filter: saturate(180%) blur(12px);
+        border-top: 1px solid var(--line);
+        box-shadow: 0 -6px 24px rgba(0,0,0,0.07);
+        padding: 11px 14px calc(11px + env(safe-area-inset-bottom, 0px));
+        transform: translateY(110%); transition: transform 0.28s cubic-bezier(.22,.68,0,1.1);
+      }
+      .cta-bar.show { transform: translateY(0); }
+      .cta-bar-inner { width: min(680px, 100%); margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+      .cta-bar-price { display: flex; flex-direction: column; line-height: 1.15; flex-shrink: 0; }
+      .cta-bar-price .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+      .cta-bar-price .amt { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+      .cta-go {
+        flex: 1; padding: 14px 18px; border: none; border-radius: var(--radius-sm);
+        font: 600 16px/1 inherit; color: #fff; background: var(--accent); cursor: pointer;
+        transition: background 0.15s, transform 0.08s ease; touch-action: manipulation;
+      }
+      .cta-go:hover { background: var(--accent-hover); }
+      .cta-go:active:not(:disabled) { transform: scale(0.98); }
+      .cta-go:disabled { opacity: 0.6; cursor: default; }
+      body.cta-on .shell { padding-bottom: 84px; }
+
+      /* Next available dates quick strip (Savspot-style) */
+      .quick-dates-wrap { margin: -4px 0 14px; }
+      .quick-dates-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+      .quick-dates-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+      .quick-dates-row::-webkit-scrollbar { display: none; }
+      .quick-date-chip {
+        flex: 0 0 auto; padding: 9px 15px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--card); font: inherit; font-size: 13.5px; cursor: pointer;
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+        transition: border-color 0.12s, background 0.12s; touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent; min-width: 68px;
+      }
+      .quick-date-chip:active { transform: scale(0.95); }
+      .quick-date-chip:hover, .quick-date-chip.selected { border-color: var(--accent); background: var(--accent-soft); }
+      .quick-date-chip .qd-day { font-size: 12px; color: var(--muted); font-weight: 500; }
+      .quick-date-chip .qd-date { font-size: 15px; font-weight: 700; }
+      .quick-date-chip .qd-mon { font-size: 11px; color: var(--muted); }
     </style>
   </head>
   <body>
@@ -149,19 +237,38 @@
         <p id="about" class="about hidden"></p>
         <div id="gallery" class="gallery hidden"></div>
 
+        <div id="trust-strip" style="display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 18px;"></div>
+
         <h2>Choose a service</h2>
         <div class="services" id="services"></div>
         <div id="service-detail" class="hidden">
           <p id="service-desc" class="service-desc hidden"></p>
+          <div id="variants-wrap" style="display:none;margin-bottom:16px;">
+            <p class="addons-heading">Choose your package</p>
+            <div id="variants-list"></div>
+          </div>
           <div id="addons-wrap" class="addons-wrap hidden">
             <p class="addons-heading">Optional add-ons</p>
             <div id="addons-list"></div>
+          </div>
+          <div id="intake-wrap" style="display:none;margin-top:12px;">
+            <p class="addons-heading">A few quick questions</p>
+            <div id="intake-questions"></div>
+          </div>
+          <div id="staff-wrap" style="display:none;margin-top:16px;">
+            <p class="addons-heading">Choose your specialist</p>
+            <div class="staff-list" id="staff-list"></div>
+            <input type="hidden" id="preferredArtist" />
           </div>
         </div>
 
         <form id="form">
           <div>
             <label>Event date</label>
+            <div id="quick-dates-wrap" class="quick-dates-wrap" style="display:none;">
+              <div class="quick-dates-label">Next available</div>
+              <div class="quick-dates-row" id="quick-dates-row"></div>
+            </div>
             <div class="cal" id="calendar"></div>
             <input type="hidden" id="eventDate" />
             <div class="selected-date muted" id="selected-date">No date selected yet.</div>
@@ -172,13 +279,13 @@
             <div class="slots" id="time-slots"></div>
             <input type="hidden" id="eventTime" />
           </div>
-          <div id="time-free-wrap">
+          <div id="time-free-wrap" class="hidden">
             <label for="eventTimeFree">Preferred time (optional)</label>
             <input type="time" id="eventTimeFree" />
           </div>
 
-          <label for="locationText">Event location / venue</label>
-          <input type="text" id="locationText" placeholder="Venue name, area, city" required />
+          <label for="locationText">Event location / venue <span class="muted" style="font-weight:400;">(optional — add it later if you're not sure)</span></label>
+          <input type="text" id="locationText" placeholder="Venue name or area, city" />
 
           <div class="row">
             <div>
@@ -187,7 +294,7 @@
             </div>
             <div>
               <label for="clientWhatsApp">WhatsApp number</label>
-              <input type="tel" id="clientWhatsApp" placeholder="+91…" required />
+              <input type="tel" id="clientWhatsApp" inputmode="tel" autocomplete="tel" placeholder="+91…" required />
             </div>
           </div>
 
@@ -196,6 +303,15 @@
 
           <label for="notes">Anything else? (optional)</label>
           <textarea id="notes" placeholder="Number of people, look references, timings…"></textarea>
+
+          <div id="promo-wrap" style="display:none;">
+            <label for="promo-code">Promo code (optional)</label>
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <input type="text" id="promo-code" placeholder="Enter code" maxlength="40" style="flex:1;text-transform:uppercase;" />
+              <button type="button" class="button" id="promo-apply" style="white-space:nowrap;width:auto;padding-left:18px;padding-right:18px;">Apply</button>
+            </div>
+            <p id="promo-feedback" style="font-size:13px;margin:6px 0 0;"></p>
+          </div>
 
           <button type="submit" class="button" id="submit">Request booking</button>
           <div class="status" id="status"></div>
@@ -207,13 +323,28 @@
         <h1 id="success-title">Request received</h1>
         <p id="success-text" class="muted"></p>
         <p id="success-subtext" class="muted">To confirm faster, send us a quick message on WhatsApp so we can lock in your date and share pricing.</p>
-        <a id="wa-confirm" class="button hidden" target="_blank" rel="noreferrer">Confirm on WhatsApp</a>
+        <a id="appointment-link" class="button hidden" style="margin-bottom:10px;">View my appointment</a>
+        <a id="wa-confirm" class="button secondary hidden" target="_blank" rel="noreferrer">Confirm on WhatsApp</a>
       </div>
 
       <div class="footer">Powered by BusyDays · <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></div>
     </div>
 
-    <div class="lightbox" id="lightbox"><img id="lightbox-img" alt="" /></div>
+    <div class="cta-bar" id="cta-bar">
+      <div class="cta-bar-inner">
+        <div class="cta-bar-price">
+          <span class="lbl" id="cta-label">Select a service</span>
+          <span class="amt" id="cta-amount">—</span>
+          <span id="cta-travel" style="display:none;font-size:11px;color:var(--muted);margin-top:1px;"></span>
+        </div>
+        <button type="button" class="cta-go" id="cta-go">Request booking</button>
+      </div>
+    </div>
+
+    <div class="lightbox" id="lightbox">
+      <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+      <img id="lightbox-img" alt="" />
+    </div>
 
     <script>
       const workspaceId = window.location.pathname.split("/").filter(Boolean)[1] || "";
@@ -221,6 +352,7 @@
       let availability = null;
       let ownerWhatsApp = "";
       let eventTypesData = [];
+      let appliedPromoCode = "";
       const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
       const el = (id) => document.getElementById(id);
@@ -230,6 +362,33 @@
       function formatPrice(value) {
         if (!value) return "Price on request";
         return "Starting from ₹" + Number(value).toLocaleString("en-IN");
+      }
+
+      // Show a "₹X–₹Y" range when a service has tiers that span a range, so the
+      // client gets an honest sense of cost up front (Booksy shows this too).
+      function formatPriceRange(type) {
+        const lo = Number(type.startingPrice) || 0;
+        const hi = Number(type.maxPrice) || 0;
+        if (!lo) return "Price on request";
+        if (hi > lo) return "₹" + lo.toLocaleString("en-IN") + "–₹" + hi.toLocaleString("en-IN");
+        return "Starting from ₹" + lo.toLocaleString("en-IN");
+      }
+
+      // "approx 4h" / "approx 90 min" — set aside the right amount of time.
+      function formatDuration(hours) {
+        const h = Number(hours) || 0;
+        if (h <= 0) return "";
+        if (h < 1) return "approx " + Math.round(h * 60) + " min";
+        return "approx " + (Number.isInteger(h) ? h : h.toFixed(1)) + "h";
+      }
+
+      // Escape owner-controlled strings before they go into innerHTML. Owner data
+      // (artist names, bios) reaches the client's browser here, so it must be
+      // neutralised to prevent stored XSS from a malicious/compromised workspace.
+      function esc(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
       }
 
       async function loadProfile() {
@@ -243,10 +402,39 @@
           if (!res.ok) throw new Error("not found");
           const data = await res.json();
           renderProfile(data.profile);
+          // Fetch team members (non-blocking, optional)
+          fetch("/api/public/" + encodeURIComponent(workspaceId) + "/artists")
+            .then((r) => r.json())
+            .then((d) => { if (d.ok && d.artists && d.artists.length > 0) renderStaffList(d.artists); })
+            .catch(() => {});
         } catch (error) {
           hide("loading");
           show("not-found");
         }
+      }
+
+      function renderStaffList(artists) {
+        const wrap = document.getElementById("staff-wrap");
+        const list = document.getElementById("staff-list");
+        if (!wrap || !list) return;
+        // "No preference" option first
+        const cards = [{ name: "", skillLevel: "", bio: "Let the studio assign the best available specialist." }].concat(artists);
+        list.innerHTML = cards.map((a, i) => {
+          const isNoPref = a.name === "";
+          return `<button type="button" class="staff-card${i === 0 ? " selected" : ""}" data-artist="${esc(a.name)}">
+            <div class="staff-name">${isNoPref ? "No preference" : esc(a.name)}</div>
+            ${!isNoPref && a.skillLevel ? '<div class="staff-level">' + esc(a.skillLevel) + '</div>' : ""}
+            ${a.bio ? '<div class="staff-bio">' + esc(a.bio) + '</div>' : ""}
+          </button>`;
+        }).join("");
+        wrap.style.display = "";
+        list.addEventListener("click", (e) => {
+          const card = e.target.closest(".staff-card");
+          if (!card) return;
+          list.querySelectorAll(".staff-card").forEach((c) => c.classList.remove("selected"));
+          card.classList.add("selected");
+          document.getElementById("preferredArtist").value = card.getAttribute("data-artist");
+        });
       }
 
       // Apply a brand accent colour by overriding the CSS variables. We derive a
@@ -314,6 +502,18 @@
         if (profile.instagramHandle) metaBits.push("@" + profile.instagramHandle.replace(/^@/, ""));
         el("biz-meta").textContent = metaBits.join("  ·  ");
 
+        // Trust floor: a few reassurances that are ALWAYS true, so a new artist's
+        // page (no Google rating, no portfolio yet) never looks bare or risky to a
+        // bride about to share her number. These cost nothing and always render.
+        const trust = [
+          ["🔒", "No payment to request — you only pay an advance once " + profile.businessName + " confirms"],
+          ["💬", "You'll get a reply on WhatsApp"],
+          ["🗓️", "Your date is held while " + profile.businessName + " reviews"],
+        ];
+        el("trust-strip").innerHTML = trust.map(([icon, text]) =>
+          `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface);font-size:12.5px;color:var(--text);">${icon} ${esc(text)}</span>`
+        ).join("");
+
         if (profile.aboutText) {
           el("about").textContent = profile.aboutText;
           show("about");
@@ -321,6 +521,7 @@
         renderGallery(profile.portfolioImages || []);
 
         eventTypesData = profile.eventTypes || [];
+        if (profile.promoCodesEnabled) { el("promo-wrap").style.display = ""; }
         const container = el("services");
         container.innerHTML = "";
         profile.eventTypes.forEach((type) => {
@@ -328,46 +529,49 @@
           card.type = "button";
           card.className = "service";
           card.dataset.key = type.key;
+          const durationLabel = formatDuration(type.durationHours);
+          const imgHtml = type.imageUrl
+            ? '<img class="service-img" src="' + esc(type.imageUrl) + '" alt="" loading="lazy" />'
+            : "";
           card.innerHTML =
-            '<div class="name">' + type.label + "</div>" +
-            '<div class="price">' + formatPrice(type.startingPrice) + "</div>";
+            imgHtml +
+            '<div class="service-body">' +
+            '<div class="name">' + esc(type.label) + "</div>" +
+            '<div class="price">' + formatPriceRange(type) +
+              (durationLabel ? ' <span style="color:var(--muted);">· ⏱ ' + durationLabel + "</span>" : "") +
+            "</div>" +
+            "</div>";
           card.addEventListener("click", () => {
             selectedEventType = type.key;
             document.querySelectorAll(".service").forEach((s) => s.classList.remove("selected"));
             card.classList.add("selected");
             renderServiceDetail(type);
+            // Switch to event-specific slots (e.g. Bridal only at 09:00 and 11:00)
+            // or fall back to the global list when no per-event slots are set.
+            if (availability) {
+              const perEvent = availability.timeSlotsByEvent && availability.timeSlotsByEvent[type.key];
+              renderTimeSlots(perEvent && perEvent.length ? perEvent : (availability.timeSlots || []));
+            }
+            // Slot availability is duration-aware, so it depends on the service.
+            refreshSlotAvailability();
+            updateCta();
           });
           container.appendChild(card);
         });
 
         if (availability) {
           initCalendar(availability);
-
-          // Time slots
-          const slots = availability.timeSlots || [];
-          if (slots.length > 0) {
-            show("time-slots-wrap");
-            hide("time-free-wrap");
-            const slotsContainer = el("time-slots");
-            slotsContainer.innerHTML = "";
-            slots.forEach((slot) => {
-              const btn = document.createElement("button");
-              btn.type = "button";
-              btn.className = "slot";
-              btn.textContent = formatSlotTime(slot);
-              btn.dataset.value = slot;
-              btn.addEventListener("click", () => {
-                document.querySelectorAll(".slot").forEach((s) => s.classList.remove("selected"));
-                btn.classList.add("selected");
-                el("eventTime").value = slot;
-              });
-              slotsContainer.appendChild(btn);
-            });
-          }
+          // Initial render uses global slots; per-event slots applied when a
+          // service card is selected (see card.addEventListener below).
+          renderTimeSlots(availability.timeSlots || []);
         }
 
         hide("loading");
         show("booking");
+        // Reveal the sticky price/CTA bar now that there's a form to act on.
+        document.body.classList.add("cta-on");
+        el("cta-bar").classList.add("show");
+        updateCta();
       }
 
       function formatSlotTime(t) {
@@ -377,6 +581,35 @@
           const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
           return h12 + (m ? ":" + String(m).padStart(2, "0") : "") + " " + ampm;
         } catch { return t; }
+      }
+
+      // Render time slot buttons. Clears any previously selected slot so
+      // switching event types never leaves a stale time in the hidden input.
+      function renderTimeSlots(slots) {
+        const slotsContainer = el("time-slots");
+        if (!slotsContainer) return;
+        slotsContainer.innerHTML = "";
+        el("eventTime").value = "";
+        if (!slots || !slots.length) {
+          hide("time-slots-wrap");
+          show("time-free-wrap");
+          return;
+        }
+        show("time-slots-wrap");
+        hide("time-free-wrap");
+        slots.forEach((slot) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "slot";
+          btn.textContent = formatSlotTime(slot);
+          btn.dataset.value = slot;
+          btn.addEventListener("click", () => {
+            slotsContainer.querySelectorAll(".slot").forEach((s) => s.classList.remove("selected"));
+            btn.classList.add("selected");
+            el("eventTime").value = slot;
+          });
+          slotsContainer.appendChild(btn);
+        });
       }
 
       // ---- Portfolio gallery + lightbox ----
@@ -412,10 +645,56 @@
         if ((avail.blockedDates || []).includes(iso)) return true;
         return false;
       }
+      const SHORT_MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      function renderQuickDates(avail) {
+        const row = el("quick-dates-row");
+        const wrap = el("quick-dates-wrap");
+        if (!row || !wrap) return;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const start = avail.minDate ? new Date(avail.minDate + "T00:00:00Z") : today;
+        const from = start > today ? start : today;
+        const chips = [];
+        let d = new Date(from);
+        while (chips.length < 6 && chips.length < 60) {
+          const iso = d.toISOString().slice(0,10);
+          if (!isDisabledDate(iso, avail)) {
+            chips.push({ iso, day: DOW[d.getUTCDay()], date: d.getUTCDate(), mon: SHORT_MON[d.getUTCMonth()] });
+          }
+          d.setUTCDate(d.getUTCDate() + 1);
+          if (chips.length === 0 && (d - from) > 1000*60*60*24*120) break;
+        }
+        if (!chips.length) { wrap.style.display = "none"; return; }
+        wrap.style.display = "";
+        const sel = el("eventDate").value;
+        row.innerHTML = chips.map((c) =>
+          `<button class="quick-date-chip${c.iso === sel ? " selected" : ""}" type="button" data-qd-iso="${c.iso}">
+            <span class="qd-day">${c.day}</span><span class="qd-date">${c.date}</span><span class="qd-mon">${c.mon}</span>
+          </button>`
+        ).join("");
+        row.addEventListener("click", (e) => {
+          const btn = e.target.closest("[data-qd-iso]");
+          if (!btn) return;
+          const iso = btn.getAttribute("data-qd-iso");
+          el("eventDate").value = iso;
+          el("selected-date").textContent = "Selected: " + iso;
+          document.querySelectorAll(".cal-day").forEach((c) => c.classList.toggle("selected", c.dataset.iso === iso));
+          document.querySelectorAll(".quick-date-chip").forEach((c) => c.classList.toggle("selected", c.dataset.qdIso === iso));
+          // Scroll cal to the right month
+          if (calState) {
+            const dt = new Date(iso + "T00:00:00Z");
+            calState.y = dt.getUTCFullYear(); calState.m = dt.getUTCMonth();
+            renderCal();
+          }
+          // Trigger time slots if needed
+          const changeEvt = new Event("change", { bubbles: true });
+          el("eventDate").dispatchEvent(changeEvt);
+        }, { once: false });
+      }
       function initCalendar(avail) {
         const start = avail.minDate ? new Date(avail.minDate + "T00:00:00Z") : new Date();
         calState = { y: start.getUTCFullYear(), m: start.getUTCMonth(), avail };
         renderCal();
+        renderQuickDates(avail);
       }
       function renderCal() {
         if (!calState) return;
@@ -464,19 +743,71 @@
         el("selected-date").classList.remove("muted");
         el("status").textContent = "";
         renderCal();
+        refreshSlotAvailability();
       });
+
+      // Grey out time slots that an existing job already occupies on the chosen
+      // date — a 4-hour bridal at 9 AM takes the 11 AM slot with it. Fails open:
+      // if the check can't run, all slots stay tappable and the server decides.
+      async function refreshSlotAvailability() {
+        const date = el("eventDate").value;
+        const buttons = document.querySelectorAll("#time-slots .slot");
+        if (!buttons.length || !date) return;
+        let slots = null;
+        try {
+          const res = await fetch(
+            "/api/public/" + encodeURIComponent(workspaceId) + "/slots?date=" + encodeURIComponent(date) +
+            "&eventType=" + encodeURIComponent(selectedEventType || ""),
+          );
+          if (res.ok) slots = (await res.json()).slots || null;
+        } catch { /* fail open */ }
+        if (!slots) { buttons.forEach((b) => { b.disabled = false; }); return; }
+        const availableByTime = {};
+        slots.forEach((s) => { availableByTime[s.time] = s.available; });
+        buttons.forEach((b) => {
+          const ok = availableByTime[b.dataset.value] !== false;
+          b.disabled = !ok;
+          if (!ok && b.classList.contains("selected")) {
+            b.classList.remove("selected");
+            el("eventTime").value = "";
+          }
+        });
+      }
 
       function renderServiceDetail(type) {
         const detail = el("service-detail");
         const descEl = el("service-desc");
         const addonsWrap = el("addons-wrap");
         const addonsList = el("addons-list");
+        const variantsWrap = el("variants-wrap");
+        const variantsList = el("variants-list");
 
         if (type.description) {
           descEl.textContent = type.description;
           descEl.classList.remove("hidden");
         } else {
           descEl.classList.add("hidden");
+        }
+
+        // Render package variants if any exist
+        variantsList.innerHTML = "";
+        if (type.variants && type.variants.length > 0) {
+          type.variants.forEach((v, i) => {
+            const safeId = "variant-" + i;
+            const item = document.createElement("label");
+            item.className = "variant-item" + (i === 0 ? " selected" : "");
+            item.innerHTML =
+              `<input type="radio" name="serviceVariant" id="${safeId}" value="${esc(v.name)}" data-price="${v.price}" ${i === 0 ? "checked" : ""} />` +
+              `<div>` +
+              `<div class="variant-name">${esc(v.name)}</div>` +
+              `<div class="variant-price">₹${Number(v.price).toLocaleString("en-IN")}</div>` +
+              (v.description ? `<div class="variant-desc">${esc(v.description)}</div>` : "") +
+              `</div>`;
+            variantsList.appendChild(item);
+          });
+          variantsWrap.style.display = "";
+        } else {
+          variantsWrap.style.display = "none";
         }
 
         addonsList.innerHTML = "";
@@ -486,8 +817,8 @@
             const label = document.createElement("label");
             label.className = "addon-item";
             label.innerHTML =
-              '<input type="checkbox" id="' + safeId + '" value="' + addon.name.replace(/"/g, "&quot;") + '" />' +
-              '<span>' + addon.name +
+              '<input type="checkbox" id="' + safeId + '" value="' + esc(addon.name) + '" data-price="' + (Number(addon.price) || 0) + '" />' +
+              '<span>' + esc(addon.name) +
               (addon.price > 0 ? ' <span class="addon-price">+₹' + Number(addon.price).toLocaleString("en-IN") + '</span>' : '') +
               '</span>';
             addonsList.appendChild(label);
@@ -497,10 +828,32 @@
           addonsWrap.classList.add("hidden");
         }
 
-        if (type.description || (type.addons && type.addons.length > 0)) {
+        if (type.description || (type.addons && type.addons.length > 0) || (type.variants && type.variants.length > 0)) {
           detail.classList.remove("hidden");
         } else {
           detail.classList.add("hidden");
+        }
+
+        // Load intake questions for this service type
+        const intakeWrap = el("intake-wrap");
+        const intakeQs = el("intake-questions");
+        intakeWrap.style.display = "none";
+        intakeQs.innerHTML = "";
+        if (workspaceId && type.key) {
+          fetch("/api/public/" + encodeURIComponent(workspaceId) + "/intake-form/" + encodeURIComponent(type.key))
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => {
+              const questions = data?.questions || [];
+              if (!questions.length) return;
+              intakeQs.innerHTML = questions.map((q, i) => `
+                <div style="margin-bottom:10px;">
+                  <label style="font-size:13.5px;display:block;margin-bottom:4px;font-weight:500;" data-intake-label="${i}">${esc(q)}</label>
+                  <input data-intake-q="${i}" name="intakeQ${i}" class="intake-answer" style="width:100%;box-sizing:border-box;" placeholder="Your answer" />
+                </div>`).join("");
+              intakeWrap.style.display = "";
+              detail.classList.remove("hidden");
+            })
+            .catch(() => null);
         }
       }
 
@@ -516,6 +869,114 @@
         return "";
       }
 
+      // Variant selection highlight; clears any applied promo since price changed.
+      el("variants-list").addEventListener("change", (e) => {
+        document.querySelectorAll("#variants-list .variant-item").forEach((item) => item.classList.remove("selected"));
+        const radio = e.target.closest("input[type=radio]");
+        if (radio) radio.closest(".variant-item")?.classList.add("selected");
+        resetPromo();
+        updateCta();
+      });
+
+      // Add-on toggles change the running total too.
+      el("addons-list").addEventListener("change", () => { resetPromo(); updateCta(); });
+
+      // Current order amount = selected variant price, else the service's starting price.
+      function currentOrderAmount() {
+        const variant = document.querySelector("#variants-list input[name='serviceVariant']:checked");
+        if (variant) return Number(variant.dataset.price) || 0;
+        const type = eventTypesData.find((t) => t.key === selectedEventType);
+        return type ? Number(type.startingPrice) || 0 : 0;
+      }
+      function resetPromo() {
+        appliedPromoCode = "";
+        const fb = el("promo-feedback");
+        if (fb) { fb.textContent = ""; }
+      }
+
+      // Travel fee estimate: fetched when client types their venue so the bar
+      // shows "Incl. ₹X travel" before they submit — no surprise in the quote.
+      let travelFeeEstimate = 0;
+      let _travelTimer = null;
+      el("locationText")?.addEventListener("input", () => {
+        clearTimeout(_travelTimer);
+        const venue = el("locationText").value.trim();
+        if (venue.length < 4) { travelFeeEstimate = 0; updateCta(); return; }
+        _travelTimer = setTimeout(async () => {
+          try {
+            const r = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/travel?venue=${encodeURIComponent(venue)}`);
+            const data = await r.json();
+            travelFeeEstimate = (data.ok && data.travelFee > 0) ? data.travelFee : 0;
+          } catch { travelFeeEstimate = 0; }
+          updateCta();
+        }, 600);
+      });
+
+      // Keep the sticky bar's price live as the client picks a package / add-ons,
+      // so they always see what they're about to request — no surprises, no
+      // scrolling to find the total.
+      function updateCta() {
+        const lbl = el("cta-label");
+        const amt = el("cta-amount");
+        const travelNote = el("cta-travel");
+        if (!lbl || !amt) return;
+        if (!selectedEventType) {
+          lbl.textContent = "Select a service";
+          amt.textContent = "—";
+          if (travelNote) travelNote.style.display = "none";
+          return;
+        }
+        const base = currentOrderAmount();
+        const addonTotal = [...document.querySelectorAll("#addons-list input:checked")]
+          .reduce((s, cb) => s + (Number(cb.dataset.price) || 0), 0);
+        const total = base + addonTotal;
+        if (!total) {
+          lbl.textContent = "Estimated";
+          amt.textContent = "Price on request";
+          if (travelNote) travelNote.style.display = "none";
+          return;
+        }
+        const hasVariant = !!document.querySelector("#variants-list input[name='serviceVariant']:checked");
+        const hasTravelOrAddon = hasVariant || addonTotal > 0 || travelFeeEstimate > 0;
+        lbl.textContent = hasTravelOrAddon ? "Estimated total" : "Starting from";
+        amt.textContent = "₹" + Number(total + travelFeeEstimate).toLocaleString("en-IN");
+        if (travelNote) {
+          if (travelFeeEstimate > 0) {
+            travelNote.textContent = `Incl. ₹${Number(travelFeeEstimate).toLocaleString("en-IN")} travel`;
+            travelNote.style.display = "";
+          } else {
+            travelNote.style.display = "none";
+          }
+        }
+      }
+
+      // Bring the section that needs attention into view when the client taps
+      // the sticky button from anywhere on the page.
+      function scrollToEl(id) {
+        const node = el(id);
+        if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      el("promo-apply")?.addEventListener("click", async () => {
+        const fb = el("promo-feedback");
+        const code = el("promo-code").value.trim().toUpperCase();
+        if (!code) { fb.style.color = ""; fb.textContent = "Enter a code first."; return; }
+        if (!selectedEventType) { fb.style.color = "#b91c1c"; fb.textContent = "Choose a service first."; return; }
+        const amount = currentOrderAmount();
+        fb.style.color = ""; fb.textContent = "Checking…";
+        try {
+          const res = await fetch("/api/public/" + encodeURIComponent(workspaceId) + "/promo/" + encodeURIComponent(code) + "?amount=" + amount);
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "That code isn't valid.");
+          appliedPromoCode = data.code;
+          fb.style.color = "#15803d";
+          fb.textContent = "✓ " + data.label + " applied — you save ₹" + Number(data.discount).toLocaleString("en-IN") + ". Final: ₹" + Number(data.finalAmount).toLocaleString("en-IN") + ".";
+        } catch (err) {
+          appliedPromoCode = "";
+          fb.style.color = "#b91c1c";
+          fb.textContent = err.message;
+        }
+      });
+
       el("form").addEventListener("submit", async (event) => {
         event.preventDefault();
         const statusEl = el("status");
@@ -523,17 +984,20 @@
 
         if (!selectedEventType) {
           statusEl.textContent = "Please choose a service above.";
+          scrollToEl("services");
           return;
         }
 
         if (!el("eventDate").value) {
           statusEl.textContent = "Please pick an available date from the calendar.";
+          scrollToEl("calendar");
           return;
         }
 
         const dateReason = dateUnavailableReason(el("eventDate").value);
         if (dateReason) {
           statusEl.textContent = dateReason;
+          scrollToEl("calendar");
           return;
         }
 
@@ -545,26 +1009,63 @@
 
         if (hasSlots && !eventTimeValue) {
           statusEl.textContent = "Please choose a time slot above.";
+          scrollToEl("time-slots-wrap");
+          return;
+        }
+
+        // Name + WhatsApp are far above the sticky CTA, so the native "required"
+        // bubble can fire on an off-screen field with no scroll. Validate them
+        // explicitly and bring the offending field into view.
+        if (!el("clientName").value.trim()) {
+          statusEl.textContent = "Please add your name so the artist knows who's booking.";
+          scrollToEl("clientName"); el("clientName").focus();
+          return;
+        }
+        // Indian mobile numbers are 10 digits (12 with the +91 country code).
+        // Anything shorter can't receive the artist's WhatsApp confirmation, so
+        // the client would book and then silently never hear back.
+        if (el("clientWhatsApp").value.replace(/\D/g, "").length < 10) {
+          statusEl.textContent = "Please add a valid 10-digit WhatsApp number — it's how the artist confirms your date.";
+          scrollToEl("clientWhatsApp"); el("clientWhatsApp").focus();
           return;
         }
 
         const checkedAddons = [...document.querySelectorAll("#addons-list input:checked")]
           .map((cb) => cb.value).join(", ");
+        // Collect intake form answers into ownerNotes prefix
+        const intakeAnswers = [...document.querySelectorAll(".intake-answer")]
+          .map((inp) => {
+            const idx = inp.getAttribute("data-intake-q");
+            const labelEl = document.querySelector(`[data-intake-label="${idx}"]`);
+            const question = (labelEl ? labelEl.textContent.trim() : "Question").replace(/\s+/g, " ");
+            const answer = inp.value.trim();
+            return answer ? question + ": " + answer : "";
+          })
+          .filter(Boolean);
+        const intakeNote = intakeAnswers.length ? "Intake: " + intakeAnswers.join(" | ") : "";
+        // Collect selected variant
+        const selectedVariant = document.querySelector("#variants-list input[name='serviceVariant']:checked");
+        const variantNote = selectedVariant ? "Package: " + selectedVariant.value : "";
         const payload = {
           eventType: selectedEventType,
           eventDate: el("eventDate").value,
           eventTime: eventTimeValue,
-          locationText: el("locationText").value.trim(),
+          locationText: el("locationText").value.trim() || undefined,
           addons: checkedAddons || undefined,
           clientName: el("clientName").value.trim(),
           clientWhatsApp: el("clientWhatsApp").value.trim(),
           clientInstagram: el("clientInstagram").value.trim() || undefined,
-          notes: el("notes").value.trim() || undefined,
+          notes: [el("notes").value.trim(), variantNote, intakeNote].filter(Boolean).join("\n") || undefined,
+          promoCode: appliedPromoCode || undefined,
+          preferredArtist: el("preferredArtist")?.value || undefined,
         };
 
         const submitBtn = el("submit");
+        const ctaGo = el("cta-go");
         submitBtn.disabled = true;
         submitBtn.textContent = "Sending…";
+        ctaGo.disabled = true;
+        ctaGo.textContent = "Sending…";
         try {
           const res = await fetch("/api/public/" + encodeURIComponent(workspaceId) + "/book", {
             method: "POST",
@@ -578,20 +1079,33 @@
             el("success-title").textContent = "Added to waitlist";
             el("success-icon").textContent = "⏳";
             el("success-text").textContent =
-              "Thank you, " + payload.clientName + ". That date is fully booked, but we've added you to the waitlist for " +
-              data.eventDate + ". We'll reach out if a slot opens up.";
+              "Thank you, " + payload.clientName + ". That date is fully booked, but you're on the waitlist for " +
+              data.eventDate + " — first come, first served. If a slot opens up you'll get a WhatsApp message right away.";
             el("success-subtext").classList.add("hidden");
           } else {
             el("success-text").textContent =
               "Thank you, " + payload.clientName + ". Your " + data.eventType +
               " request for " + data.eventDate + " has been sent to " + data.businessName +
               ". Your date is tentatively held — it's locked in once " + data.businessName +
-              " confirms and the advance is paid. You'll hear back on WhatsApp.";
+              " confirms and the advance is paid. You'll usually hear back on WhatsApp within a day.";
+
+            // Hand the client a permanent home for this booking: one link to
+            // track status, pay the advance, sign the contract, or reschedule —
+            // instead of the request vanishing into a confirmation message.
+            let appointmentUrl = "";
+            if (data.leadId) {
+              appointmentUrl = location.origin + "/appointment/" +
+                encodeURIComponent(workspaceId) + "/" + encodeURIComponent(data.leadId);
+              const apptBtn = el("appointment-link");
+              apptBtn.href = appointmentUrl;
+              apptBtn.classList.remove("hidden");
+            }
 
             if (ownerWhatsApp) {
               const text =
                 "Hi! I just requested a " + data.eventType + " booking for " + data.eventDate +
-                " via your booking page. My name is " + payload.clientName + ".";
+                " via your booking page. My name is " + payload.clientName + "." +
+                (appointmentUrl ? "\n\nMy appointment: " + appointmentUrl : "");
               const waBtn = el("wa-confirm");
               waBtn.href = "https://wa.me/" + ownerWhatsApp + "?text=" + encodeURIComponent(text);
               waBtn.classList.remove("hidden");
@@ -600,6 +1114,11 @@
 
           hide("booking");
           show("success");
+          // A confirming buzz, like a native app (Android web / Capacitor only).
+          try { if (navigator.vibrate) navigator.vibrate([10, 40, 16]); } catch (e) {}
+          // The action is done — retire the sticky bar.
+          el("cta-bar").classList.remove("show");
+          document.body.classList.remove("cta-on");
           window.scrollTo({ top: 0, behavior: "smooth" });
         } catch (error) {
           // Show the server's friendly validation message, but never surface a
@@ -609,7 +1128,23 @@
             : (error.message || "Something went wrong. Please try again.");
           submitBtn.disabled = false;
           submitBtn.textContent = "Request booking";
+          ctaGo.disabled = false;
+          ctaGo.textContent = "Request booking";
         }
+      });
+
+      // The sticky bar is the primary action on the page; the inline button is
+      // now redundant, so hide it and let the floating bar drive submission.
+      el("submit").style.display = "none";
+      el("cta-go").addEventListener("click", () => el("form").requestSubmit());
+
+      // Lightbox: explicit close button + Escape, on top of tap-to-dismiss.
+      el("lightbox-close").addEventListener("click", (e) => {
+        e.stopPropagation();
+        el("lightbox").classList.remove("open");
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") el("lightbox").classList.remove("open");
       });
 
       loadProfile();

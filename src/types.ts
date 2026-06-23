@@ -21,6 +21,9 @@ export type PricingRuleConfig = {
   scarcityThresholdSoft: number;
   scarcityThresholdHard: number;
   advancePercentage: number;
+  // Optional per-service deposit overrides as JSON, e.g. {"Bridal":50,"Party":20}.
+  // Falls back to advancePercentage for any service not listed.
+  depositPercentByService: string;
 };
 
 export type WorkspaceConfig = PricingRuleConfig & {
@@ -36,6 +39,10 @@ export type WorkspaceConfig = PricingRuleConfig & {
   travelNearbyCity: number;
   travelOutstation: number;
   travelOutstationThresholdKm: number;
+  // Where "within city" ends and the nearby-city fee starts (km).
+  travelNearbyThresholdKm: number;
+  // Optional ₹/km pricing; when > 0 it replaces the flat tiers.
+  travelPerKmRate: number;
   profileLowMultiplier: number;
   profileMidMultiplier: number;
   profileHighMultiplier: number;
@@ -53,6 +60,9 @@ export type WorkspaceConfig = PricingRuleConfig & {
   bookingWeeklyOffDays: string;
   bookingBlockedDates: string;
   bookingMaxPerDay: number;
+  // Cleanup/buffer minutes padded around every booked job so back-to-backs
+  // leave time to pack up and travel. 0 = no buffer.
+  bufferMinutes: number;
   bookingConfirmTemplate: string;
   bookingConfirmTemplateLang: string;
   approvalTemplate: string;
@@ -72,6 +82,10 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reminderTemplateLang: string;
   reminderDaysBefore: string;
   autoPaymentReminders: string;
+  // Morning push digest: today's jobs + what needs her attention.
+  dailyDigest: string;
+  waitlistOfferTemplate: string;
+  waitlistOfferTemplateLang: string;
   ownerAlertTemplate: string;
   ownerAlertTemplateLang: string;
   razorpayKeyId: string;
@@ -95,6 +109,19 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reviewRequestDaysAfter: string;
   reviewTemplate: string;
   reviewTemplateLang: string;
+  // Automated rebook nudge: WhatsApp template sent N days after an event.
+  rebookNudgeDaysAfter: string;
+  rebookTemplate: string;
+  rebookTemplateLang: string;
+  // Automated win-back: message clients whose last booking is this many days
+  // past (blank = off). Birthday: greet on the day (blank template = off).
+  winbackDaysAfter: string;
+  winbackTemplate: string;
+  winbackTemplateLang: string;
+  birthdayTemplate: string;
+  birthdayTemplateLang: string;
+  // Custom domain for the booking page (e.g. "bookings.glowbyaisha.com").
+  customDomain: string;
   documentTemplate: string;
   quoteIntro: string;
   cancellationPolicy: string;
@@ -123,6 +150,59 @@ export type WorkspaceConfig = PricingRuleConfig & {
   gstPercentage: number;
   cancellationWindowDays: number;
   cancellationFeePercent: number;
+  // Loyalty program
+  loyaltyEnabled: string;
+  loyaltyVisitsForReward: number;
+  loyaltyRewardValue: number;
+  loyaltyRewardNote: string;
+  // Gift cards
+  giftCardsEnabled: string;
+  // Intake / consultation forms (comma-separated questions per service type)
+  intakeFormBridal: string;
+  intakeFormEngagement: string;
+  intakeFormReception: string;
+  intakeFormParty: string;
+  intakeFormShoot: string;
+  intakeFormOther: string;
+  // Staff commission & tips
+  commissionDefaultPercent: number;
+  tipsEnabled: string;
+  // No-show protection
+  noShowFeePercent: number;
+  noShowPolicy: string;
+  // Email channel (SMTP)
+  emailEnabled: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFrom: string;
+  // Recurring appointments
+  recurringEnabled: string;
+  // Service variants: JSON string mapping service key → array of {name, price, description}
+  serviceVariantsJson: string;
+  // Promo codes: show the "Have a promo code?" field on the public booking page.
+  promoCodesEnabled: string;
+  // Payment receipt WhatsApp template sent to client after a payment is recorded.
+  receiptTemplate: string;
+  receiptTemplateLang: string;
+  // Days after booking date that the invoice becomes due (shown on invoice PDF and client page).
+  invoiceDueDays: number;
+  // Per-service cover images shown on the public booking page
+  serviceBridalImageUrl: string;
+  serviceEngagementImageUrl: string;
+  serviceReceptionImageUrl: string;
+  servicePartyImageUrl: string;
+  serviceShootImageUrl: string;
+  serviceOtherImageUrl: string;
+  // Per-event time slots (comma-separated HH:MM). When set, overrides the
+  // global bookingTimeSlots for that service type on the public booking page.
+  timeSlotsBridal: string;
+  timeSlotsEngagement: string;
+  timeSlotsReception: string;
+  timeSlotsParty: string;
+  timeSlotsShoot: string;
+  timeSlotsOther: string;
 };
 
 export type WalletLedgerEntry = {

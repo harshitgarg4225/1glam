@@ -4,6 +4,10 @@ name: Android APK
 # as a workflow artifact (Actions run page → Artifacts → busydays-apk).
 # Debug-signed: fine for sideloading/testing; use a release keystore + Play
 # signing when distributing more widely (see mobile/README.md).
+#
+# Native Google Sign-In requires the debug keystore SHA-1 to be registered in
+# Google Cloud Console as an Android OAuth 2.0 client. The "Print debug
+# keystore SHA-1" step below outputs the SHA-1 — copy it from the build log.
 
 on:
   workflow_dispatch:
@@ -56,6 +60,19 @@ jobs:
       - name: Build debug APK
         working-directory: mobile/android
         run: ./gradlew assembleDebug --no-daemon
+
+      # Print the SHA-1 of the debug keystore so you can register it in
+      # Google Cloud Console → APIs & Services → Credentials →
+      # "Create OAuth client ID" → Android. Paste in.busydays.app as the
+      # package name and the SHA-1 printed here.
+      - name: Print debug keystore SHA-1 (for Google Cloud Console)
+        run: |
+          keytool -list -v \
+            -keystore ~/.android/debug.keystore \
+            -alias androiddebugkey \
+            -storepass android \
+            -keypass android 2>/dev/null \
+          | grep "SHA1:" | head -1
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

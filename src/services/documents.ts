@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont, type PDFPage } 
 import { fetchWithTimeout, isPublicHttpUrl } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
-import { buildPublicDocumentUrl, buildQuoteViewUrl } from "./document-links.js";
+import { buildPublicDocumentUrl, buildInvoicePageUrl, buildQuoteViewUrl } from "./document-links.js";
 import { getDocumentTheme, type DocumentTheme } from "./document-themes.js";
 import type { WorkspaceRecord } from "../types.js";
 import { parsePaymentsLog, paymentsTotal, type BookingRecord, type LeadRecord } from "./booking.js";
@@ -57,6 +57,11 @@ export type DocumentAdjustments = {
   // items, rendered as an explicit "Discount (10%) -Rs X" line so the client
   // sees the original value and what they're saving.
   discountPercent?: number;
+  // Range estimate mode ("Rs 12,000 – 15,000, finalized after consultation").
+  // When both are set the quote shows the range instead of one fixed amount;
+  // the advance is computed on the low end so confirming stays easy.
+  priceRangeLow?: number;
+  priceRangeHigh?: number;
 };
 
 export type DocumentRenderOptions = {
@@ -88,10 +93,53 @@ export function parseDocumentAdjustments(raw: string | undefined | null): Docume
       Number.isFinite(rawDiscount) && rawDiscount > 0 && rawDiscount < 100
         ? Math.round(rawDiscount * 100) / 100
         : undefined;
-    return { amountOverride, lineItems, note, discountPercent };
+    const low = Number(parsed.priceRangeLow);
+    const high = Number(parsed.priceRangeHigh);
+    const hasRange = Number.isFinite(low) && Number.isFinite(high) && low > 0 && high > low;
+    return {
+      amountOverride,
+      lineItems,
+      note,
+      discountPercent,
+      priceRangeLow: hasRange ? low : undefined,
+      priceRangeHigh: hasRange ? high : undefined,
+    };
   } catch {
     return {};
   }
+}
+
+// A reusable quote bundle from the quotePackages config — one per line:
+//   "Bridal Classic: HD Makeup=12000, Hair=3000, Draping=800"
+export type QuotePackage = {
+  name: string;
+  items: { label: string; amount: number }[];
+  total: number;
+};
+
+export function parseQuotePackages(raw: string | undefined | null): QuotePackage[] {
+  return String(raw || "")
+    .split(/\r?\n/)
+    .map((line) => {
+      const colon = line.indexOf(":");
+      if (colon < 1) return null;
+      const name = line.slice(0, colon).trim().slice(0, 60);
+      if (!name) return null;
+      const items = line
+        .slice(colon + 1)
+        .split(",")
+        .map((entry) => {
+          const [label, amount] = entry.split("=").map((s) => s.trim());
+          const value = Number(amount);
+          if (!label || !Number.isFinite(value) || value <= 0) return null;
+          return { label: label.slice(0, 80), amount: Math.round(value) };
+        })
+        .filter((item): item is { label: string; amount: number } => item !== null);
+      if (!items.length) return null;
+      return { name, items, total: items.reduce((sum, item) => sum + item.amount, 0) };
+    })
+    .filter((pkg): pkg is QuotePackage => pkg !== null)
+    .slice(0, 20);
 }
 
 // A single line of the itemized order, edited in the lead drawer.
@@ -157,8 +205,14 @@ export async function buildQuotePdfBytes(
   const order = parseOrderItems(lead.orderItems);
   const autoQuoted = order.total > 0 ? order.total : lead.finalApprovedPrice || lead.initialAiPrice;
   const { total: quotedAmount, extraLines, note } = applyAdjustments(autoQuoted, options.adjustments);
+  // Range mode: the quote presents an estimate band instead of one number, and
+  // the advance is computed on the low end so the client can still confirm.
+  const range =
+    options.adjustments?.priceRangeLow && options.adjustments.priceRangeHigh
+      ? { low: options.adjustments.priceRangeLow, high: options.adjustments.priceRangeHigh }
+      : null;
   const advanceAmount = premiumRound(
-    (quotedAmount * workspace.config.advancePercentage) / 100,
+    ((range ? range.low : quotedAmount) * workspace.config.advancePercentage) / 100,
   );
 
   const theme = getDocumentTheme(workspace.config.documentTemplate, workspace.config.brandColor);
@@ -184,20 +238,25 @@ export async function buildQuotePdfBytes(
     lead.clientInstagram ? `Instagram: ${lead.clientInstagram}` : "",
   ].filter(Boolean), y, bold, regular, theme);
 
+  // A blank field is omitted rather than printed as "To be confirmed" — an
+  // estimate with a missing line reads as professional; a placeholder does not.
   y = drawSection(page, "Event Details", [
     `Event: ${lead.eventType}`,
-    `Date: ${lead.eventDate || "To be confirmed"}`,
-    `Time: ${lead.eventTime || "To be confirmed"}`,
-    `Location: ${lead.locationText || "To be confirmed"}`,
-  ], y - 12, bold, regular, theme);
+    lead.eventDate ? `Date: ${lead.eventDate}` : "",
+    lead.eventTime ? `Time: ${lead.eventTime}` : "",
+    lead.locationText ? `Location: ${lead.locationText}` : "",
+  ].filter(Boolean), y - 12, bold, regular, theme);
 
   y = drawPricingBlock(page, {
     heading: "Quote Summary",
     lines: [
       ...order.lines,
-      ...gstLines(quotedAmount, workspace.config.gstPercentage),
+      ...(range ? [] : gstLines(quotedAmount, workspace.config.gstPercentage)),
       ...extraLines,
-      ["Quoted Amount", inr(quotedAmount)],
+      range
+        ? (["Estimated Range", `${inr(range.low)} - ${inr(range.high)}`] as [string, string])
+        : (["Quoted Amount", inr(quotedAmount)] as [string, string]),
+      ...(range ? [["Final Amount", "Confirmed after consultation"] as [string, string]] : []),
       [`Advance To Confirm (${workspace.config.advancePercentage || 0}%)`, inr(advanceAmount)],
       ["Hold Expires", lead.holdExpiresAt ? formatDateTime(lead.holdExpiresAt) : "On request"],
     ],
@@ -277,11 +336,11 @@ export async function buildInvoicePdfBytes(
 
   y = drawSection(page, "Booking Details", [
     `Event: ${booking.eventType}`,
-    `Date: ${booking.eventDate || "To be confirmed"}`,
-    `Time: ${booking.eventTime || "To be confirmed"}`,
-    `Venue: ${booking.venue || "To be confirmed"}`,
-    `Assigned Artist: ${booking.assignedArtist || "To be assigned"}`,
-  ], y - 12, bold, regular, theme);
+    booking.eventDate ? `Date: ${booking.eventDate}` : "",
+    booking.eventTime ? `Time: ${booking.eventTime}` : "",
+    booking.venue ? `Venue: ${booking.venue}` : "",
+    booking.assignedArtist ? `Assigned Artist: ${booking.assignedArtist}` : "",
+  ].filter(Boolean), y - 12, bold, regular, theme);
 
   // Payment history: each recorded instalment appears on the invoice so the
   // client sees exactly what's been received and what remains — no confusion
@@ -349,7 +408,9 @@ export async function buildInvoicePdfBytes(
   return pdf.save();
 }
 
-// Produces the client-facing invoice link, served by the app (no Drive).
+// Produces the client-facing invoice link. Points to the branded invoice page
+// (/i/:wid/:bid) which embeds the PDF and shows a Pay Now button, giving
+// clients a much better experience than a bare PDF URL.
 export async function generateInvoiceDocument(
   workspace: WorkspaceRecord,
   _tokens: Credentials,
@@ -359,7 +420,7 @@ export async function generateInvoiceDocument(
   return {
     fileId: "",
     fileName: `${safeName(workspace.config.businessName || workspace.name)}-${invoiceNumber}.pdf`,
-    fileUrl: buildPublicDocumentUrl("invoice", workspace.workspaceId, booking.bookingId),
+    fileUrl: buildInvoicePageUrl(workspace.workspaceId, booking.bookingId),
   };
 }
 
@@ -398,11 +459,11 @@ export async function generateContractPdfBytes(
   y = drawSection(page, "Booking Details", [
     `Booking ID: ${booking.bookingId}`,
     `Event: ${booking.eventType}`,
-    `Date: ${booking.eventDate || "To be confirmed"}`,
-    `Time: ${booking.eventTime || "To be confirmed"}`,
-    `Venue: ${booking.venue || "To be confirmed"}`,
+    booking.eventDate ? `Date: ${booking.eventDate}` : "",
+    booking.eventTime ? `Time: ${booking.eventTime}` : "",
+    booking.venue ? `Venue: ${booking.venue}` : "",
     `Artist: ${booking.assignedArtist || workspace.config.ownerName}`,
-  ], y - 12, bold, regular, theme);
+  ].filter(Boolean), y - 12, bold, regular, theme);
 
   y = drawPricingBlock(page, {
     heading: "Commercial Terms",

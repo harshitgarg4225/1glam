@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import type { Credentials } from "google-auth-library";
+import { OAuth2Client } from "google-auth-library";
 import { appConfig, assertDeploymentConfig } from "./config.js";
 import { createLeadSchema, editLeadDetailsSchema, ownerDecisionSchema, paymentStatusSchema, publicBookingSchema, quickBookingSchema, recordPaymentSchema } from "./api-schema.js";
 import { askBusinessAssistant, buildAssistantSnapshot } from "./services/assistant.js";
@@ -21,20 +22,25 @@ import {
   completeBooking,
   confirmLeadBooking,
   createLeadForWorkspace,
+  deleteBookingPaymentEntry,
   findLatestLeadByActor,
   getBookingRecord,
   getLeadRecord,
   getDashboardData,
   getMonthlyRecap,
   importClients,
+  listActiveBookings,
   parsePaymentsLog,
+  paymentsTotal,
   recordBookingPayment,
   rescheduleBooking,
+  toggleLeadUrgency,
   updateBookingRecord,
   type BookingRecord,
   type LeadRecord,
   updateLeadRecord,
   updatePaymentStatus,
+  travelCostForDistance,
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
@@ -44,13 +50,14 @@ import {
   createRazorpayOrder,
   fetchOrderWithKeys,
   fetchRazorpayOrder,
+  createRefundWithKeys,
   razorpayConfigured,
   razorpayTestMode,
   verifyCheckoutSignature,
   verifyCheckoutSignatureWithSecret,
   verifyWebhookSignature,
 } from "./services/razorpay.js";
-import { CREDIT_PACKS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford } from "./services/wallet.js";
+import { CREDIT_PACKS, USAGE_COSTS, USAGE_LABELS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford, type UsageKind } from "./services/wallet.js";
 import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   buildImageMarker,
@@ -63,15 +70,22 @@ import {
   parseInstagramLeadSignalsFromMessage,
   parseWhatsAppLeadSignalsFromMessage,
 } from "./services/integrations.js";
-import { deactivateArtist, listArtists, upsertArtist } from "./services/team.js";
-import { createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, submitPaymentScreenshot } from "./services/public-booking.js";
+import { deactivateArtist, reactivateArtist, listArtists, upsertArtist } from "./services/team.js";
+import { buildAvailability, createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability, getPublicArtists } from "./services/public-booking.js";
+import { buildServicesContext, computeInsights } from "./services/insights.js";
 import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
-import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply } from "./services/gmb.js";
+import { resolveTravelIntelligence } from "./services/maps.js";
+import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply, listGmbPosts, createGmbPost, getReputationSummary } from "./services/gmb.js";
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
 import { DOCUMENT_THEME_LIST } from "./services/document-themes.js";
 import { loadConversationMemory, saveConversationMemory } from "./services/conversation-memory.js";
 import { loadClientNotes, saveClientNotes } from "./services/client-notes.js";
-import { addDeviceToken, addPushSubscription, pushConfigured, removeDeviceToken, removePushSubscription } from "./services/push.js";
+import { ensureSheetTab } from "./services/sheets-util.js";
+import { generatePromoCode, parsePromoCode, promoCodeToRow, promoCodeHeaders, validatePromo, type PromoCode } from "./services/promo-codes.js";
+import { parseClientPackage, clientPackageToRow, packageHeaders, remainingSessions, isRedeemable, type ClientPackage } from "./services/packages.js";
+import { parseClientPhoto, clientPhotoToRow, clientPhotoHeaders, type ClientPhoto } from "./services/client-photos.js";
+import { parseProduct, productToRow, productHeaders, isLowStock, parseProductSale, productSaleToRow, productSaleHeaders, type Product, type ProductSale } from "./services/inventory.js";
+import { addDeviceToken, addPushSubscription, pushConfigured, removeDeviceToken, removePushSubscription, sendPushToWorkspace } from "./services/push.js";
 import { fcmConfigured } from "./services/fcm.js";
 import { createMobileLoginToken, redeemMobileLoginToken } from "./services/mobile-auth.js";
 import {
@@ -104,8 +118,9 @@ import {
   generateContractPdfBytes,
   nextDocumentNumber,
   parseDocumentAdjustments,
+  parseQuotePackages,
 } from "./services/documents.js";
-import { buildPublicDocumentUrl, buildRescheduleUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken } from "./services/document-links.js";
+import { buildPublicDocumentUrl, buildRescheduleUrl, buildCancelUrl, isDocumentType, signDocumentToken, verifyDocumentToken, verifyRescheduleToken, verifyCancelToken } from "./services/document-links.js";
 import { estimateCampaignReach, getCampaignJob, rehydrateInterruptedCampaigns, startCampaignBroadcast, type CampaignSegment } from "./services/campaigns.js";
 import {
   checkLeegalityDocumentDetails,
@@ -114,6 +129,9 @@ import {
   verifyLeegalityWebhookRequest,
 } from "./services/contracts.js";
 import { sheetNames } from "./services/sheet-definitions.js";
+import { computeLoyaltyStatuses, loyaltyForPhone } from "./services/loyalty.js";
+import { generateGiftCode, parseGiftCard, giftCardToRow } from "./services/gift-cards.js";
+import { emailEnabled, sendEmail, wrapEmailHtml } from "./services/email.js";
 import { TtlCache } from "./services/cache.js";
 import type { MetaChannel, WorkspaceConfig, WorkspaceRecord } from "./types.js";
 import {
@@ -125,6 +143,7 @@ import {
   recoverSheet,
   setSheetProtection,
   uploadLogoImage,
+  uploadCoverImage,
   uploadPublicImage,
   upsertMetaConnection,
   updateWorkspaceConfig,
@@ -361,7 +380,7 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // /api/session is intentionally public: it reports authenticated:false for
 // logged-out visitors so the landing page can render without bouncing them (and
 // Google's OAuth-verification crawler) to a login screen.
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange"]);
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token"]);
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
@@ -430,7 +449,9 @@ function buildBookingMeta(
       ? profile.aboutText
       : "Check availability and request your booking date.";
   const desc = rawDesc.length > 200 ? `${rawDesc.slice(0, 197)}…` : rawDesc;
-  const image = profile?.portfolioImages?.[0] || "";
+  // Prefer the wide cover photo for social cards (it's designed to be the
+  // banner); fall back to the first portfolio image.
+  const image = profile?.coverImageUrl || profile?.portfolioImages?.[0] || "";
   return [
     `<title>${escapeAttr(title)}</title>`,
     `<meta name="description" content="${escapeAttr(desc)}" />`,
@@ -479,6 +500,53 @@ app.get("/api/public/:workspaceId/profile", async (req, res, next) => {
   }
 });
 
+// Live travel-fee estimate for the public booking page. Called when the client
+// types their venue so the sticky price bar can show "Incl. ₹X travel" before
+// they submit — no surprises in the quote. Returns 0 when travel isn't
+// configured or the venue string is too vague to geocode.
+app.get("/api/public/:workspaceId/travel", publicReadLimiter, async (req, res, next) => {
+  try {
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace) return res.json({ ok: true, travelFee: 0 });
+    const venue = String(req.query.venue ?? "").trim();
+    if (!venue || venue.length < 3) return res.json({ ok: true, travelFee: 0 });
+    const { config } = workspace;
+    const originCity = config.city || "";
+    if (!originCity) return res.json({ ok: true, travelFee: 0 });
+    const outstationThresholdKm = Number(config.travelOutstationThresholdKm) || 100;
+    const travel = await resolveTravelIntelligence({ originCity, destinationText: venue, outstationThresholdKm });
+    const travelFee = travelCostForDistance(config, travel.distanceKm);
+    res.json({ ok: true, travelFee, distanceKm: Math.round(travel.distanceKm) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Live time-slot availability for a date: each configured slot, marked taken
+// when an existing job (with its configured service duration) overlaps it.
+app.get("/api/public/:workspaceId/slots", async (req, res, next) => {
+  try {
+    const result = await getPublicSlotsForDate(
+      String(req.params.workspaceId),
+      String(req.query.date ?? ""),
+      String(req.query.eventType ?? ""),
+    );
+    if (!result) return res.status(404).json({ error: "Booking page not found" });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/public/:workspaceId/artists", publicReadLimiter, async (req, res, next) => {
+  try {
+    const artists = await getPublicArtists(String(req.params.workspaceId));
+    res.json({ ok: true, artists });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/public/:workspaceId/book", publicWriteLimiter, async (req, res, next) => {
   try {
     const parsed = publicBookingSchema.parse(req.body);
@@ -494,6 +562,12 @@ app.post("/api/public/:workspaceId/book", publicWriteLimiter, async (req, res, n
 
 app.get("/pay/:workspaceId/:leadId", (_req, res) => {
   res.sendFile(path.join(process.cwd(), "public", "pay.html"));
+});
+
+// Client appointment hub — unified page showing booking summary, payment status,
+// and links to pay / sign / reschedule / cancel.
+app.get("/appointment/:workspaceId/:leadId", (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "public", "appointment.html"));
 });
 
 // Built-in contract signing page (no Leegality needed). The link carries the
@@ -527,13 +601,20 @@ app.post("/api/public/:workspaceId/payment/:leadId/order", publicWriteLimiter, a
     if (!(amountInr > 0)) {
       return res.status(400).json({ error: "There's nothing due on this booking right now." });
     }
+    // Optional tip the client added on the pay page. Charge it on top of what's
+    // due and stamp it in the order notes so /verify can record it as a tip
+    // (separate from the service payment, so it never skews the balance).
+    const tipRaw = Number(req.body?.tipAmount);
+    const tipInr = details.tipsEnabled && Number.isFinite(tipRaw)
+      ? Math.max(0, Math.min(1000000, Math.round(tipRaw)))
+      : 0;
 
     const order = await createOrderWithKeys(
       { keyId: razorpayKeyId, keySecret: razorpayKeySecret },
       {
-        amountInr,
+        amountInr: amountInr + tipInr,
         receipt: leadId.slice(0, 40),
-        notes: { workspaceId, leadId, purpose: stage },
+        notes: { workspaceId, leadId, purpose: stage, tip: String(tipInr) },
       },
     );
     res.json({
@@ -588,19 +669,40 @@ app.post("/api/public/:workspaceId/payment/:leadId/verify", publicWriteLimiter, 
       lead.paymentStatus === "Paid in Full" ||
       (purpose === "advance" && lead.paymentStatus === "Advance Paid");
     if (!alreadyThere) {
-      const amountInr = Math.round(Number(order.amount) / 100);
+      const grossInr = Math.round(Number(order.amount) / 100);
+      const tipInr = Math.max(0, Math.round(Number(order.notes.tip) || 0));
+      const serviceInr = Math.max(0, grossInr - tipInr);
       // Prefer the per-booking ledger (keeps collected/outstanding exact);
       // fall back to the coarse status flip for leads without a booking row.
-      if (lead.bookingId && amountInr > 0) {
-        await recordBookingPayment(workspace.email, tokens, lead.bookingId, {
-          amount: amountInr,
+      if (lead.bookingId && serviceInr > 0) {
+        const paidBooking = await recordBookingPayment(workspace.email, tokens, lead.bookingId, {
+          amount: serviceInr,
           method: "Razorpay",
           note: `Online ${purpose} payment`,
+          ref: paymentId,
         }).catch(async () => {
           await updatePaymentStatus(workspace.email, tokens, leadId, targetStatus);
+          return null;
         });
+        // Same branded receipt (WhatsApp template + email) a manually-recorded
+        // payment gets — an online payer shouldn't be the only one left without
+        // a confirmation showing what's paid and what's still due.
+        if (paidBooking) {
+          sendPaymentReceipt(workspace, tokens, paidBooking, serviceInr).catch(() => undefined);
+        }
       } else {
         await updatePaymentStatus(workspace.email, tokens, leadId, targetStatus);
+      }
+      // Record the tip as its own ledger line so the artist sees it but the
+      // booking balance stays based purely on the service price.
+      if (lead.bookingId && tipInr > 0) {
+        await recordBookingPayment(workspace.email, tokens, lead.bookingId, {
+          amount: tipInr,
+          method: "Razorpay",
+          note: "Tip 💛",
+          type: "tip",
+          ref: paymentId,
+        }).catch(() => {});
       }
       await logInteractionForWorkspace(workspace.email, tokens, {
         leadId,
@@ -636,6 +738,7 @@ app.get("/api/public/contract/:workspaceId/:bookingId", async (req, res, next) =
       ok: true,
       businessName: workspace.config.businessName || workspace.name,
       clientName: booking.clientName,
+      leadId: booking.leadId || "",
       eventType: booking.eventType,
       eventDate: booking.eventDate,
       eventTime: booking.eventTime,
@@ -798,25 +901,13 @@ app.get("/auth/google/callback", async (req, res, next) => {
     await persistWorkspaceTokens(profile.email, tokens);
 
     if (req.query.state === "mobile") {
-      // Native-app flow: this page is open in the system browser, not the app's
-      // webview. Mint a single-use token and deep-link back into the app, which
-      // exchanges it for a session (POST /api/auth/mobile/exchange). The page
-      // body is a fallback for browsers that block automatic scheme redirects.
+      // Native-app flow: the callback runs inside a Chrome Custom Tab. Issue a
+      // 302 redirect to the busydays:// custom scheme so the OS routes it back
+      // to the app and the Custom Tab closes automatically. The webview's
+      // appUrlOpen listener (mobile-bridge.js) picks up the OTT and exchanges
+      // it for a real session via POST /api/auth/mobile/exchange.
       const ott = await createMobileLoginToken(profile.email);
-      const deepLink = `busydays://auth?ott=${encodeURIComponent(ott)}`;
-      res
-        .status(200)
-        .type("html")
-        .send(
-          `<!doctype html><html><head><meta charset="utf-8"><title>Signed in</title>` +
-            `<meta name="viewport" content="width=device-width, initial-scale=1">` +
-            `<style>body{font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:90vh;gap:16px;text-align:center;padding:24px}a{background:#111;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:600}</style>` +
-            `</head><body>` +
-            `<h2>✅ Signed in</h2><p>Returning you to the BusyDays app…</p>` +
-            `<a href="${deepLink}">Open BusyDays</a>` +
-            `<script>window.location.href=${JSON.stringify(deepLink)};</script>` +
-            `</body></html>`,
-        );
+      res.redirect(`busydays://auth?ott=${encodeURIComponent(ott)}`);
       return;
     }
 
@@ -847,6 +938,55 @@ app.post("/api/auth/mobile/exchange", publicWriteLimiter, async (req, res, next)
       req.session.googleTokens = await getWorkspaceCredentials(email);
     } catch {
       // Tokens restore lazily via the session-heal middleware on the next request.
+    }
+    await new Promise<void>((resolve, reject) =>
+      req.session.save((err) => (err ? reject(err) : resolve())),
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Native-app Google Sign-In (Android/iOS): the native plugin returns a Google
+// ID token which we verify server-side and convert to a session. This avoids
+// the system-browser OAuth flow for users who already have a workspace — they
+// get a native account-picker bottom sheet without leaving the app.
+// For first-time users (no workspace yet) we return requiresFullAuth:true and
+// the bridge falls back to Chrome Custom Tab OAuth (needed for Sheets scopes).
+app.post("/api/auth/google/id-token", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const idToken = String(req.body?.idToken ?? "");
+    if (!idToken) return res.status(400).json({ error: "idToken required" });
+    if (!appConfig.googleClientId) return res.status(503).json({ error: "Google Sign-In not configured" });
+
+    let email: string;
+    let name: string;
+    try {
+      const oauthClient = new OAuth2Client(appConfig.googleClientId);
+      const ticket = await oauthClient.verifyIdToken({ idToken, audience: appConfig.googleClientId });
+      const payload = ticket.getPayload();
+      if (!payload?.email) throw new Error("no email in token");
+      email = payload.email.toLowerCase();
+      name = payload.name ?? email;
+    } catch {
+      return res.status(401).json({ error: "Invalid or expired Google ID token" });
+    }
+
+    const workspace = await getWorkspaceByEmail(email);
+    if (!workspace) {
+      // New user — must go through full OAuth to provision Google Sheets/Calendar.
+      return res.json({ ok: false, requiresFullAuth: true });
+    }
+
+    await new Promise<void>((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve())),
+    );
+    req.session.profile = { email: workspace.email, name: workspace.name };
+    try {
+      req.session.googleTokens = await getWorkspaceCredentials(email);
+    } catch {
+      // Restored lazily on next Google API call.
     }
     await new Promise<void>((resolve, reject) =>
       req.session.save((err) => (err ? reject(err) : resolve())),
@@ -1042,6 +1182,26 @@ app.post("/api/workspace/config", async (req, res, next) => {
   }
 });
 
+// Live slug-availability check so the booking-page slug input gives instant
+// feedback before the artist saves — avoids the frustrating "name taken" error
+// only appearing on submit.
+app.get("/api/workspace/slug-check", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const raw = String(req.query.slug ?? "");
+    const slug = normalizeSlug(raw);
+    if (!slug) return res.json({ ok: true, available: false, reason: "invalid" });
+    if (RESERVED_SLUGS.has(slug)) return res.json({ ok: true, available: false, reason: "reserved" });
+    const all = await listWorkspaces();
+    const taken = all.some(
+      (w) => w.email !== req.session.profile!.email && normalizeSlug(w.config?.bookingSlug || "") === slug,
+    );
+    res.json({ ok: true, available: !taken });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Chat image upload: returns a public URL to attach to a client reply.
 app.post(
   "/api/uploads/chat-image",
@@ -1135,6 +1295,36 @@ app.post(
   },
 );
 
+// Cover photo upload: same Drive-backed flow, saved to coverImageUrl.
+app.post(
+  "/api/workspace/cover/upload",
+  (req, res, next) => {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
+  async (req, res, next) => {
+    try {
+      if (!req.session.profile || !req.session.googleTokens) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      const result = await uploadCoverImage(req.session.profile.email, req.session.googleTokens, {
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 app.post(
   "/api/workspace/portfolio/upload",
   (req, res, next) => {
@@ -1163,6 +1353,46 @@ app.post(
     }
   },
 );
+
+// ---- Custom domain ----
+app.post("/api/workspace/custom-domain", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const domain = typeof req.body?.domain === "string" ? req.body.domain.trim().toLowerCase() : "";
+    if (!domain) return res.status(400).json({ error: "Domain is required" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    workspace.config = { ...workspace.config, customDomain: domain };
+    workspace.updatedAt = new Date().toISOString();
+    await saveWorkspace(workspace);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/workspace/custom-domain/verify", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const domain = typeof req.query.domain === "string" ? req.query.domain.trim() : "";
+    if (!domain) return res.status(400).json({ error: "Domain required" });
+    // Simple DNS verification: try to resolve the domain and check it points to us
+    const dns = await import("node:dns/promises");
+    try {
+      const records = await dns.resolveCname(domain);
+      const live = records.some((r) => r.includes("busydays"));
+      res.json({ ok: true, live, records });
+    } catch {
+      res.json({ ok: true, live: false });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
 
 // ---- Google Business Profile (reviews) setup ----
 // Finds the artist's business on Google so we can generate their direct
@@ -1397,6 +1627,62 @@ app.post("/api/gmb/post-reply", async (req, res, next) => {
   }
 });
 
+// Reputation summary: aggregate rating, total reviews, unanswered count and response rate.
+// Returns data from GMB API when available; falls back to cached Places rating.
+app.get("/api/gmb/reputation", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const summary = await getReputationSummary(workspace, req.session.googleTokens);
+    res.json({ ok: true, summary });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Lists recent GMB Posts (updates/offers/events). Auto mode only.
+app.get("/api/gmb/posts", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const result = await listGmbPosts(workspace, req.session.googleTokens);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Creates a new GMB Post (update, offer, or event). Auto mode only.
+app.post("/api/gmb/post", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const summary = typeof req.body?.summary === "string" ? req.body.summary.trim() : "";
+    if (summary.length < 10) {
+      return res.status(400).json({ error: "Write at least a sentence for the post." });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const result = await createGmbPost(workspace, req.session.googleTokens, {
+      summary,
+      topicType: req.body?.topicType || "STANDARD",
+      callToActionType: req.body?.callToActionType,
+      callToActionUrl: req.body?.callToActionUrl,
+    });
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ---- AI voice training ----
 // Learns the owner's writing tone from sample messages they select/paste (e.g.
 // 10 past client replies), distils a reusable style guide, and saves both the
@@ -1469,7 +1755,7 @@ app.post("/api/ai/preview-tone", async (req, res, next) => {
       language: workspace.config.aiLanguage,
       signOff: workspace.config.aiSignOff,
       toneProfile: workspace.config.aiToneProfile,
-      servicesContext: workspace.config.aiServicesContext,
+      servicesContext: buildServicesContext(workspace.config),
       personaName: workspace.config.aiPersonaName,
     });
 
@@ -1496,6 +1782,11 @@ app.get("/api/wallet", async (req, res, next) => {
       lowBalance: isLowBalance(wallet.balanceCredits),
       ledger: wallet.ledger.slice(0, 50),
       packs: CREDIT_PACKS,
+      // What each automated action costs, so the artist can see where credits go
+      // instead of running out without warning.
+      costs: (Object.keys(USAGE_COSTS) as UsageKind[]).map((k) => ({
+        label: USAGE_LABELS[k], credits: USAGE_COSTS[k],
+      })),
       configured: razorpayConfigured(),
       testMode: razorpayTestMode(),
       enforced: appConfig.billingEnforced,
@@ -1745,6 +2036,7 @@ app.post("/api/team", async (req, res, next) => {
       luxuryEligible: req.body.luxuryEligible,
       primaryCalendarId: req.body.primaryCalendarId,
       active: req.body.active,
+      bio: typeof req.body.bio === "string" ? req.body.bio : undefined,
     });
     res.json({ ok: true, artist });
   } catch (error) {
@@ -1758,6 +2050,22 @@ app.post("/api/team/:artistId/deactivate", async (req, res, next) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
     const artist = await deactivateArtist(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.artistId,
+    );
+    res.json({ ok: true, artist });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/team/:artistId/reactivate", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const artist = await reactivateArtist(
       req.session.profile.email,
       req.session.googleTokens,
       req.params.artistId,
@@ -1791,6 +2099,24 @@ app.post("/api/leads/:leadId/assign", async (req, res, next) => {
       req.session.googleTokens,
       req.params.leadId,
       (current) => ({ ...current, assignedArtist }),
+    );
+    res.json({ ok: true, lead: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Toggle the urgency flag on a lead (Urgent ↔ normal) — lets the owner star
+// high-priority enquiries so they don't get buried in a long pipeline.
+app.post("/api/leads/:leadId/flag", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const updated = await toggleLeadUrgency(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
     );
     res.json({ ok: true, lead: updated });
   } catch (error) {
@@ -1836,6 +2162,7 @@ app.post("/api/leads/:leadId/decision", async (req, res, next) => {
       parsed.decision,
       parsed.approvedPrice,
       parsed.ownerNotes,
+      parsed.lostReason,
     );
 
     res.json({ ok: true, ...result });
@@ -1951,7 +2278,12 @@ app.post("/api/bookings/:bookingId/reschedule", async (req, res, next) => {
       req.params.bookingId,
       { eventDate, eventTime, venue },
     );
-    res.json({ ok: true, booking });
+    // Auto-tell the client the new details instead of leaving it to the artist.
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const notified = workspace
+      ? await notifyClientOfReschedule(req.session.profile.email, req.session.googleTokens, workspace, booking)
+      : false;
+    res.json({ ok: true, booking, notified });
   } catch (error) {
     next(error);
   }
@@ -2002,6 +2334,7 @@ app.post("/api/leads/:leadId/details", async (req, res, next) => {
       clientTags: parsed.clientTags ?? lead.clientTags,
     }));
 
+    let notified = false;
     if (before.bookingId) {
       const scheduleChanged =
         (parsed.eventDate && parsed.eventDate !== before.eventDate) ||
@@ -2010,11 +2343,16 @@ app.post("/api/leads/:leadId/details", async (req, res, next) => {
       if (scheduleChanged) {
         // Reads the just-updated lead, so the recreated calendar event carries
         // the new venue/time even when only one of them changed.
-        await rescheduleBooking(email, tokens, before.bookingId, {
+        const movedBooking = await rescheduleBooking(email, tokens, before.bookingId, {
           eventDate: updated.eventDate,
           eventTime: updated.eventTime,
           venue: updated.locationText,
-        }).catch(() => {});
+        }).catch(() => null);
+        // A date/venue edit is a reschedule from the client's side — notify them.
+        if (movedBooking) {
+          const ws = await getWorkspaceByEmail(email);
+          if (ws) notified = await notifyClientOfReschedule(email, tokens, ws, movedBooking).catch(() => false);
+        }
       }
       if ((parsed.clientName && parsed.clientName !== before.clientName) ||
           (parsed.clientWhatsApp && parsed.clientWhatsApp !== before.clientWhatsApp)) {
@@ -2026,7 +2364,7 @@ app.post("/api/leads/:leadId/details", async (req, res, next) => {
       }
     }
 
-    res.json({ ok: true, lead: updated });
+    res.json({ ok: true, lead: updated, notified });
   } catch (error) {
     next(error);
   }
@@ -2043,7 +2381,38 @@ app.post("/api/bookings/:bookingId/cancel", async (req, res, next) => {
       req.session.googleTokens,
       req.params.bookingId,
     );
-    res.json({ ok: true, booking });
+
+    // A cancellation frees the date — if anyone is waitlisted for it, surface
+    // them immediately (in the response for the UI, and as a push so she sees
+    // it even if she cancelled from elsewhere). Best-effort: a hiccup here
+    // never undoes the cancellation.
+    let waitlistCandidates: { leadId: string; clientName: string; eventType: string }[] = [];
+    try {
+      const workspace = await getWorkspaceByEmail(req.session.profile.email);
+      if (workspace && booking.eventDate) {
+        const { leads } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+        waitlistCandidates = leads
+          .filter(
+            (lead) =>
+              lead.source === "Waitlist" &&
+              lead.eventDate === booking.eventDate &&
+              !["Lost", "Completed"].includes(lead.status),
+          )
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          .map((lead) => ({ leadId: lead.leadId, clientName: lead.clientName, eventType: lead.eventType }));
+        if (waitlistCandidates.length) {
+          await sendPushToWorkspace(workspace, {
+            title: `A slot opened on ${booking.eventDate}`,
+            body: `${waitlistCandidates[0].clientName || "A client"} is waiting for this date${waitlistCandidates.length > 1 ? ` (+${waitlistCandidates.length - 1} more)` : ""}. Offer them the slot?`,
+            url: "/",
+          });
+        }
+      }
+    } catch {
+      // Waitlist surfacing is best-effort.
+    }
+
+    res.json({ ok: true, booking, waitlistCandidates });
   } catch (error) {
     next(error);
   }
@@ -2113,7 +2482,7 @@ app.post("/api/leads/:leadId/draft-followup", async (req, res, next) => {
       language: workspace.config.aiLanguage,
       signOff: workspace.config.aiSignOff,
       toneProfile: workspace.config.aiToneProfile,
-      servicesContext: workspace.config.aiServicesContext,
+      servicesContext: buildServicesContext(workspace.config),
       personaName: workspace.config.aiPersonaName,
     });
 
@@ -2162,11 +2531,39 @@ app.post("/api/bookings/:bookingId/payments", async (req, res, next) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
     const parsed = recordPaymentSchema.parse(req.body);
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
     const booking = await recordBookingPayment(
       req.session.profile.email,
       req.session.googleTokens,
       req.params.bookingId,
       parsed,
+    );
+    // Fire-and-forget: send payment receipt to the client on WhatsApp and email.
+    if (workspace && parsed.type !== "refund") {
+      sendPaymentReceipt(workspace, req.session.googleTokens, booking, parsed.amount).catch(() => undefined);
+    }
+    res.json({ ok: true, booking });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Removes a mis-entered payment line. The index matches the modal's display
+// order, which the client converts back to the stored (chronological) position.
+app.delete("/api/bookings/:bookingId/payments/:index", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) {
+      return res.status(400).json({ error: "Invalid payment entry." });
+    }
+    const booking = await deleteBookingPaymentEntry(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      index,
     );
     res.json({ ok: true, booking });
   } catch (error) {
@@ -2174,10 +2571,112 @@ app.post("/api/bookings/:bookingId/payments", async (req, res, next) => {
   }
 });
 
+// Refund an online (Razorpay) payment entry back to the client's card/UPI.
+// Targets a ledger entry by index; the entry must carry a gateway ref. Records
+// the refund as a ledger line so the balance reopens correctly.
+app.post("/api/bookings/:bookingId/payments/:index/refund", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) {
+      return res.status(400).json({ error: "Invalid payment entry." });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { razorpayKeyId, razorpayKeySecret } = workspace.config;
+    if (!razorpayKeyId || !razorpayKeySecret) {
+      return res.status(400).json({ error: "Online payments aren't set up, so this can't be auto-refunded. Record a manual refund instead." });
+    }
+    const booking = await getBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    const ledger = parsePaymentsLog(booking.paymentsLog);
+    const entry = ledger[index];
+    if (!entry) return res.status(404).json({ error: "That payment entry no longer exists — refresh and try again." });
+    if (entry.kind === "refund") return res.status(400).json({ error: "That entry is already a refund." });
+    if (!entry.ref) return res.status(400).json({ error: "This entry has no online payment reference, so it can't be auto-refunded. Record a manual refund instead." });
+
+    // Optional partial amount; defaults to the full entry amount.
+    const requested = Number(req.body?.amount);
+    const amountInr = Number.isFinite(requested) && requested > 0
+      ? Math.min(Math.round(requested), entry.amount)
+      : entry.amount;
+
+    const refund = await createRefundWithKeys(
+      { keyId: razorpayKeyId, keySecret: razorpayKeySecret },
+      entry.ref,
+      amountInr,
+    );
+
+    const updated = await recordBookingPayment(req.session.profile.email, req.session.googleTokens, req.params.bookingId, {
+      amount: amountInr,
+      method: "Razorpay",
+      note: `Refund of ${entry.kind === "tip" ? "tip" : "payment"} (${refund.id})`,
+      type: "refund",
+      ref: refund.id,
+    });
+    res.json({ ok: true, booking: updated, refundId: refund.id, amount: amountInr, status: refund.status });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sends a payment receipt to the client via WhatsApp template (if configured)
+// and email (if SMTP is set up). Fire-and-forget from the payments endpoint.
+async function sendPaymentReceipt(
+  workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>,
+  tokens: Credentials,
+  booking: BookingRecord,
+  paidAmount: number,
+) {
+  const templateName = String(workspace.config.receiptTemplate || "").trim();
+  const clientPhone = String(booking.clientWhatsApp || "").replace(/[^\d]/g, "");
+  if (templateName && clientPhone) {
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    try {
+      await sendWhatsAppTemplate(
+        { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+        clientPhone,
+        templateName,
+        String(workspace.config.receiptTemplateLang || "en"),
+        [booking.clientName, `Rs. ${Math.round(paidAmount).toLocaleString("en-IN")}`, booking.eventType, booking.eventDate],
+      );
+    } catch (err) {
+      logger.warn("Payment receipt WhatsApp send failed", { err: String(err), bookingId: booking.bookingId });
+    }
+  }
+  if (emailEnabled(workspace.config) && booking.clientWhatsApp) {
+    try {
+      const payments = parsePaymentsLog(booking.paymentsLog);
+      const totalPaid = paymentsTotal(payments);
+      await sendEmail(workspace.config, {
+        to: String(workspace.config.smtpFrom || workspace.config.smtpUser),
+        subject: `Payment received: ${booking.clientName} — ${booking.eventType}`,
+        html: wrapEmailHtml(
+          workspace.config,
+          `<h2>Payment Received</h2>
+           <p>Hi ${esc(booking.clientName)},</p>
+           <p>We've received your payment of <strong>Rs. ${Math.round(paidAmount).toLocaleString("en-IN")}</strong> for your ${esc(booking.eventType)} booking on ${esc(booking.eventDate)}.</p>
+           <p>Total received so far: <strong>Rs. ${Math.round(totalPaid).toLocaleString("en-IN")}</strong> of Rs. ${Math.round(booking.finalPrice).toLocaleString("en-IN")}.</p>
+           <p>Balance due: <strong>Rs. ${Math.round(Math.max(0, booking.balanceDue)).toLocaleString("en-IN")}</strong></p>
+           <p>Thank you — ${esc(workspace.config.businessName || workspace.config.ownerName)}</p>`,
+        ),
+      });
+    } catch (err) {
+      logger.warn("Payment receipt email failed", { err: String(err), bookingId: booking.bookingId });
+    }
+  }
+}
+
+function esc(v: string) {
+  return String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // ---- Push notifications (web push for PWA, FCM for the native app) ----
 app.get("/api/push/config", (req, res) => {
   if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
-  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured() });
+  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured(), googleClientId: appConfig.googleClientId || null });
 });
 
 app.post("/api/push/subscribe", async (req, res, next) => {
@@ -2247,7 +2746,9 @@ const WHATSAPP_TEMPLATE_PACK: Array<{ configKey: keyof WorkspaceConfig; langKey:
   { configKey: "reminderTemplate", langKey: "reminderTemplateLang", name: "busydays_event_reminder", body: "Hi {{1}}, a quick reminder about your booking on {{2}} at {{3}}. We're looking forward to it!", examples: ["Priya", "2026-11-21", "10:00"] },
   { configKey: "collectionTemplate", langKey: "collectionTemplateLang", name: "busydays_payment_reminder", body: "Hi {{1}}, a gentle reminder: your {{2}} payment of Rs {{3}} for the booking on {{4}} is pending. Thank you!", examples: ["Priya", "advance", "5000", "2026-11-21"] },
   { configKey: "reviewTemplate", langKey: "reviewTemplateLang", name: "busydays_review_request", body: "Hi {{1}}, thank you for choosing {{2}}! If you loved your look, it would mean the world if you left us a quick review: {{3}}", examples: ["Priya", "Glow by Aisha", "https://g.page/review"] },
+  { configKey: "rebookTemplate", langKey: "rebookTemplateLang", name: "busydays_rebook_nudge", body: "Hi {{1}}, it's been a while since your last visit to {{2}} — we'd love to see you again! Reply here to book your next look. 💕", examples: ["Priya", "Glow by Aisha"] },
   { configKey: "ownerAlertTemplate", langKey: "ownerAlertTemplateLang", name: "busydays_owner_alert", body: "BusyDays update: {{1}} — {{2}} on {{3}}.", examples: ["New request from Priya", "Bridal Makeup", "2026-11-21"] },
+  { configKey: "waitlistOfferTemplate", langKey: "waitlistOfferTemplateLang", name: "busydays_waitlist_offer", body: "Hi {{1}}, good news — a slot just opened up on {{2}} for {{3}}! Reply here to claim it before it's gone.", examples: ["Priya", "2026-11-21", "Bridal Makeup"] },
 ];
 
 app.post("/api/channels/whatsapp/templates/setup", async (req, res, next) => {
@@ -2322,6 +2823,59 @@ app.post("/api/clients/:phone/notes", async (req, res, next) => {
       birthday: typeof req.body?.birthday === "string" ? req.body.birthday : "",
     });
     res.json({ ok: true, ...saved });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Unified client profile — aggregates all data we have on a single client by phone.
+// Returns: basic info, all their leads + bookings, total revenue, loyalty status,
+// and saved notes. Powers the "Client profile" drawer in the dashboard.
+app.get("/api/clients/:phone/profile", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+    if (!phone) return res.status(400).json({ error: "Invalid phone" });
+
+    const [{ leads, bookings }, notes] = await Promise.all([
+      getDashboardData(req.session.profile.email, req.session.googleTokens),
+      loadClientNotes(workspace.workspaceId, phone),
+    ]);
+
+    const clientLeads = leads.filter((l) => l.clientWhatsApp?.replace(/\D/g, "") === phone);
+    const clientBookings = bookings.filter((b) => b.clientWhatsApp?.replace(/\D/g, "") === phone);
+
+    const totalRevenue = clientBookings
+      .filter((b) => b.status === "Confirmed" || b.status === "Completed")
+      .reduce((s, b) => s + (b.finalPrice || 0), 0);
+
+    const loyalty = loyaltyForPhone(workspace.config, bookings, phone);
+
+    const clientName = clientBookings[0]?.clientName || clientLeads[0]?.clientName || "Client";
+    const clientInstagram = clientLeads[0]?.clientInstagram || "";
+    const firstBookingDate = [...clientLeads.map((l) => l.createdAt), ...clientBookings.map((b) => b.bookedAt)]
+      .sort()[0] || "";
+
+    res.json({
+      ok: true,
+      phone,
+      clientName,
+      clientInstagram,
+      firstSeenAt: firstBookingDate,
+      totalLeads: clientLeads.length,
+      totalBookings: clientBookings.length,
+      totalRevenue,
+      leads: clientLeads.slice(0, 20),
+      bookings: clientBookings.slice(0, 20),
+      loyalty,
+      notes: notes.notes || "",
+      birthday: notes.birthday || "",
+      tags: clientLeads[0]?.clientTags || "",
+    });
   } catch (error) {
     next(error);
   }
@@ -2712,20 +3266,23 @@ app.get("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next)
       brandColor: workspace.config.brandColor || "#C26B45",
       booking: {
         bookingId: booking.bookingId,
+        leadId: booking.leadId || "",
         clientName: booking.clientName,
         eventType: booking.eventType,
         eventDate: booking.eventDate,
         eventTime: booking.eventTime,
         venue: booking.venue,
       },
+      availability: buildAvailability(workspace.config),
     });
   } catch (error) { next(error); }
 });
 
 // Client submits their chosen new date on the reschedule page.
-app.post("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next) => {
+app.post("/api/public/:workspaceId/reschedule/:bookingId", publicWriteLimiter, async (req, res, next) => {
   try {
-    const { workspaceId, bookingId } = req.params;
+    const workspaceId = String(req.params.workspaceId);
+    const bookingId = String(req.params.bookingId);
     const { sig, exp } = req.query as { sig?: string; exp?: string };
     if (!verifyRescheduleToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
       return res.status(410).json({ error: "Link expired" });
@@ -2741,8 +3298,173 @@ app.post("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next
     const tokens = await getWorkspaceCredentials(workspace.email);
     if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
 
+    // Guard the new date against the same availability rules the booking page
+    // enforces — previously the reschedule flow accepted any future date,
+    // letting clients land on blocked, off, or already-full days.
+    const existing = await getBookingRecord(workspace.email, tokens, bookingId);
+    if (!existing) return res.status(404).json({ error: "Booking not found" });
+    const check = await checkPublicAvailability(workspaceId, existing.eventType, eventDate, eventTime);
+    if (!check.ok) return res.status(409).json({ error: check.error });
+
     await rescheduleBooking(workspace.email, tokens, bookingId, { eventDate, eventTime });
     res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
+// ── Client self-service cancellation ─────────────────────────────────────────
+
+// Today's date in the studio's operating zone (IST), as "YYYY-MM-DD". Anchoring
+// to IST rather than UTC matters: for the last 5.5h of an IST day a UTC "today"
+// is already tomorrow, which would flip cancellation-fee windows and overdue
+// tags a day early for everyone in India. en-CA formats as ISO YYYY-MM-DD.
+function istToday(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+// Days between today and the event (date-only, IST-anchored), floored at 0.
+function daysUntilEvent(eventDate: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return Number.POSITIVE_INFINITY;
+  const today = new Date(istToday() + "T00:00:00Z").getTime();
+  const event = new Date(eventDate + "T00:00:00Z").getTime();
+  return Math.max(0, Math.round((event - today) / 86_400_000));
+}
+
+// The cancellation fee this booking would incur right now: a percentage of the
+// price, but only when cancelling inside the late-cancellation window.
+function cancellationFeeFor(config: WorkspaceConfig, finalPrice: number, eventDate: string) {
+  const windowDays = Math.max(0, Number(config.cancellationWindowDays) || 0);
+  const feePercent = Math.max(0, Math.min(100, Number(config.cancellationFeePercent) || 0));
+  const days = daysUntilEvent(eventDate);
+  const withinWindow = days <= windowDays;
+  const feeAmount = withinWindow ? Math.round((Number(finalPrice) || 0) * feePercent / 100) : 0;
+  return { windowDays, feePercent, daysUntil: days, withinWindow, feeAmount };
+}
+
+app.post("/api/bookings/:bookingId/cancel-link", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const booking = await getBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    const url = buildCancelUrl(workspace.workspaceId, req.params.bookingId);
+
+    if (req.body?.send && booking.clientWhatsApp) {
+      const phone = String(booking.clientWhatsApp).replace(/\D/g, "");
+      const connection = workspace.metaConnections?.whatsapp;
+      const accessToken = connection?.accessToken || appConfig.waAccessToken;
+      const phoneNumberId = connection?.phoneNumberId || appConfig.waPhoneNumberId;
+      if (accessToken && phoneNumberId) {
+        const msg = `Hi ${booking.clientName} 🙏\n\nNeed to cancel your ${booking.eventType} booking? You can do it here:\n${url}\n\n— ${workspace.config.businessName || workspace.config.ownerName}`;
+        const waUrl = `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`;
+        await fetch(waUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: msg } }),
+        }).catch(() => null);
+      }
+    }
+    res.json({ ok: true, url });
+  } catch (error) { next(error); }
+});
+
+// Public cancel page (token-gated).
+app.get("/cancel/:workspaceId/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyCancelToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).send("<html><body style='font-family:sans-serif;padding:40px;max-width:480px;margin:auto'><h2>Link expired</h2><p>This cancellation link has expired or is invalid. Please contact the studio directly.</p></body></html>");
+    }
+    const path = await import("node:path");
+    res.sendFile(path.join(process.cwd(), "public", "cancel.html"));
+  } catch (error) { next(error); }
+});
+
+// Details for the cancel page: booking summary + what cancelling now would cost.
+app.get("/api/public/:workspaceId/cancel/:bookingId", async (req, res, next) => {
+  try {
+    const { workspaceId, bookingId } = req.params;
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyCancelToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).json({ error: "Link expired" });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
+    const booking = await getBookingRecord(workspace.email, tokens, bookingId);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+    const alreadyCancelled = booking.status === "Cancelled";
+    const paid = paymentsTotal(parsePaymentsLog(booking.paymentsLog));
+    const fee = cancellationFeeFor(workspace.config, booking.finalPrice, booking.eventDate);
+    res.json({
+      ok: true,
+      businessName: workspace.config.businessName || workspace.config.ownerName,
+      brandColor: workspace.config.brandColor || "#C26B45",
+      alreadyCancelled,
+      cancellationPolicy: workspace.config.cancellationPolicy || "",
+      booking: {
+        clientName: booking.clientName,
+        leadId: booking.leadId || "",
+        eventType: booking.eventType,
+        eventDate: booking.eventDate,
+        eventTime: booking.eventTime,
+        venue: booking.venue,
+        finalPrice: booking.finalPrice,
+      },
+      paidSoFar: paid,
+      ...fee,
+    });
+  } catch (error) { next(error); }
+});
+
+// Client confirms the cancellation.
+app.post("/api/public/:workspaceId/cancel/:bookingId", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const bookingId = String(req.params.bookingId ?? "");
+    const { sig, exp } = req.query as { sig?: string; exp?: string };
+    if (!verifyCancelToken(workspaceId, bookingId, exp ?? "", sig ?? "")) {
+      return res.status(410).json({ error: "Link expired" });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+    const tokens = await getWorkspaceCredentials(workspace.email);
+    if (!tokens) return res.status(503).json({ error: "Service temporarily unavailable" });
+
+    const existing = await getBookingRecord(workspace.email, tokens, bookingId);
+    if (!existing) return res.status(404).json({ error: "Booking not found" });
+    const fee = cancellationFeeFor(workspace.config, existing.finalPrice, existing.eventDate);
+
+    if (existing.status !== "Cancelled") {
+      await cancelBooking(workspace.email, tokens, bookingId);
+      // Log who cancelled, and flag the fee so the artist can follow up.
+      await logInteractionForWorkspace(workspace.email, tokens, {
+        leadId: existing.leadId || bookingId,
+        direction: "Inbound",
+        channel: "WhatsApp",
+        actor: existing.clientWhatsApp || bookingId,
+        message: `Client cancelled their ${existing.eventType} on ${existing.eventDate} via the cancellation link.${fee.feeAmount > 0 ? ` Late-cancellation fee applies: ₹${fee.feeAmount} (${fee.feePercent}%).` : ""}`,
+        aiSummary: "Client self-cancelled the booking",
+      }).catch(() => {});
+      // A freed date may have waiting clients — nudge the artist.
+      try {
+        const { leads } = await getDashboardData(workspace.email, tokens);
+        const waiting = leads.filter(
+          (lead) => lead.source === "Waitlist" && lead.eventDate === existing.eventDate && !["Lost", "Completed"].includes(lead.status),
+        );
+        if (waiting.length) {
+          await sendPushToWorkspace(workspace, {
+            title: `A slot opened on ${existing.eventDate}`,
+            body: `${waiting[0].clientName || "A client"} is waiting for this date${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}. Offer them the slot?`,
+            url: "/",
+          });
+        }
+      } catch { /* best-effort */ }
+    }
+    res.json({ ok: true, feeAmount: fee.feeAmount, feePercent: fee.feePercent, withinWindow: fee.withinWindow });
   } catch (error) { next(error); }
 });
 
@@ -2918,6 +3640,10 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
 
     booking = await ensureInvoiceNumber(req.session.profile.email, req.session.googleTokens, booking);
     const invoice = await generateInvoiceDocument(workspace, req.session.googleTokens, booking);
+    const dueDays = Number(workspace.config.invoiceDueDays) || 0;
+    const invoiceDueDate = booking.invoiceDueDate || (dueDays > 0
+      ? new Date(Date.now() + dueDays * 86400000).toISOString().slice(0, 10)
+      : "");
     const updatedBooking = await updateBookingRecord(
       req.session.profile.email,
       req.session.googleTokens,
@@ -2926,10 +3652,31 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
         ...current,
         invoiceUrl: invoice.fileUrl,
         invoiceGeneratedAt: new Date().toISOString(),
+        invoiceDueDate: current.invoiceDueDate || invoiceDueDate,
       }),
     );
 
     res.json({ ok: true, booking: updatedBooking, invoice });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Set or update the invoice due date independently of regenerating the invoice.
+app.post("/api/bookings/:bookingId/due-date", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const dueDate = String(req.body?.dueDate ?? "").trim();
+    if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      return res.status(400).json({ error: "dueDate must be YYYY-MM-DD" });
+    }
+    const updated = await updateBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      (current) => ({ ...current, invoiceDueDate: dueDate }),
+    );
+    res.json({ ok: true, booking: updated });
   } catch (error) {
     next(error);
   }
@@ -3015,6 +3762,22 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
       messagePreview: message,
       status: "Sent",
     });
+
+    // Also send via email when SMTP is configured — client gets both channels.
+    if (emailEnabled(workspace.config)) {
+      sendEmail(workspace.config, {
+        to: String(lead.clientInstagram || lead.clientWhatsApp || ""),
+        subject: `Your invoice from ${workspace.config.businessName || workspace.config.ownerName} — ${currentBooking.invoiceNumber || ""}`,
+        html: wrapEmailHtml(workspace.config, `
+          <h2>Your Invoice</h2>
+          <p>Hi ${esc(currentBooking.clientName)},</p>
+          <p>Please find your invoice for your <strong>${esc(currentBooking.eventType)}</strong> booking on <strong>${esc(currentBooking.eventDate)}</strong>.</p>
+          <p style="margin:16px 0;"><a href="${esc(currentBooking.invoiceUrl || "")}" style="background:${workspace.config.brandColor || "#C26B45"};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">View & Pay Invoice</a></p>
+          <p>Amount due: <strong>Rs. ${Math.round(currentBooking.balanceDue).toLocaleString("en-IN")}</strong></p>
+          <p>Thank you — ${esc(workspace.config.businessName || workspace.config.ownerName)}</p>
+        `),
+      }).catch(() => undefined);
+    }
 
     res.json({ ok: true, booking: currentBooking });
   } catch (error) {
@@ -3124,6 +3887,8 @@ function sanitizeAdjustmentsInput(body: unknown): string {
     lineItems?: unknown;
     note?: unknown;
     discountPercent?: unknown;
+    priceRangeLow?: unknown;
+    priceRangeHigh?: unknown;
   };
   const lineItems = Array.isArray(input.lineItems)
     ? input.lineItems
@@ -3136,6 +3901,10 @@ function sanitizeAdjustmentsInput(body: unknown): string {
     : [];
   const amountOverrideRaw = Number(input.amountOverride);
   const discountRaw = Number(input.discountPercent);
+  const rangeLowRaw = Number(input.priceRangeLow);
+  const rangeHighRaw = Number(input.priceRangeHigh);
+  const hasRange =
+    Number.isFinite(rangeLowRaw) && Number.isFinite(rangeHighRaw) && rangeLowRaw > 0 && rangeHighRaw > rangeLowRaw;
   const adjustments = {
     amountOverride: Number.isFinite(amountOverrideRaw) && amountOverrideRaw > 0 ? amountOverrideRaw : undefined,
     lineItems: lineItems.length ? lineItems : undefined,
@@ -3144,9 +3913,18 @@ function sanitizeAdjustmentsInput(body: unknown): string {
       Number.isFinite(discountRaw) && discountRaw > 0 && discountRaw < 100
         ? Math.round(discountRaw * 100) / 100
         : undefined,
+    // Range estimate ("Rs 12,000 – 15,000"); only stored as a valid pair.
+    priceRangeLow: hasRange ? Math.round(rangeLowRaw) : undefined,
+    priceRangeHigh: hasRange ? Math.round(rangeHighRaw) : undefined,
   };
   // Empty edit clears the adjustments entirely.
-  if (!adjustments.amountOverride && !adjustments.lineItems && !adjustments.note && !adjustments.discountPercent) return "";
+  if (
+    !adjustments.amountOverride &&
+    !adjustments.lineItems &&
+    !adjustments.note &&
+    !adjustments.discountPercent &&
+    !adjustments.priceRangeLow
+  ) return "";
   return JSON.stringify(adjustments);
 }
 
@@ -3532,6 +4310,18 @@ app.get("/q/:workspaceId/:leadId", async (req, res, next) => {
     const accepted = Boolean(lead.quoteAcceptedAt);
     const voided = Boolean(lead.quoteVoidedAt);
     const amount = lead.finalApprovedPrice || lead.initialAiPrice;
+    // Range-mode quotes show the estimate band, not a single number.
+    const quoteAdj = parseDocumentAdjustments(lead.quoteAdjustments);
+    const amountLabel =
+      quoteAdj.priceRangeLow && quoteAdj.priceRangeHigh
+        ? `₹${Math.round(quoteAdj.priceRangeLow).toLocaleString("en-IN")} – ₹${Math.round(quoteAdj.priceRangeHigh).toLocaleString("en-IN")}`
+        : `₹${Math.round(quoteAdj.amountOverride || amount).toLocaleString("en-IN")}`;
+
+    // Link to the pay.html page for deposit capture — only shown when Razorpay keys are configured.
+    const hasRazorpay = Boolean(workspace.config.razorpayKeyId && workspace.config.razorpayKeySecret);
+    const payUrl = hasRazorpay && !accepted && !voided
+      ? `/pay/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}`
+      : undefined;
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(renderQuotePage({
@@ -3540,8 +4330,10 @@ app.get("/q/:workspaceId/:leadId", async (req, res, next) => {
       clientName: lead.clientName,
       eventType: lead.eventType,
       eventDate: lead.eventDate,
-      amount,
+      amountLabel,
+      holdExpiresAt: lead.holdExpiresAt || undefined,
       pdfUrl,
+      payUrl,
       accepted,
       voided,
       acceptUrl: `/api/public/quote/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}/accept?sig=${encodeURIComponent(sig)}`,
@@ -3569,17 +4361,19 @@ app.post("/api/public/quote/:workspaceId/:leadId/accept", publicWriteLimiter, as
     if (!lead || !lead.quoteUrl) return res.status(410).json({ error: "This quote is no longer available" });
     if (lead.quoteVoidedAt) return res.status(410).json({ error: "This quote has been withdrawn" });
 
+    const clientNote = typeof req.body?.clientNote === "string" ? req.body.clientNote.slice(0, 500).trim() : "";
     if (!lead.quoteAcceptedAt) {
       await updateLeadRecord(workspace.email, workspace.googleTokens, leadId, (current) => ({
         ...current,
         quoteAcceptedAt: current.quoteAcceptedAt || new Date().toISOString(),
+        clientNote: current.clientNote || clientNote,
       }));
       await logInteractionForWorkspace(workspace.email, workspace.googleTokens, {
         leadId,
         direction: "Inbound",
         channel: "WhatsApp",
         actor: lead.clientWhatsApp || lead.clientName || "client",
-        message: `${lead.clientName || "Client"} accepted the quote for ${lead.eventType} on ${lead.eventDate}.`,
+        message: `${lead.clientName || "Client"} accepted the quote for ${lead.eventType} on ${lead.eventDate}.${clientNote ? ` Client note: "${clientNote}"` : ""}`,
         aiSummary: "Quote accepted via public quote page",
       }).catch(() => undefined);
       notifyOwnerQuoteAccepted(workspace, lead).catch(() => undefined);
@@ -3619,26 +4413,47 @@ function renderQuotePage(input: {
   clientName: string;
   eventType: string;
   eventDate: string;
-  amount: number;
+  amountLabel: string;
+  holdExpiresAt?: string;
   pdfUrl: string;
+  payUrl?: string;
   accepted: boolean;
   voided: boolean;
   acceptUrl: string;
   ownerWhatsApp: string;
 }): string {
-  const esc = (v: string) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
-  const title = `Quote from ${esc(input.brand)}`;
-  const desc = `${esc(input.eventType)} on ${esc(input.eventDate)} — ₹${Math.round(input.amount).toLocaleString("en-IN")}`;
-  const acceptedBlock = `<div class="accepted">💚 You've accepted this quote. ${esc(input.brand)} will be in touch to confirm your booking!</div>`;
-  const voidedBlock = `<div class="voided">This quote has been updated — please ask ${esc(input.brand)} for the latest version.</div>`;
+  const escQ = (v: string) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+  const title = `Quote from ${escQ(input.brand)}`;
+  const desc = `${escQ(input.eventType)} on ${escQ(input.eventDate)} — ${escQ(input.amountLabel)}`;
+  let expiryBlock = "";
+  if (input.holdExpiresAt) {
+    try {
+      const exp = new Date(input.holdExpiresAt);
+      if (!Number.isNaN(exp.getTime())) {
+        const formatted = exp.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+        const isExpired = exp < new Date();
+        expiryBlock = isExpired
+          ? `<div class="expiry expired">⏰ This quote expired on ${escQ(formatted)}</div>`
+          : `<div class="expiry">🕐 Valid until ${escQ(formatted)}</div>`;
+      }
+    } catch { /* ignore */ }
+  }
+  const noteField = `<textarea id="client-note" placeholder="Any questions or special requests? (optional)" rows="3" style="width:100%;margin-top:12px;padding:10px 12px;border:1.5px solid #eee3da;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;"></textarea>`;
+  const payBtn = input.payUrl
+    ? `<a href="${escQ(input.payUrl)}" class="pay-btn">💳 Pay Deposit Now</a>`
+    : "";
+  const acceptedBlock = `<div class="accepted">💚 You've accepted this quote. ${escQ(input.brand)} will be in touch to confirm your booking!</div>`;
+  const voidedBlock = `<div class="voided">This quote has been updated — please ask ${escQ(input.brand)} for the latest version.</div>`;
   const actionBlock = input.voided
     ? voidedBlock
     : input.accepted
       ? acceptedBlock
-      : `<button id="accept-btn" type="button">💖 Looks perfect — I accept</button>
-         <p class="hint">Accepting lets ${esc(input.brand)} know you're ready. She'll confirm your date right after.</p>`;
+      : `${noteField}
+         <button id="accept-btn" type="button">💖 Looks perfect — I accept</button>
+         ${payBtn}
+         <p class="hint">Accepting lets ${escQ(input.brand)} know you're ready. She'll confirm your date right after.</p>`;
   const waLink = input.ownerWhatsApp
-    ? `<a class="wa" href="https://wa.me/${esc(input.ownerWhatsApp)}" target="_blank" rel="noreferrer">💬 Questions? WhatsApp ${esc(input.brand)}</a>`
+    ? `<a class="wa" href="https://wa.me/${escQ(input.ownerWhatsApp)}" target="_blank" rel="noreferrer">💬 Questions? WhatsApp ${escQ(input.brand)}</a>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -3662,9 +4477,12 @@ function renderQuotePage(input: {
   .summary .row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14.5px; }
   .summary .row b { font-weight: 600; }
   .amount { font-size: 18px; color: var(--brand); font-weight: 700; }
+  .expiry { background: #fff8ef; border: 1px solid #f5d9a8; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #7a5c20; margin-bottom: 14px; }
+  .expiry.expired { background: #fdf1ef; border-color: #f3cdc5; color: #9a3c2e; }
   iframe { width: 100%; height: 70vh; border: 1px solid #eee3da; border-radius: 12px; background: #fff; }
-  #accept-btn { display: block; width: 100%; margin-top: 16px; padding: 15px; font-size: 16.5px; font-weight: 600; color: #fff; background: var(--brand); border: 0; border-radius: 12px; cursor: pointer; }
+  #accept-btn { display: block; width: 100%; margin-top: 12px; padding: 15px; font-size: 16.5px; font-weight: 600; color: #fff; background: var(--brand); border: 0; border-radius: 12px; cursor: pointer; }
   #accept-btn:disabled { opacity: .6; }
+  .pay-btn { display: block; width: 100%; margin-top: 10px; padding: 13px; font-size: 15px; font-weight: 600; color: var(--brand); background: #fff; border: 2px solid var(--brand); border-radius: 12px; cursor: pointer; text-align: center; text-decoration: none; }
   .hint { text-align: center; font-size: 12.5px; color: #8a7f78; margin-top: 8px; }
   .accepted, .voided { margin-top: 16px; padding: 15px; border-radius: 12px; text-align: center; font-size: 15px; }
   .accepted { background: #e8f7ee; color: #1e6b3a; border: 1px solid #bfe6cd; }
@@ -3676,15 +4494,16 @@ function renderQuotePage(input: {
 <body>
 <header>
   <h1>${title}</h1>
-  <p>Hi ${esc(input.clientName || "there")} — here's your personalised quote ✨</p>
+  <p>Hi ${escQ(input.clientName || "there")} — here's your personalised quote ✨</p>
 </header>
 <main>
   <div class="summary">
-    <div class="row"><span>Occasion</span><b>${esc(input.eventType)}</b></div>
-    <div class="row"><span>Date</span><b>${esc(input.eventDate)}</b></div>
-    <div class="row"><span>Quoted amount</span><b class="amount">₹${Math.round(input.amount).toLocaleString("en-IN")}</b></div>
+    <div class="row"><span>Occasion</span><b>${escQ(input.eventType)}</b></div>
+    <div class="row"><span>Date</span><b>${escQ(input.eventDate)}</b></div>
+    <div class="row"><span>Quoted amount</span><b class="amount">${escQ(input.amountLabel)}</b></div>
   </div>
-  <iframe src="${esc(input.pdfUrl)}" title="Quote PDF"></iframe>
+  ${expiryBlock}
+  <iframe src="${escQ(input.pdfUrl)}" title="Quote PDF"></iframe>
   <div id="action-area">${actionBlock}</div>
   ${waLink}
 </main>
@@ -3693,10 +4512,15 @@ function renderQuotePage(input: {
   const btn = document.getElementById("accept-btn");
   if (btn) btn.addEventListener("click", async () => {
     btn.disabled = true; btn.textContent = "Sending…";
+    const note = document.getElementById("client-note")?.value || "";
     try {
-      const res = await fetch(${JSON.stringify(input.acceptUrl)}, { method: "POST" });
+      const res = await fetch(${JSON.stringify(input.acceptUrl)}, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientNote: note }),
+      });
       if (!res.ok) throw new Error();
-      document.getElementById("action-area").innerHTML = '<div class="accepted">💚 Accepted! ${esc(input.brand)} has been notified and will confirm your booking shortly.</div>';
+      document.getElementById("action-area").innerHTML = '<div class="accepted">💚 Accepted! ${escQ(input.brand)} has been notified and will confirm your booking shortly.</div>';
     } catch {
       btn.disabled = false; btn.textContent = "💖 Looks perfect — I accept";
       alert("Couldn't send just now — please try again in a moment.");
@@ -3706,6 +4530,148 @@ function renderQuotePage(input: {
 </body>
 </html>`;
 }
+
+// ---- Public invoice page (/i/:wid/:bid) ----
+// Branded HTML page: shows the invoice PDF + payment summary + "Pay Now" button.
+// This is the link we send to clients instead of the raw PDF URL.
+app.get("/i/:workspaceId/:bookingId", async (req, res, next) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? "");
+    const bookingId = String(req.params.bookingId ?? "");
+    const workspace = await findWorkspaceByWorkspaceId(workspaceId);
+    if (!workspace || !workspace.googleTokens) return res.status(404).send("Invoice not found.");
+    const booking = await getBookingRecord(workspace.email, workspace.googleTokens, bookingId);
+    if (!booking || !booking.invoiceUrl) return res.status(410).send("This invoice is no longer available.");
+
+    const sig = signDocumentToken("invoice", workspaceId, bookingId);
+    const pdfUrl = `/d/invoice/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}?sig=${encodeURIComponent(sig)}`;
+    const brand = workspace.config.businessName || workspace.config.ownerName || "Your artist";
+    const brandColor = /^#[0-9a-fA-F]{3,6}$/.test(workspace.config.brandColor) ? workspace.config.brandColor : "#C26B45";
+    const payments = parsePaymentsLog(booking.paymentsLog);
+    const totalPaid = paymentsTotal(payments);
+    const balanceDue = Math.max(0, booking.balanceDue);
+    const isPaid = booking.paymentStatus === "Paid in Full" || balanceDue === 0;
+    const isVoided = Boolean(booking.invoiceVoidedAt);
+    const hasRazorpay = Boolean(workspace.config.razorpayKeyId && workspace.config.razorpayKeySecret);
+    const payOrderUrl = hasRazorpay && !isPaid && !isVoided ? `/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(booking.leadId)}/order` : "";
+
+    const escI = (v: string) => String(v || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+    const fmtInr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+    const title = `Invoice from ${escI(brand)}`;
+
+    const paymentRows = payments.map(p =>
+      `<div class="pay-row"><span>Received${p.method ? ` via ${escI(p.method)}` : ""}</span><span class="green">${fmtInr(p.amount)}</span></div>`
+    ).join("");
+
+    const dueDateRow = booking.invoiceDueDate
+      ? `<div class="pay-row"><span>Due Date</span><span>${escI(booking.invoiceDueDate)}</span></div>`
+      : "";
+
+    // Overdue starts the day AFTER the due date, in IST. A date-only due date
+    // compared against a full `new Date()` timestamp would otherwise flash
+    // "Overdue" to the client from 05:30 IST on the morning it's actually due.
+    const isOverdue = Boolean(booking.invoiceDueDate) && !isPaid &&
+      (/^\d{4}-\d{2}-\d{2}$/.test(booking.invoiceDueDate)
+        ? booking.invoiceDueDate < istToday()
+        : new Date(booking.invoiceDueDate) < new Date());
+    const overdueTag = isOverdue ? `<div class="overdue-tag">⚠️ Overdue</div>` : "";
+
+    const paidBlock = `<div class="paid-block">✅ Paid in full — thank you, ${escI(booking.clientName)}!</div>`;
+    const payBlock = payOrderUrl
+      ? `<button id="pay-btn" class="pay-btn-primary" type="button">💳 Pay ${fmtInr(balanceDue)} Now</button>
+         <p class="hint">Secure online payment via Razorpay</p>`
+      : workspace.config.upiId
+        ? `<div class="upi-block">Pay via UPI: <b>${escI(workspace.config.upiId)}</b></div>`
+        : "";
+
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${title}</title>
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${escI(booking.eventType)} on ${escI(booking.eventDate)}" />
+<meta name="robots" content="noindex" />
+<style>
+  :root { --brand: ${brandColor}; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #faf7f4; color: #2a2421; }
+  header { background: var(--brand); color: #fff; padding: 20px 18px; text-align: center; }
+  header h1 { font-size: 19px; font-weight: 600; }
+  header p { font-size: 13px; opacity: .92; margin-top: 4px; }
+  main { max-width: 680px; margin: 0 auto; padding: 18px; }
+  .card { background: #fff; border: 1px solid #eee3da; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  .pay-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f5f0eb; }
+  .pay-row:last-child { border: none; }
+  .pay-row b, .total-row { font-weight: 700; }
+  .total-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; padding-top: 10px; color: var(--brand); }
+  .green { color: #1e6b3a; }
+  .overdue-tag { background: #fdf1ef; color: #9a3c2e; border: 1px solid #f3cdc5; border-radius: 8px; padding: 6px 12px; font-size: 13px; margin-bottom: 12px; }
+  iframe { width: 100%; height: 65vh; border: 1px solid #eee3da; border-radius: 12px; background: #fff; margin-top: 4px; }
+  .pay-btn-primary { display: block; width: 100%; margin-top: 16px; padding: 15px; font-size: 16px; font-weight: 600; color: #fff; background: var(--brand); border: 0; border-radius: 12px; cursor: pointer; }
+  .pay-btn-primary:disabled { opacity: .6; }
+  .upi-block { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 14px; font-size: 14px; margin-top: 14px; }
+  .paid-block { background: #e8f7ee; color: #1e6b3a; border: 1px solid #bfe6cd; border-radius: 12px; padding: 14px; text-align: center; font-size: 15px; margin-top: 14px; }
+  .hint { text-align: center; font-size: 12px; color: #8a7f78; margin-top: 6px; }
+  footer { text-align: center; font-size: 12px; color: #a79c94; padding: 18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>${title}</h1>
+  <p>Hi ${escI(booking.clientName)} — your invoice for ${escI(booking.eventType)}</p>
+</header>
+<main>
+  ${overdueTag}
+  <div class="card">
+    <div class="pay-row"><span>Event</span><b>${escI(booking.eventType)}</b></div>
+    <div class="pay-row"><span>Date</span><b>${escI(booking.eventDate)}</b></div>
+    <div class="pay-row"><span>Artist</span><b>${escI(booking.assignedArtist || brand)}</b></div>
+    ${dueDateRow}
+    <div class="pay-row"><span>Booking Value</span><b>${fmtInr(booking.finalPrice)}</b></div>
+    ${paymentRows}
+    <div class="pay-row"><span>Total Paid</span><span class="green">${fmtInr(totalPaid)}</span></div>
+    <div class="total-row"><span>Balance Due</span><span>${fmtInr(balanceDue)}</span></div>
+  </div>
+  <iframe src="${escI(pdfUrl)}" title="Invoice PDF"></iframe>
+  ${isPaid || isVoided ? paidBlock : payBlock}
+</main>
+<footer>Powered by BusyDays</footer>
+${payOrderUrl ? `<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+  document.getElementById("pay-btn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("pay-btn");
+    btn.disabled = true; btn.textContent = "Loading…";
+    try {
+      const r = await fetch(${JSON.stringify(payOrderUrl)}, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "Could not create order");
+      const rzp = new Razorpay({
+        key: d.keyId,
+        order_id: d.orderId,
+        amount: d.amountPaise,
+        currency: "INR",
+        name: ${JSON.stringify(brand)},
+        description: ${JSON.stringify(`${booking.eventType} · ${booking.eventDate}`)},
+        handler: () => { document.getElementById("pay-btn").replaceWith(Object.assign(document.createElement("div"), { className: "paid-block", textContent: "✅ Payment received! Thank you." })); },
+        modal: { ondismiss: () => { btn.disabled = false; btn.textContent = "💳 Pay " + ${JSON.stringify(fmtInr(balanceDue))} + " Now"; } },
+      });
+      rzp.open();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "💳 Pay ${fmtInr(balanceDue)} Now";
+      alert(err.message || "Payment error — please try again.");
+    }
+  });
+</script>` : ""}
+</body>
+</html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
   try {
@@ -4030,7 +4996,7 @@ app.get("/api/reviews", async (req, res, next) => {
       reminderSentAt: row[5] ?? "",
       reviewLinkClicked: row[6] ?? "No",
       reviewConfirmed: row[7] ?? "No",
-      notes: row[8] ?? "",
+      reviewNote: row[8] ?? "",
     }));
     res.json({ ok: true, reviews });
   } catch (error) {
@@ -4069,6 +5035,58 @@ app.post("/api/reviews/:reviewId/confirm", async (req, res, next) => {
   }
 });
 
+// Save a private note against a review (visible only to the owner).
+app.post("/api/reviews/:reviewId/note", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A2:I`,
+    });
+    const rows = response.data.values ?? [];
+    const index = rows.findIndex((row) => row[0] === req.params.reviewId);
+    if (index < 0) return res.status(404).json({ error: "Review not found" });
+
+    const row = [...rows[index]];
+    while (row.length < 9) row.push("");
+    row[8] = String(req.body.note ?? "");
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.reviews}!A${index + 2}:I${index + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [row] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Check-in / mark client as arrived.
+app.post("/api/bookings/:bookingId/checkin", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { updateBookingRecord } = await import("./services/booking.js");
+    const updated = await updateBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+      (b) => ({ ...b, arrivedAt: new Date().toISOString() }),
+    );
+    res.json({ ok: true, booking: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/analytics", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
@@ -4092,7 +5110,12 @@ app.get("/api/analytics", async (req, res, next) => {
     const bookingsByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
     const leadsByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
 
-    for (const b of bookings) {
+    // Cancelled bookings are not income. Every money figure below is computed
+    // over real (non-cancelled) bookings so Insights never overstates earnings,
+    // matching the dashboard's Booked-vs-Collected discipline.
+    const realBookings = bookings.filter((b) => b.status !== "Cancelled");
+
+    for (const b of realBookings) {
       const key = (b.bookedAt || "").slice(0, 7);
       if (key in revenueByMonth) revenueByMonth[key] += Number(b.finalPrice) || 0;
       if (key in bookingsByMonth) bookingsByMonth[key] += 1;
@@ -4109,22 +5132,95 @@ app.get("/api/analytics", async (req, res, next) => {
     }
 
     const eventTypeRevenue: Record<string, number> = {};
-    for (const b of bookings) {
+    for (const b of realBookings) {
       const t = b.eventType || "Unknown";
       eventTypeRevenue[t] = (eventTypeRevenue[t] || 0) + (Number(b.finalPrice) || 0);
     }
 
-    const totalRevenue = bookings.reduce((s, b) => s + (Number(b.finalPrice) || 0), 0);
-    const totalExpenses = bookings.reduce((s, b) => s + sumExpenses(b.expenses), 0);
+    // Booked = total value of confirmed (non-cancelled) work.
+    // Collected = rupees actually received (payments ledger, minus refunds).
+    const totalRevenue = realBookings.reduce((s, b) => s + (Number(b.finalPrice) || 0), 0);
+    const totalCollected = realBookings.reduce(
+      (s, b) => s + Math.max(0, paymentsTotal(parsePaymentsLog(b.paymentsLog))),
+      0,
+    );
+    const totalOutstanding = Math.max(0, totalRevenue - totalCollected);
+    const totalExpenses = realBookings.reduce((s, b) => s + sumExpenses(b.expenses), 0);
     const totalProfit = totalRevenue - totalExpenses;
-    const totalBookings = bookings.length;
+    const totalBookings = realBookings.length;
     const totalLeads = leads.length;
+    // Conversion = share of all enquiries that became real bookings.
     const conversionRate = totalLeads > 0 ? Math.round((totalBookings / totalLeads) * 100) : 0;
     const avgBookingValue = totalBookings > 0 ? Math.round(totalRevenue / totalBookings) : 0;
 
+    // ---- Client-level intelligence (retention, CLV, busiest times) ----
+    const byClient = new Map<string, { name: string; count: number; revenue: number; firstAt: string; lastAt: string }>();
+    for (const b of realBookings) {
+      const phone = String(b.clientWhatsApp || "").replace(/\D/g, "");
+      if (!phone) continue;
+      const when = b.eventDate || b.bookedAt || "";
+      const existing = byClient.get(phone);
+      if (existing) {
+        existing.count += 1;
+        existing.revenue += Number(b.finalPrice) || 0;
+        if (when && when < existing.firstAt) existing.firstAt = when;
+        if (when && when > existing.lastAt) existing.lastAt = when;
+        if (b.clientName) existing.name = b.clientName;
+      } else {
+        byClient.set(phone, {
+          name: b.clientName || "Client",
+          count: 1,
+          revenue: Number(b.finalPrice) || 0,
+          firstAt: when,
+          lastAt: when,
+        });
+      }
+    }
+    const uniqueClients = byClient.size;
+    const repeatClients = [...byClient.values()].filter((c) => c.count > 1).length;
+    const repeatClientRate = uniqueClients > 0 ? Math.round((repeatClients / uniqueClients) * 100) : 0;
+    const avgClientValue = uniqueClients > 0 ? Math.round(totalRevenue / uniqueClients) : 0;
+
+    // Lapsed = no booking in 90+ days. Active = booked within 90 days.
+    const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    let activeClients = 0;
+    let lapsedClients = 0;
+    for (const c of byClient.values()) {
+      if (c.lastAt && c.lastAt >= cutoff) activeClients += 1;
+      else lapsedClients += 1;
+    }
+
+    // Top clients by lifetime value.
+    const topClients = [...byClient.entries()]
+      .map(([phone, c]) => ({ phone, name: c.name, bookings: c.count, revenue: c.revenue }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+
+    // Busiest day-of-week and time-of-day, from confirmed event dates/times.
+    const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const byWeekday = Object.fromEntries(WEEKDAYS.map((d) => [d, 0])) as Record<string, number>;
+    const byHour: Record<string, number> = {};
+    for (const b of realBookings) {
+      if (b.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(b.eventDate)) {
+        const wd = WEEKDAYS[new Date(`${b.eventDate}T00:00:00Z`).getUTCDay()];
+        byWeekday[wd] += 1;
+      }
+      const hm = String(b.eventTime || "").match(/^(\d{1,2}):/);
+      if (hm) {
+        const hour = `${hm[1].padStart(2, "0")}:00`;
+        byHour[hour] = (byHour[hour] || 0) + 1;
+      }
+    }
+    const busiestDay = Object.entries(byWeekday).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+    const busiestHour = Object.entries(byHour).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+
     res.json({
       ok: true,
-      summary: { totalRevenue, totalExpenses, totalProfit, totalBookings, totalLeads, conversionRate, avgBookingValue },
+      summary: {
+        totalRevenue, totalCollected, totalOutstanding, totalExpenses, totalProfit, totalBookings, totalLeads, conversionRate, avgBookingValue,
+        uniqueClients, repeatClients, repeatClientRate, avgClientValue, activeClients, lapsedClients,
+        busiestDay, busiestHour,
+      },
       months: months.map((m) => ({
         ...m,
         revenue: revenueByMonth[m.key],
@@ -4133,7 +5229,1169 @@ app.get("/api/analytics", async (req, res, next) => {
       })),
       bySource: Object.entries(sourceCount).sort((a, b) => b[1] - a[1]).map(([source, count]) => ({ source, count })),
       byEventType: Object.entries(eventTypeRevenue).sort((a, b) => b[1] - a[1]).map(([type, revenue]) => ({ type, revenue })),
+      topClients,
+      byWeekday: WEEKDAYS.map((d) => ({ day: d, count: byWeekday[d] })),
+      byHour: Object.entries(byHour).sort((a, b) => a[0].localeCompare(b[0])).map(([hour, count]) => ({ hour, count })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Proactive intelligence for the dashboard: open waitlist slots, quotes gone
+// quiet, overdue advances, demand the pricing hasn't caught up with. Pure
+// computation over data the workspace already has.
+app.get("/api/insights", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { leads, bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    res.json({ ok: true, insights: computeInsights({ config: workspace.config, leads, bookings }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Waitlist queue, grouped by date: who's waiting, since when, and how full the
+// date currently is — so a freed slot can be offered to the first in line.
+app.get("/api/waitlist", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { leads } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const activeByDate = new Map<string, number>();
+    const waitingByDate = new Map<string, typeof leads>();
+    for (const lead of leads) {
+      if (!lead.eventDate || lead.eventDate < today) continue;
+      if (["Lost", "Completed"].includes(lead.status)) continue;
+      if (lead.source === "Waitlist") {
+        waitingByDate.set(lead.eventDate, [...(waitingByDate.get(lead.eventDate) ?? []), lead]);
+      } else {
+        activeByDate.set(lead.eventDate, (activeByDate.get(lead.eventDate) ?? 0) + 1);
+      }
+    }
+
+    const maxPerDay = Number(workspace.config.bookingMaxPerDay) || 0;
+    const dates = [...waitingByDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, waiting]) => ({
+      date,
+      booked: activeByDate.get(date) ?? 0,
+      maxPerDay,
+      slotOpen: maxPerDay > 0 ? (activeByDate.get(date) ?? 0) < maxPerDay : false,
+      waiting: waiting
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((lead, i) => ({
+          leadId: lead.leadId,
+          position: i + 1,
+          clientName: lead.clientName,
+          clientWhatsApp: lead.clientWhatsApp,
+          eventType: lead.eventType,
+          eventTime: lead.eventTime,
+          joinedAt: lead.createdAt,
+        })),
+    }));
+    res.json({ ok: true, dates });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One-tap waitlist offer: WhatsApp the waiting client that the date opened up.
+// Business-initiated message → needs the approved waitlist template (falls
+// back to the generic booking-approved template if that's all she has).
+app.post("/api/waitlist/:leadId/offer", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const lead = await getLeadRecord(req.session.profile.email, req.session.googleTokens, req.params.leadId);
+    if (!workspace || !lead) return res.status(404).json({ error: "Lead not found" });
+    if (!lead.clientWhatsApp) return res.status(400).json({ error: "This client has no WhatsApp number." });
+
+    const whatsapp = workspace.metaConnections?.whatsapp;
+    const connectionCanSend = whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    if (!connectionCanSend && !envCanSend) {
+      return res.status(400).json({ error: "Connect WhatsApp first (Channels tab) to send offers." });
+    }
+
+    const templateName = String(workspace.config.waitlistOfferTemplate || "").trim()
+      || String(workspace.config.approvalTemplate || "").trim();
+    if (!templateName) {
+      return res.status(400).json({ error: "Set up WhatsApp templates first (Channels tab → Create templates)." });
+    }
+    const templateLang = String(workspace.config.waitlistOfferTemplate || "").trim()
+      ? String(workspace.config.waitlistOfferTemplateLang || "en")
+      : String(workspace.config.approvalTemplateLang || "en");
+    const usingWaitlistTemplate = Boolean(String(workspace.config.waitlistOfferTemplate || "").trim());
+
+    await sendWhatsAppTemplate(
+      { accessToken: whatsapp?.accessToken, phoneNumberId: whatsapp?.phoneNumberId },
+      lead.clientWhatsApp.replace(/[^\d]/g, ""),
+      templateName,
+      templateLang,
+      usingWaitlistTemplate
+        ? [lead.clientName || "there", lead.eventDate, lead.eventType]
+        : [lead.clientName || "there", lead.eventDate, String(lead.finalApprovedPrice || lead.initialAiPrice || "")],
+    );
+
+    // Promote the lead out of the waitlist so the slot math counts them and the
+    // normal request flow (quote → confirm) takes over.
+    const updated = await updateLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      lead.leadId,
+      (current) => ({
+        ...current,
+        source: "Booking Page",
+        ownerNotes: [current.ownerNotes, `Waitlist slot offered on ${new Date().toISOString().slice(0, 10)}`]
+          .filter(Boolean).join(" | "),
+        lastContactedAt: new Date().toISOString(),
+      }),
+    );
+
+    await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: "WhatsApp",
+      actor: lead.clientWhatsApp.replace(/[^\d]/g, ""),
+      message: `Waitlist offer template "${templateName}" sent — the date opened up`,
+      aiSummary: "Waitlist slot offered to client",
+    });
+
+    res.json({ ok: true, lead: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Loyalty program ----
+
+app.get("/api/loyalty", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const statuses = computeLoyaltyStatuses(workspace.config, bookings);
+    res.json({ ok: true, statuses, enabled: workspace.config.loyaltyEnabled === "Yes" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/loyalty/:phone", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const status = loyaltyForPhone(workspace.config, bookings, req.params.phone);
+    res.json({ ok: true, status });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Send loyalty reward WhatsApp to client
+app.post("/api/loyalty/:phone/send-reward", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const status = loyaltyForPhone(workspace.config, bookings, req.params.phone);
+    if (!status) return res.status(404).json({ error: "Client not found in loyalty program" });
+
+    const rewardNote = status.rewardNote;
+    const brandName = workspace.config.businessName || workspace.name;
+    const message = `Hi ${status.clientName} 🌟 You've completed ${status.visits} bookings with ${brandName}! Your loyalty has earned you: ${rewardNote}. Mention this on your next booking. Thank you for being an amazing client! ${workspace.config.aiSignOff || ""}`.trim();
+
+    const connection = workspace.metaConnections?.whatsapp;
+    if (connection?.accessToken && connection?.phoneNumberId) {
+      await sendChannelMessage({
+        workspace,
+        connection,
+        channel: "WhatsApp",
+        actorId: req.params.phone,
+        message,
+      });
+    }
+    res.json({ ok: true, message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Gift cards ----
+
+app.get("/api/gift-cards", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const res2 = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!A2:K`,
+    });
+    const cards = (res2.data.values ?? []).map(parseGiftCard);
+    res.json({ ok: true, cards });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/gift-cards", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const amount = Number(req.body?.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Amount is required" });
+
+    const card = {
+      cardId: `GC-${Date.now()}`,
+      code: generateGiftCode(),
+      amount,
+      message: String(req.body?.message || ""),
+      purchaserName: String(req.body?.purchaserName || ""),
+      purchaserEmail: String(req.body?.purchaserEmail || ""),
+      purchaserWhatsApp: String(req.body?.purchaserWhatsApp || ""),
+      redeemedByLeadId: "",
+      redeemedAt: "",
+      createdAt: new Date().toISOString(),
+      status: "Active" as const,
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!A:K`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [giftCardToRow(card)] },
+    });
+    res.json({ ok: true, card });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/gift-cards/:code/deactivate", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const res2 = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!A2:K`,
+    });
+    const rows = res2.data.values ?? [];
+    const idx = rows.findIndex((r) => r[1] === req.params.code);
+    if (idx < 0) return res.status(404).json({ error: "Gift card not found" });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!K${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [["Deactivated"]] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public: validate a gift card code before booking
+app.get("/api/public/:workspaceId/gift-cards/:code", publicReadLimiter, async (req, res, next) => {
+  try {
+    const code = String(req.params.code).toUpperCase();
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace || workspace.config.giftCardsEnabled !== "Yes") {
+      return res.status(404).json({ error: "Gift cards not available" });
+    }
+    const tokens = await getWorkspaceCredentials(workspace.email).catch(() => null);
+    if (!tokens) return res.status(503).json({ error: "Service unavailable" });
+    const { sheets } = createGoogleClients(tokens);
+    const res2 = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.giftCards}!A2:K`,
+    });
+    const rows = res2.data.values ?? [];
+    const row = rows.find((r) => String(r[1] || "").toUpperCase() === code);
+    if (!row) return res.json({ ok: false, error: "Invalid gift card code" });
+    const card = parseGiftCard(row);
+    if (card.status !== "Active") return res.json({ ok: false, error: "Gift card already used or deactivated" });
+    res.json({ ok: true, amount: card.amount, message: card.message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Promo codes ----
+// Discount codes the owner creates and clients enter on the booking page.
+// Backed by a lazily-created PromoCodes sheet tab.
+
+app.get("/api/promo-codes", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A2:J`,
+    });
+    const codes = (got.data.values ?? []).map(parsePromoCode);
+    res.json({ ok: true, codes });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/promo-codes", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const type = req.body?.type === "flat" ? "flat" : "percent";
+    const value = Number(req.body?.value);
+    if (!value || value <= 0) return res.status(400).json({ error: "A discount value is required." });
+    if (type === "percent" && value > 90) return res.status(400).json({ error: "Percentage discount can't exceed 90%." });
+
+    const promo: PromoCode = {
+      codeId: `PC-${Date.now()}`,
+      code: String(req.body?.code || "").trim().toUpperCase() || generatePromoCode(),
+      type,
+      value,
+      minAmount: Math.max(0, Number(req.body?.minAmount) || 0),
+      maxRedemptions: Math.max(0, Number(req.body?.maxRedemptions) || 0),
+      timesRedeemed: 0,
+      expiresAt: typeof req.body?.expiresAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.expiresAt) ? req.body.expiresAt : "",
+      createdAt: new Date().toISOString(),
+      status: "Active",
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    // Reject a duplicate code so two codes can't collide at redemption.
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A2:J`,
+    });
+    if ((existing.data.values ?? []).some((r) => String(r[1] || "").toUpperCase() === promo.code)) {
+      return res.status(400).json({ error: `Code "${promo.code}" already exists.` });
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A:J`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [promoCodeToRow(promo)] },
+    });
+    res.json({ ok: true, promo });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/promo-codes/:code/deactivate", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A2:J`,
+    });
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => String(r[1] || "").toUpperCase() === String(req.params.code).toUpperCase());
+    if (idx < 0) return res.status(404).json({ error: "Promo code not found" });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!J${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [["Deactivated"]] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public: validate a promo code against an order amount before booking.
+app.get("/api/public/:workspaceId/promo/:code", publicReadLimiter, async (req, res, next) => {
+  try {
+    const code = String(req.params.code).toUpperCase();
+    const amount = Number(req.query.amount) || 0;
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace || workspace.config.promoCodesEnabled !== "Yes") {
+      return res.status(404).json({ error: "Promo codes not available" });
+    }
+    const tokens = await getWorkspaceCredentials(workspace.email).catch(() => null);
+    if (!tokens) return res.status(503).json({ error: "Service unavailable" });
+    const { sheets } = createGoogleClients(tokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.promoCodes, promoCodeHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.promoCodes}!A2:J`,
+    });
+    const row = (got.data.values ?? []).find((r) => String(r[1] || "").toUpperCase() === code);
+    const result = validatePromo(row ? parsePromoCode(row) : undefined, amount);
+    if (!result.ok) return res.json({ ok: false, error: result.reason });
+    res.json({ ok: true, discount: result.discount, finalAmount: result.finalAmount, label: result.label, code });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Prepaid packages / memberships ----
+// A client buys a bundle of sessions; each redemption decrements the balance.
+
+app.get("/api/packages", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A2:J`,
+    });
+    const packages = (got.data.values ?? []).map(parseClientPackage).map((p) => ({ ...p, remaining: remainingSessions(p) }));
+    res.json({ ok: true, packages });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/clients/:phone/packages", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A2:J`,
+    });
+    const packages = (got.data.values ?? [])
+      .map(parseClientPackage)
+      .filter((p) => p.clientWhatsApp.replace(/\D/g, "") === phone)
+      .map((p) => ({ ...p, remaining: remainingSessions(p) }));
+    res.json({ ok: true, packages });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/packages", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const clientWhatsApp = String(req.body?.clientWhatsApp || "").trim();
+    const name = String(req.body?.name || "").trim();
+    const totalSessions = Number(req.body?.totalSessions);
+    if (!clientWhatsApp || !name || !totalSessions || totalSessions < 1) {
+      return res.status(400).json({ error: "Client, package name, and session count are required." });
+    }
+    const pkg: ClientPackage = {
+      packageId: `PKG-${Date.now()}`,
+      clientWhatsApp,
+      clientName: String(req.body?.clientName || ""),
+      name,
+      totalSessions: Math.round(totalSessions),
+      usedSessions: 0,
+      price: Math.max(0, Number(req.body?.price) || 0),
+      purchasedAt: new Date().toISOString(),
+      expiresAt: typeof req.body?.expiresAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.expiresAt) ? req.body.expiresAt : "",
+      status: "Active",
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A:J`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [clientPackageToRow(pkg)] },
+    });
+    res.json({ ok: true, package: pkg });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Redeem one session against a package (decrements remaining; marks Completed at 0).
+app.post("/api/packages/:packageId/redeem", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A2:J`,
+    });
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => r[0] === req.params.packageId);
+    if (idx < 0) return res.status(404).json({ error: "Package not found" });
+    const pkg = parseClientPackage(rows[idx]);
+    const usable = isRedeemable(pkg);
+    if (!usable.ok) return res.status(400).json({ error: usable.reason });
+    pkg.usedSessions += 1;
+    if (remainingSessions(pkg) <= 0) pkg.status = "Completed";
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A${idx + 2}:J${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [clientPackageToRow(pkg)] },
+    });
+    res.json({ ok: true, package: { ...pkg, remaining: remainingSessions(pkg) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/packages/:packageId/cancel", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPackages, packageHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!A2:J`,
+    });
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => r[0] === req.params.packageId);
+    if (idx < 0) return res.status(404).json({ error: "Package not found" });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPackages}!J${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [["Cancelled"]] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Per-client photos (before/after gallery) ----
+
+app.get("/api/clients/:phone/photos", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPhotos, clientPhotoHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPhotos}!A2:G`,
+    });
+    const photos = (got.data.values ?? [])
+      .map(parseClientPhoto)
+      .filter((p) => p.clientWhatsApp.replace(/\D/g, "") === phone)
+      .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+    res.json({ ok: true, photos });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post(
+  "/api/clients/:phone/photos",
+  (req, res, next) => {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+      next();
+    });
+  },
+  async (req, res, next) => {
+    try {
+      if (!req.session.profile || !req.session.googleTokens) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      const workspace = await getWorkspaceByEmail(req.session.profile.email);
+      if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+      const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+      if (!phone) return res.status(400).json({ error: "Invalid client" });
+
+      const uploaded = await uploadPublicImage(req.session.profile.email, req.session.googleTokens, {
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      });
+      const kindRaw = String(req.body?.kind || "look");
+      const photo: ClientPhoto = {
+        photoId: `PH-${Date.now()}`,
+        clientWhatsApp: phone,
+        bookingId: String(req.body?.bookingId || ""),
+        url: uploaded.imageUrl,
+        caption: String(req.body?.caption || ""),
+        kind: kindRaw === "before" || kindRaw === "after" ? kindRaw : "look",
+        uploadedAt: new Date().toISOString(),
+      };
+      const { sheets } = createGoogleClients(req.session.googleTokens);
+      await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPhotos, clientPhotoHeaders);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: workspace.spreadsheetId,
+        range: `${sheetNames.clientPhotos}!A:G`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [clientPhotoToRow(photo)] },
+      });
+      res.json({ ok: true, photo });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.delete("/api/clients/:phone/photos/:photoId", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.clientPhotos, clientPhotoHeaders);
+    const got = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPhotos}!A2:G`,
+    });
+    const rows = got.data.values ?? [];
+    const idx = rows.findIndex((r) => r[0] === req.params.photoId);
+    if (idx < 0) return res.status(404).json({ error: "Photo not found" });
+    // Soft-delete by blanking the row's URL/caption (Sheets has no cheap row delete here).
+    const cleared = parseClientPhoto(rows[idx]);
+    cleared.url = "";
+    cleared.caption = "(deleted)";
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.clientPhotos}!A${idx + 2}:G${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [clientPhotoToRow(cleared)] },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Retail inventory ----
+// Products the artist sells alongside services, with stock and sales tracking.
+
+app.get("/api/products", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.products, productHeaders);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.productSales, productSaleHeaders);
+    const [prodRes, salesRes] = await Promise.all([
+      sheets.spreadsheets.values.get({ spreadsheetId: workspace.spreadsheetId, range: `${sheetNames.products}!A2:J` }),
+      sheets.spreadsheets.values.get({ spreadsheetId: workspace.spreadsheetId, range: `${sheetNames.productSales}!A2:H` }),
+    ]);
+    const products = (prodRes.data.values ?? []).map(parseProduct).map((p) => ({ ...p, lowStock: isLowStock(p) }));
+    const sales = (salesRes.data.values ?? []).map(parseProductSale);
+    const retailRevenue = sales.reduce((s, x) => s + (x.total || 0), 0);
+    const unitsSold = sales.reduce((s, x) => s + (x.quantity || 0), 0);
+    res.json({
+      ok: true,
+      products,
+      summary: { retailRevenue, unitsSold, lowStockCount: products.filter((p) => p.lowStock).length },
+      recentSales: sales.sort((a, b) => b.soldAt.localeCompare(a.soldAt)).slice(0, 20),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/products", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const name = String(req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Product name is required." });
+    const product: Product = {
+      productId: `PRD-${Date.now()}`,
+      name,
+      sku: String(req.body?.sku || "").trim(),
+      price: Math.max(0, Number(req.body?.price) || 0),
+      cost: Math.max(0, Number(req.body?.cost) || 0),
+      stock: Math.max(0, Math.round(Number(req.body?.stock) || 0)),
+      lowStockThreshold: Math.max(0, Math.round(Number(req.body?.lowStockThreshold) || 0)),
+      category: String(req.body?.category || "").trim(),
+      status: "Active",
+      createdAt: new Date().toISOString(),
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.products, productHeaders);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.products}!A:J`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [productToRow(product)] },
+    });
+    res.json({ ok: true, product });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Loads a product row by id, mutates it, and writes it back. Shared by the
+// edit / restock / sell / archive endpoints so the read-modify-write is in one place.
+async function withProductRow(
+  email: string,
+  tokens: import("google-auth-library").Credentials,
+  spreadsheetId: string,
+  productId: string,
+  mutate: (p: Product) => Product | { error: string },
+): Promise<{ ok: true; product: Product } | { ok: false; status: number; error: string }> {
+  const { sheets } = createGoogleClients(tokens);
+  await ensureSheetTab(sheets, spreadsheetId, sheetNames.products, productHeaders);
+  const got = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetNames.products}!A2:J` });
+  const rows = got.data.values ?? [];
+  const idx = rows.findIndex((r) => r[0] === productId);
+  if (idx < 0) return { ok: false, status: 404, error: "Product not found" };
+  const result = mutate(parseProduct(rows[idx]));
+  if ("error" in result) return { ok: false, status: 400, error: result.error };
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetNames.products}!A${idx + 2}:J${idx + 2}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [productToRow(result)] },
+  });
+  return { ok: true, product: result };
+}
+
+app.post("/api/products/:productId/update", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
+      ...p,
+      name: req.body?.name !== undefined ? String(req.body.name).trim() || p.name : p.name,
+      sku: req.body?.sku !== undefined ? String(req.body.sku).trim() : p.sku,
+      price: req.body?.price !== undefined ? Math.max(0, Number(req.body.price) || 0) : p.price,
+      cost: req.body?.cost !== undefined ? Math.max(0, Number(req.body.cost) || 0) : p.cost,
+      stock: req.body?.stock !== undefined ? Math.max(0, Math.round(Number(req.body.stock) || 0)) : p.stock,
+      lowStockThreshold: req.body?.lowStockThreshold !== undefined ? Math.max(0, Math.round(Number(req.body.lowStockThreshold) || 0)) : p.lowStockThreshold,
+      category: req.body?.category !== undefined ? String(req.body.category).trim() : p.category,
+    }));
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true, product: { ...r.product, lowStock: isLowStock(r.product) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/products/:productId/restock", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const qty = Math.round(Number(req.body?.quantity) || 0);
+    if (!qty || qty <= 0) return res.status(400).json({ error: "Restock quantity must be positive." });
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
+      ...p,
+      stock: p.stock + qty,
+    }));
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true, product: { ...r.product, lowStock: isLowStock(r.product) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/products/:productId/archive", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
+      ...p,
+      status: "Archived" as const,
+    }));
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bring an archived product back — archiving was previously a one-way trip with
+// no UI path to recover a mis-archived item.
+app.post("/api/products/:productId/restore", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => ({
+      ...p,
+      status: "Active" as const,
+    }));
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Record a retail sale: decrement stock and log it to ProductSales.
+app.post("/api/products/:productId/sell", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const qty = Math.round(Number(req.body?.quantity) || 1);
+    if (qty <= 0) return res.status(400).json({ error: "Quantity must be positive." });
+
+    let soldProduct: Product | null = null;
+    const r = await withProductRow(req.session.profile.email, req.session.googleTokens, workspace.spreadsheetId, req.params.productId, (p) => {
+      if (p.status !== "Active") return { error: "This product is archived." };
+      if (p.stock < qty) return { error: `Only ${p.stock} in stock.` };
+      soldProduct = p;
+      return { ...p, stock: p.stock - qty };
+    });
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+
+    const unitPrice = req.body?.unitPrice !== undefined ? Math.max(0, Number(req.body.unitPrice) || 0) : r.product.price;
+    const sale: ProductSale = {
+      saleId: `SALE-${Date.now()}`,
+      productId: r.product.productId,
+      productName: r.product.name,
+      quantity: qty,
+      unitPrice,
+      total: unitPrice * qty,
+      clientWhatsApp: String(req.body?.clientWhatsApp || "").replace(/\D/g, ""),
+      soldAt: new Date().toISOString(),
+    };
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    await ensureSheetTab(sheets, workspace.spreadsheetId, sheetNames.productSales, productSaleHeaders);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.productSales}!A:H`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [productSaleToRow(sale)] },
+    });
+    res.json({ ok: true, sale, product: { ...r.product, lowStock: isLowStock(r.product) } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Client win-back ----
+// Lapsed clients (no completed booking in N days) with the data needed to
+// re-engage them: last seen, lifetime value, and a ready-to-send message.
+app.get("/api/winback", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const days = Math.max(30, Number(req.query.days) || 90);
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const byClient = new Map<string, { name: string; phone: string; lastAt: string; bookings: number; revenue: number }>();
+    for (const b of bookings) {
+      if (b.status === "Cancelled" || b.status === "No Show") continue;
+      const phone = String(b.clientWhatsApp || "").replace(/\D/g, "");
+      if (!phone) continue;
+      const when = b.eventDate || b.bookedAt || "";
+      const existing = byClient.get(phone);
+      if (existing) {
+        existing.bookings += 1;
+        existing.revenue += Number(b.finalPrice) || 0;
+        if (when > existing.lastAt) existing.lastAt = when;
+        if (b.clientName) existing.name = b.clientName;
+      } else {
+        byClient.set(phone, { name: b.clientName || "Client", phone, lastAt: when, bookings: 1, revenue: Number(b.finalPrice) || 0 });
+      }
+    }
+    const lapsed = [...byClient.values()]
+      .filter((c) => c.lastAt && c.lastAt < cutoff)
+      .map((c) => ({
+        ...c,
+        daysSince: c.lastAt ? Math.floor((Date.now() - new Date(`${c.lastAt}T00:00:00Z`).getTime()) / (24 * 60 * 60 * 1000)) : null,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    res.json({ ok: true, cutoffDays: days, count: lapsed.length, clients: lapsed });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Commission report ----
+
+app.get("/api/team/commission-report", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const { bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
+    const { sheets } = createGoogleClients(req.session.googleTokens);
+    const artistsRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.artists}!A2:J`,
+    });
+    const artistRows = artistsRes.data.values ?? [];
+    const defaultCommission = workspace.config.commissionDefaultPercent || 0;
+
+    const artistMap = new Map<string, { name: string; commissionPercent: number }>();
+    for (const r of artistRows) {
+      const name = String(r[1] || "");
+      // priceMultiplier is at index 6; store it for reference
+      if (name) artistMap.set(name, { name, commissionPercent: defaultCommission });
+    }
+
+    const reportMap = new Map<string, { artistName: string; bookingCount: number; totalRevenue: number; commissionAmount: number }>();
+    for (const b of bookings) {
+      if (!b.assignedArtist || b.status === "Cancelled") continue;
+      const artist = artistMap.get(b.assignedArtist) || { name: b.assignedArtist, commissionPercent: defaultCommission };
+      const existing = reportMap.get(b.assignedArtist) || { artistName: b.assignedArtist, bookingCount: 0, totalRevenue: 0, commissionAmount: 0 };
+      existing.bookingCount++;
+      existing.totalRevenue += b.finalPrice || 0;
+      existing.commissionAmount += Math.round((b.finalPrice || 0) * artist.commissionPercent / 100);
+      reportMap.set(b.assignedArtist, existing);
+    }
+
+    res.json({ ok: true, report: Array.from(reportMap.values()), defaultCommissionPercent: defaultCommission });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Intake forms ----
+
+app.get("/api/intake-forms", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const c = workspace.config;
+    res.json({
+      ok: true,
+      forms: {
+        Bridal: c.intakeFormBridal,
+        Engagement: c.intakeFormEngagement,
+        Reception: c.intakeFormReception,
+        Party: c.intakeFormParty,
+        Shoot: c.intakeFormShoot,
+        Other: c.intakeFormOther,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public: get intake form questions for a service type
+app.get("/api/public/:workspaceId/intake-form/:eventType", publicReadLimiter, async (req, res, next) => {
+  try {
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace) return res.status(404).json({ error: "Not found" });
+    const c = workspace.config;
+    const et = req.params.eventType;
+    const formKey = `intakeForm${et}` as keyof typeof c;
+    const raw = typeof c[formKey] === "string" ? (c[formKey] as string) : "";
+    const questions = raw
+      .split(",")
+      .map((q) => q.trim())
+      .filter(Boolean);
+    res.json({ ok: true, questions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Email test ----
+
+app.post("/api/email/test", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    if (!emailEnabled(workspace.config)) {
+      return res.status(400).json({ error: "Email not configured. Add SMTP settings first." });
+    }
+    const result = await sendEmail(workspace.config, {
+      to: workspace.config.ownerEmail,
+      subject: `Test email from ${workspace.config.businessName || "BusyDays"}`,
+      html: wrapEmailHtml(workspace.config, `<h2>Test email working! ✅</h2><p>Your email notifications are configured correctly. Clients will receive booking confirmations, quotes, invoices and reminders via email when it's enabled.</p>`),
+    });
+    if (!result.ok) return res.status(500).json({ error: result.error });
+    res.json({ ok: true, message: `Test email sent to ${workspace.config.ownerEmail}` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- No-show tracking ----
+
+app.post("/api/bookings/:bookingId/no-show", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    const booking = await getBookingRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.bookingId,
+    );
+    if (!workspace || !booking) return res.status(404).json({ error: "Booking not found" });
+
+    await updateBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId, (current) => ({
+      ...current,
+      status: "No Show",
+    }));
+
+    res.json({ ok: true, noShowFeePercent: workspace.config.noShowFeePercent || 0 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Recurring appointments ----
+// Creates a series of bookings (via leads) for a recurring appointment.
+// Each occurrence gets its own lead with a shared recurringGroupId in the notes.
+app.post("/api/recurring", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    if (workspace.config.recurringEnabled !== "Yes") {
+      return res.status(400).json({ error: "Recurring appointments are not enabled." });
+    }
+
+    const { clientName, clientWhatsApp, eventType, startDate, eventTime, locationText,
+      frequency, sessionCount } = req.body;
+    if (!clientName || !clientWhatsApp || !eventType || !startDate || !frequency) {
+      return res.status(400).json({ error: "Missing required fields." });
+    }
+    const count = Math.min(Math.max(Number(sessionCount) || 4, 1), 52);
+    const FREQ_DAYS: Record<string, number> = { weekly: 7, biweekly: 14, monthly: 30 };
+    const stepDays = FREQ_DAYS[frequency] ?? 7;
+
+    const groupId = `REC-${Date.now()}`;
+    const leads: Array<{ leadId: string; eventDate: string }> = [];
+
+    for (let i = 0; i < count; i++) {
+      const eventDate = new Date(startDate);
+      eventDate.setUTCDate(eventDate.getUTCDate() + i * stepDays);
+      const dateStr = eventDate.toISOString().slice(0, 10);
+      try {
+        const result = await createLeadForWorkspace(
+          req.session.profile.email,
+          req.session.googleTokens,
+          {
+            clientName: String(clientName),
+            clientWhatsApp: String(clientWhatsApp),
+            eventType: String(eventType),
+            eventDate: dateStr,
+            eventTime: eventTime ? String(eventTime) : undefined,
+            locationText: locationText ? String(locationText) : workspace.config.city || "",
+            source: "Manual" as const,
+            inboundMessage: `Recurring series: ${groupId} (${i + 1}/${count}, ${frequency})`,
+          },
+        );
+        leads.push({ leadId: result.lead.leadId, eventDate: dateStr });
+      } catch {
+        // Skip dates that fail (e.g. blocked); continue with the rest.
+      }
+    }
+
+    res.json({ ok: true, groupId, created: leads.length, leads });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---- Saved quote packages, parsed from the quotePackages config — one-tap line
+// items when building a quote.
+app.get("/api/quote-packages", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    res.json({ ok: true, packages: parseQuotePackages(workspace.config.quotePackages) });
   } catch (error) {
     next(error);
   }
@@ -4749,7 +7007,7 @@ app.post("/webhooks/meta", async (req, res, next) => {
             language: workspace.config.aiLanguage,
             signOff: workspace.config.aiSignOff,
             toneProfile: workspace.config.aiToneProfile,
-            servicesContext: workspace.config.aiServicesContext,
+            servicesContext: buildServicesContext(workspace.config),
             personaName: workspace.config.aiPersonaName,
           });
 
@@ -5400,6 +7658,66 @@ function buildContractShareMessage(_workspace: NonNullable<Awaited<ReturnType<ty
   }
 
   return `Hi ${booking.clientName || "love"}, your booking agreement has been initiated through Leegality. Please check the contract link shared with you there and sign it when convenient.`;
+}
+
+function buildRescheduleNotice(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {
+  const biz = workspace.config.businessName || workspace.config.ownerName || "your artist";
+  // Parse the date at local midnight so the weekday/day never shifts across the
+  // UTC boundary the way `new Date("YYYY-MM-DD")` (which is UTC) would.
+  const parsed = new Date(`${booking.eventDate}T00:00:00`);
+  const dateStr = Number.isNaN(parsed.getTime())
+    ? booking.eventDate
+    : parsed.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const timeStr = booking.eventTime ? ` at ${booking.eventTime}` : "";
+  const venueStr = booking.venue ? `\n📍 ${booking.venue}` : "";
+  return [
+    `Hi ${booking.clientName || "love"} 🙏`,
+    "",
+    `Your ${booking.eventType} booking has been updated. Here are the new details:`,
+    "",
+    `📅 ${dateStr}${timeStr}${venueStr}`,
+    "",
+    `See you then!\n— ${biz}`,
+  ].join("\n");
+}
+
+// Tell the client when their booking moves. The artist just changed the one
+// thing the client most needs to know (date/time/venue), so send it through the
+// same compliant path used for invoices/contracts instead of a "remember to
+// tell the client" prompt. Best-effort: a messaging failure never blocks the
+// reschedule. Returns whether a message was actually dispatched.
+async function notifyClientOfReschedule(
+  email: string,
+  tokens: Credentials,
+  workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>,
+  booking: BookingRecord,
+): Promise<boolean> {
+  try {
+    if (!booking.leadId) return false;
+    const lead = await getLeadRecord(email, tokens, booking.leadId);
+    if (!lead) return false;
+    const ctx = resolveLeadMessagingContext(workspace, lead);
+    if (!ctx) return false;
+    const message = buildRescheduleNotice(workspace, booking);
+    await sendBusinessMessage({
+      workspace,
+      connection: ctx.connection,
+      channel: ctx.channel,
+      actorId: ctx.actorId,
+      message,
+    });
+    await logInteractionForWorkspace(email, tokens, {
+      leadId: lead.leadId,
+      direction: "Outbound",
+      channel: ctx.channel,
+      actor: ctx.actorId,
+      message,
+      aiSummary: "Reschedule notice sent",
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildReviewRequestMessage(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {

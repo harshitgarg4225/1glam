@@ -15,6 +15,7 @@ export type ArtistRecord = {
   luxuryEligible: string;
   primaryCalendarId: string;
   active: string;
+  bio: string;
 };
 
 export type ArtistInput = {
@@ -28,6 +29,7 @@ export type ArtistInput = {
   luxuryEligible?: string;
   primaryCalendarId?: string;
   active?: string;
+  bio?: string;
 };
 
 export async function listArtists(email: string, tokens: Credentials): Promise<ArtistRecord[]> {
@@ -71,6 +73,7 @@ export async function upsertArtist(
     luxuryEligible: input.luxuryEligible ?? "Yes",
     primaryCalendarId: input.primaryCalendarId ?? "",
     active: input.active ?? "Yes",
+    bio: input.bio ?? "",
   };
 
   const existingIndex = input.artistId
@@ -122,6 +125,31 @@ export async function deactivateArtist(email: string, tokens: Credentials, artis
   return artist;
 }
 
+export async function reactivateArtist(email: string, tokens: Credentials, artistId: string) {
+  const workspace = await getWorkspaceByEmail(email);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const { sheets } = createGoogleClients(tokens);
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.artists}!A2:${toColumn(artistHeaders.length)}`,
+  });
+  const rows = response.data.values ?? [];
+  const index = rows.findIndex((row) => row[0] === artistId);
+  if (index < 0) throw new Error("Artist not found");
+
+  const artist = rowToArtist(rows[index]);
+  artist.active = "Yes";
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: workspace.spreadsheetId,
+    range: `${sheetNames.artists}!A${index + 2}:${toColumn(artistHeaders.length)}${index + 2}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [artistToRow(artist)] },
+  });
+
+  return artist;
+}
+
 function artistToRow(artist: ArtistRecord) {
   return [
     artist.artistId,
@@ -134,6 +162,7 @@ function artistToRow(artist: ArtistRecord) {
     artist.luxuryEligible,
     artist.primaryCalendarId,
     artist.active,
+    artist.bio,
   ];
 }
 
@@ -149,6 +178,7 @@ function rowToArtist(row: string[]): ArtistRecord {
     luxuryEligible: row[7] ?? "Yes",
     primaryCalendarId: row[8] ?? "",
     active: row[9] ?? "Yes",
+    bio: row[10] ?? "",
   };
 }
 

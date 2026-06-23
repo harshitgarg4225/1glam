@@ -9,6 +9,7 @@ import {
   artistHeaders,
   bookingHeaders,
   followUpHeaders,
+  giftCardHeaders,
   interactionHeaders,
   leadHeaders,
   reviewHeaders,
@@ -74,6 +75,7 @@ export async function provisionWorkspace(profile: { email: string; name: string 
         { properties: { title: sheetNames.followUps } },
         { properties: { title: sheetNames.interactionLog } },
         { properties: { title: sheetNames.reviews } },
+        { properties: { title: sheetNames.giftCards } },
       ],
     },
   });
@@ -266,6 +268,41 @@ export async function uploadLogoImage(
   return { logoUrl };
 }
 
+// Same as the logo upload, but for the wide cover photo at the top of the
+// booking page — previously the cover could only be set by pasting a URL.
+export async function uploadCoverImage(
+  email: string,
+  tokens: Credentials,
+  file: { buffer: Buffer; mimeType: string; originalName: string },
+): Promise<{ coverImageUrl: string }> {
+  const workspace = await findWorkspaceByEmail(email);
+  if (!workspace) throw new Error("Workspace not found");
+
+  const { drive } = createGoogleClients(tokens);
+  const ext = (file.originalName.split(".").pop() || "jpg").toLowerCase();
+  const response = await drive.files.create({
+    requestBody: {
+      name: `cover-${nanoid(8)}.${ext}`,
+      mimeType: file.mimeType,
+      description: `Cover photo for ${workspace.config.businessName || workspace.name}`,
+    },
+    media: { mimeType: file.mimeType, body: Readable.from(file.buffer) },
+    fields: "id",
+  });
+
+  const fileId = response.data.id;
+  if (!fileId) throw new Error("Cover upload failed");
+  await drive.permissions.create({ fileId, requestBody: { role: "reader", type: "anyone" } });
+
+  const coverImageUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+  workspace.config = { ...workspace.config, coverImageUrl };
+  workspace.updatedAt = new Date().toISOString();
+  await seedSpreadsheet(workspace.spreadsheetId, workspace.config, tokens, { includeSampleArtist: false });
+  await saveWorkspace(workspace);
+
+  return { coverImageUrl };
+}
+
 export async function persistWorkspaceTokens(email: string, tokens: Credentials) {
   return updateWorkspaceByEmail(email, (workspace) => ({
     ...workspace,
@@ -371,7 +408,8 @@ async function seedSpreadsheet(
     ["profile_mid_multiplier", config.profileMidMultiplier, "Mid profile multiplier"],
     ["profile_high_multiplier", config.profileHighMultiplier, "High profile multiplier"],
     ["profile_high_min_followers", config.profileHighMinFollowers, "High profile follower threshold"],
-    ["advance_percentage", config.advancePercentage, "Advance percentage"],
+    ["deposit_percent_by_service", config.depositPercentByService, "Per-service deposit % as JSON, e.g. {\"Bridal\":50}. Blank = use the default advance %"],
+    ["advance_percentage", config.advancePercentage,"Advance percentage"],
     ["upi_id", config.upiId, "UPI ID"],
     ["qr_image_url", config.qrImageUrl, "QR image URL"],
     ["payment_terms", config.paymentTerms, "Payment terms"],
@@ -385,6 +423,7 @@ async function seedSpreadsheet(
     ["booking_weekly_off_days", config.bookingWeeklyOffDays, "Days off, e.g. Sun, Mon"],
     ["booking_blocked_dates", config.bookingBlockedDates, "Blocked dates, comma separated YYYY-MM-DD"],
     ["booking_max_per_day", config.bookingMaxPerDay, "Max bookings per day (0 = unlimited)"],
+    ["buffer_minutes", config.bufferMinutes, "Cleanup/buffer minutes kept free around each booked job (0 = none)"],
     ["booking_confirm_template", config.bookingConfirmTemplate, "Approved WhatsApp template name for booking confirmation"],
     ["booking_confirm_template_lang", config.bookingConfirmTemplateLang, "WhatsApp template language code (e.g. en)"],
     ["approval_template", config.approvalTemplate, "Approved WhatsApp template name sent when owner approves a lead"],
@@ -422,6 +461,9 @@ async function seedSpreadsheet(
     ["review_request_days_after", config.reviewRequestDaysAfter, "Days after event to auto-send a review request (blank = off)"],
     ["review_template", config.reviewTemplate, "Approved WhatsApp template name for automated review requests"],
     ["review_template_lang", config.reviewTemplateLang, "Language code for the review template (e.g. en)"],
+    ["rebook_nudge_days_after", config.rebookNudgeDaysAfter, "Days after event to auto-send a rebook nudge (blank = off)"],
+    ["rebook_template", config.rebookTemplate, "Approved WhatsApp template name for automated rebook nudges"],
+    ["rebook_template_lang", config.rebookTemplateLang, "Language code for the rebook template (e.g. en)"],
     ["document_template", config.documentTemplate, "Design theme for quotes/invoices/contracts (classic, minimal, noir, blush)"],
     ["quote_intro", config.quoteIntro, "Opening line shown at the top of every quote"],
     ["cancellation_policy", config.cancellationPolicy, "Cancellation and rescheduling terms shown on quotes and contracts"],
@@ -445,6 +487,41 @@ async function seedSpreadsheet(
     ["gst_percentage", config.gstPercentage, "GST rate to itemise on documents (e.g. 18). 0 = no GST line"],
     ["cancellation_window_days", config.cancellationWindowDays, "Days before event within which cancellation prompts a fee notice (default 7)"],
     ["cancellation_fee_percent", config.cancellationFeePercent, "Percentage of booking price suggested as cancellation fee (default 50)"],
+    ["loyalty_enabled", config.loyaltyEnabled, "Enable loyalty stamp program for repeat clients (Yes/No)"],
+    ["loyalty_visits_for_reward", config.loyaltyVisitsForReward, "Number of completed bookings before a client earns a reward"],
+    ["loyalty_reward_value", config.loyaltyRewardValue, "Value of the loyalty reward (in ₹)"],
+    ["loyalty_reward_note", config.loyaltyRewardNote, "Human-readable reward description shown to client (blank = auto)"],
+    ["gift_cards_enabled", config.giftCardsEnabled, "Allow gift card creation and redemption (Yes/No)"],
+    ["intake_form_bridal", config.intakeFormBridal, "Comma-separated questions asked at booking for Bridal"],
+    ["intake_form_engagement", config.intakeFormEngagement, "Comma-separated intake questions for Engagement"],
+    ["intake_form_reception", config.intakeFormReception, "Comma-separated intake questions for Reception"],
+    ["intake_form_party", config.intakeFormParty, "Comma-separated intake questions for Party"],
+    ["intake_form_shoot", config.intakeFormShoot, "Comma-separated intake questions for Shoot"],
+    ["intake_form_other", config.intakeFormOther, "Comma-separated intake questions for Other"],
+    ["commission_default_percent", config.commissionDefaultPercent, "Default commission % paid to artists (0 = none)"],
+    ["tips_enabled", config.tipsEnabled, "Add a tip option on the payment page (Yes/No)"],
+    ["no_show_fee_percent", config.noShowFeePercent, "Fee % charged on no-shows (0 = no fee)"],
+    ["no_show_policy", config.noShowPolicy, "Your no-show policy shown on the booking page"],
+    ["email_enabled", config.emailEnabled, "Send email notifications in addition to WhatsApp (Yes/No)"],
+    ["smtp_host", config.smtpHost, "SMTP server hostname (e.g. smtp.gmail.com)"],
+    ["smtp_port", config.smtpPort, "SMTP port (587 for TLS, 465 for SSL)"],
+    ["smtp_user", config.smtpUser, "SMTP login username / email"],
+    ["smtp_pass", config.smtpPass, "SMTP password or app password"],
+    ["smtp_from", config.smtpFrom, "From address shown to recipients (e.g. hello@glowbyaisha.com)"],
+    ["recurring_enabled", config.recurringEnabled, "Allow recurring appointment setup (Yes/No)"],
+    ["service_variants_json", config.serviceVariantsJson, "Service package tiers per service type (JSON)"],
+    ["promo_codes_enabled", config.promoCodesEnabled, "Show a promo code field on the booking page (Yes/No)"],
+    ["rebook_nudge_days_after", config.rebookNudgeDaysAfter, "Days after event to send rebook nudge (blank = off)"],
+    ["rebook_template", config.rebookTemplate, "WhatsApp template name for rebook nudge"],
+    ["rebook_template_lang", config.rebookTemplateLang, "Language code for rebook template"],
+    ["winback_days_after", config.winbackDaysAfter, "Auto win-back: days since last booking to message a lapsed client (blank = off)"],
+    ["winback_template", config.winbackTemplate, "Approved WhatsApp template name for automated win-back messages"],
+    ["winback_template_lang", config.winbackTemplateLang, "Language code for the win-back template (e.g. en)"],
+    ["birthday_template", config.birthdayTemplate, "Approved WhatsApp template for automated birthday greetings (blank = off)"],
+    ["birthday_template_lang", config.birthdayTemplateLang, "Language code for the birthday template (e.g. en)"],
+    ["receipt_template", config.receiptTemplate, "WhatsApp template sent to client after payment is recorded"],
+    ["receipt_template_lang", config.receiptTemplateLang, "Language code for receipt template"],
+    ["invoice_due_days", config.invoiceDueDays, "Days after event date when invoice becomes due (0 = due on receipt)"],
   ];
 
   const artistsRows = [[
@@ -468,6 +545,7 @@ async function seedSpreadsheet(
         { range: `${sheetNames.followUps}!A1:${toColumn(followUpHeaders.length)}1`, values: [[...followUpHeaders]] },
         { range: `${sheetNames.interactionLog}!A1:${toColumn(interactionHeaders.length)}1`, values: [[...interactionHeaders]] },
         { range: `${sheetNames.reviews}!A1:${toColumn(reviewHeaders.length)}1`, values: [[...reviewHeaders]] },
+        { range: `${sheetNames.giftCards}!A1:${toColumn(giftCardHeaders.length)}1`, values: [[...giftCardHeaders]] },
       ],
     },
   });
@@ -643,6 +721,7 @@ async function loadConfigFromSpreadsheet(
       profileHighMultiplier: values.profile_high_multiplier ?? base.profileHighMultiplier,
       profileHighMinFollowers: values.profile_high_min_followers ?? base.profileHighMinFollowers,
       advancePercentage: values.advance_percentage ?? base.advancePercentage,
+      depositPercentByService: String(values.deposit_percent_by_service ?? base.depositPercentByService),
       upiId: String(values.upi_id ?? base.upiId),
       qrImageUrl: String(values.qr_image_url ?? base.qrImageUrl),
       paymentTerms: String(values.payment_terms ?? base.paymentTerms),
@@ -656,6 +735,7 @@ async function loadConfigFromSpreadsheet(
       bookingWeeklyOffDays: String(values.booking_weekly_off_days ?? base.bookingWeeklyOffDays),
       bookingBlockedDates: String(values.booking_blocked_dates ?? base.bookingBlockedDates),
       bookingMaxPerDay: values.booking_max_per_day ?? base.bookingMaxPerDay,
+      bufferMinutes: Number(values.buffer_minutes ?? base.bufferMinutes) || 0,
       bookingConfirmTemplate: String(values.booking_confirm_template ?? base.bookingConfirmTemplate),
       bookingConfirmTemplateLang: String(values.booking_confirm_template_lang ?? base.bookingConfirmTemplateLang),
       approvalTemplate: String(values.approval_template ?? base.approvalTemplate),
@@ -693,6 +773,14 @@ async function loadConfigFromSpreadsheet(
       reviewRequestDaysAfter: String(values.review_request_days_after ?? base.reviewRequestDaysAfter),
       reviewTemplate: String(values.review_template ?? base.reviewTemplate),
       reviewTemplateLang: String(values.review_template_lang ?? base.reviewTemplateLang),
+      rebookNudgeDaysAfter: String(values.rebook_nudge_days_after ?? base.rebookNudgeDaysAfter),
+      rebookTemplate: String(values.rebook_template ?? base.rebookTemplate),
+      rebookTemplateLang: String(values.rebook_template_lang ?? base.rebookTemplateLang),
+      winbackDaysAfter: String(values.winback_days_after ?? base.winbackDaysAfter),
+      winbackTemplate: String(values.winback_template ?? base.winbackTemplate),
+      winbackTemplateLang: String(values.winback_template_lang ?? base.winbackTemplateLang),
+      birthdayTemplate: String(values.birthday_template ?? base.birthdayTemplate),
+      birthdayTemplateLang: String(values.birthday_template_lang ?? base.birthdayTemplateLang),
       documentTemplate: String(values.document_template ?? base.documentTemplate),
       quoteIntro: String(values.quote_intro ?? base.quoteIntro),
       cancellationPolicy: String(values.cancellation_policy ?? base.cancellationPolicy),
@@ -716,6 +804,33 @@ async function loadConfigFromSpreadsheet(
       gstPercentage: Number(values.gst_percentage ?? base.gstPercentage) || 0,
       cancellationWindowDays: Number(values.cancellation_window_days ?? base.cancellationWindowDays) || 7,
       cancellationFeePercent: Number(values.cancellation_fee_percent ?? base.cancellationFeePercent) || 50,
+      loyaltyEnabled: String(values.loyalty_enabled ?? base.loyaltyEnabled),
+      loyaltyVisitsForReward: Number(values.loyalty_visits_for_reward ?? base.loyaltyVisitsForReward) || 5,
+      loyaltyRewardValue: Number(values.loyalty_reward_value ?? base.loyaltyRewardValue) || 500,
+      loyaltyRewardNote: String(values.loyalty_reward_note ?? base.loyaltyRewardNote),
+      giftCardsEnabled: String(values.gift_cards_enabled ?? base.giftCardsEnabled),
+      intakeFormBridal: String(values.intake_form_bridal ?? base.intakeFormBridal),
+      intakeFormEngagement: String(values.intake_form_engagement ?? base.intakeFormEngagement),
+      intakeFormReception: String(values.intake_form_reception ?? base.intakeFormReception),
+      intakeFormParty: String(values.intake_form_party ?? base.intakeFormParty),
+      intakeFormShoot: String(values.intake_form_shoot ?? base.intakeFormShoot),
+      intakeFormOther: String(values.intake_form_other ?? base.intakeFormOther),
+      commissionDefaultPercent: Number(values.commission_default_percent ?? base.commissionDefaultPercent) || 0,
+      tipsEnabled: String(values.tips_enabled ?? base.tipsEnabled),
+      noShowFeePercent: Number(values.no_show_fee_percent ?? base.noShowFeePercent) || 0,
+      noShowPolicy: String(values.no_show_policy ?? base.noShowPolicy),
+      emailEnabled: String(values.email_enabled ?? base.emailEnabled),
+      smtpHost: String(values.smtp_host ?? base.smtpHost),
+      smtpPort: Number(values.smtp_port ?? base.smtpPort) || 587,
+      smtpUser: String(values.smtp_user ?? base.smtpUser),
+      smtpPass: String(values.smtp_pass ?? base.smtpPass),
+      smtpFrom: String(values.smtp_from ?? base.smtpFrom),
+      recurringEnabled: String(values.recurring_enabled ?? base.recurringEnabled),
+      serviceVariantsJson: String(values.service_variants_json ?? base.serviceVariantsJson),
+      promoCodesEnabled: String(values.promo_codes_enabled ?? base.promoCodesEnabled),
+      receiptTemplate: String(values.receipt_template ?? base.receiptTemplate),
+      receiptTemplateLang: String(values.receipt_template_lang ?? base.receiptTemplateLang),
+      invoiceDueDays: Number(values.invoice_due_days ?? base.invoiceDueDays) || 0,
     });
 
     return parsed.success ? parsed.data : base;

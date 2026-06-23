@@ -260,6 +260,21 @@ test("balanceReminderDue fires within 2 days of the event, once", () => {
   assert.equal(balanceReminderDue("", "", now), false);
 });
 
+// --- Reschedule re-arms event-date reminders (remindersSentAfterReschedule) ----
+
+const { remindersSentAfterReschedule } = await import("../src/services/booking.ts");
+
+test("remindersSentAfterReschedule clears event-date markers, keeps the rest", () => {
+  // Pre-event reminders (numeric) and the balance reminder must re-arm…
+  assert.equal(remindersSentAfterReschedule("7,1,paybal"), "");
+  // …while advance nudges (booking-date) and rebook (post-event) survive.
+  assert.equal(remindersSentAfterReschedule("7,payadv1,payadv2,paybal"), "payadv1,payadv2");
+  assert.equal(remindersSentAfterReschedule("1,rebook"), "rebook");
+  // Whitespace tolerant; empty stays empty.
+  assert.equal(remindersSentAfterReschedule(" 7 , payadv3 "), "payadv3");
+  assert.equal(remindersSentAfterReschedule(""), "");
+});
+
 // --- Lead detail edits (editLeadDetailsSchema) ---------------------------------
 
 const { editLeadDetailsSchema } = await import("../src/api-schema.ts");

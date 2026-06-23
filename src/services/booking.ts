@@ -122,6 +122,14 @@ export type LeadRecord = {
   quoteViewedAt: string;
   // Set when the client taps "Accept" on the public quote page.
   quoteAcceptedAt: string;
+  // Who referred this client (name or WhatsApp number of referrer).
+  referredBy: string;
+  // Structured reason owner selects when declining a lead (e.g. "Date full", "Budget mismatch").
+  lostReason: string;
+  // "Urgent" when owner flags a lead as priority; empty otherwise.
+  urgencyFlag: string;
+  // Optional message the client leaves when accepting the quote.
+  clientNote: string;
 };
 
 export type BookingRecord = {
@@ -163,6 +171,10 @@ export type BookingRecord = {
   paymentsLog: string;
   invoiceViewedAt: string;
   contractViewedAt: string;
+  // Date the invoice payment is due (ISO date string, e.g. "2026-07-15").
+  invoiceDueDate: string;
+  // ISO timestamp when client checked in / arrived for this appointment.
+  arrivedAt: string;
 };
 
 export type DashboardData = {
@@ -196,6 +208,9 @@ export type CreateLeadInput = {
   followers?: number;
   clientTags?: string;
   inboundMessage?: string;
+  referredBy?: string;
+  // Client's preferred specialist (from booking page staff picker). Empty = no preference.
+  preferredArtist?: string;
 };
 
 export async function createLeadForWorkspace(
@@ -259,7 +274,7 @@ export async function createLeadForWorkspace(
     ownerDecision: "",
     ownerNotes: "",
     status: "New",
-    assignedArtist: workspace.config.ownerName || "Owner",
+    assignedArtist: input.preferredArtist || workspace.config.ownerName || "Owner",
     lastContactedAt: createdAt,
     tentativeCalendarEventId: "",
     confirmedCalendarEventId: "",
@@ -273,6 +288,10 @@ export async function createLeadForWorkspace(
     quoteNumber: "",
     quoteViewedAt: "",
     quoteAcceptedAt: "",
+    referredBy: input.referredBy ?? "",
+    lostReason: "",
+    urgencyFlag: "",
+    clientNote: "",
   };
 
   await sheets.spreadsheets.values.append({
@@ -343,6 +362,7 @@ export async function applyOwnerDecision(
   decision: "YES" | "NO" | "EDIT",
   approvedPrice?: number,
   ownerNotes?: string,
+  lostReason?: string,
 ) {
   const workspace = await getRequiredWorkspace(email);
   const lead = await findLeadById(workspace, tokens, leadId);
@@ -355,6 +375,7 @@ export async function applyOwnerDecision(
       ...lead.record,
       ownerDecision: "NO",
       ownerNotes: ownerNotes ?? "",
+      lostReason: lostReason ?? lead.record.lostReason,
       status: "Lost",
       lastContactedAt: new Date().toISOString(),
     };
@@ -443,8 +464,13 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
   }
 
   const bookingId = buildId("B");
+  const advancePct = depositPercentForEvent(
+    workspace.config.depositPercentByService,
+    Number(workspace.config.advancePercentage) || 30,
+    lead.record.eventType,
+  );
   const advanceAmount = roundToPremiumNumber(
-    (lead.record.finalApprovedPrice * (Number(workspace.config.advancePercentage) || 30)) / 100,
+    (lead.record.finalApprovedPrice * advancePct) / 100,
   );
   const balanceDue = Math.max(0, lead.record.finalApprovedPrice - advanceAmount);
   const confirmedEventId = await createConfirmedCalendarEvent(workspace, tokens, {
@@ -488,6 +514,8 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     paymentsLog: "",
     invoiceViewedAt: "",
     contractViewedAt: "",
+    invoiceDueDate: "",
+    arrivedAt: "",
   };
 
   const updatedLead: LeadRecord = {
@@ -531,7 +559,12 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     ).catch(() => {});
   }
 
-  await updateLeadRow(workspace, tokens, lead.rowNumber, updatedLead);
+  // Best-effort, as the comment above says: the booking row is already the
+  // committed source of truth. Swallow a failure here rather than throwing —
+  // throwing would discard a successful booking and let a retry create a
+  // DUPLICATE booking row (the lead's bookingId never got set). A stale lead
+  // row self-heals on the next dashboard refresh.
+  await updateLeadRow(workspace, tokens, lead.rowNumber, updatedLead).catch(() => {});
 
   void notifyTeamOfBooking(workspace, tokens, booking);
 
@@ -603,6 +636,22 @@ async function notifyTeamOfBooking(
 // the Google Calendar event in lockstep: the old event is removed and a fresh
 // one created on the new date (delete+create is simpler and as reliable as a
 // patch for all-day-style events).
+// When a booking moves, every reminder keyed to the EVENT date must re-arm for
+// the new date: the pre-event reminders (numeric day markers like "7"/"1") and
+// the T-2 balance reminder ("paybal"). Markers keyed to the booking-creation
+// date (advance nudges "payadv*") or fired post-event ("rebook") are unaffected
+// by the move and are kept, so the client is never re-nagged about money they
+// were already chased for. Without this, a rescheduled client silently gets no
+// reminder because the old date's marker still reads as "already sent".
+export function remindersSentAfterReschedule(remindersSent: string): string {
+  return (remindersSent || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((marker) => !/^\d+$/.test(marker) && marker !== "paybal")
+    .join(",");
+}
+
 export async function rescheduleBooking(
   email: string,
   tokens: Credentials,
@@ -635,6 +684,8 @@ export async function rescheduleBooking(
     eventTime,
     venue,
     confirmedCalendarEventId: newEventId,
+    // Re-arm event-date-relative reminders for the new date.
+    remindersSent: remindersSentAfterReschedule(booking.record.remindersSent),
   };
   await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
 
@@ -718,7 +769,8 @@ function leadFromBooking(booking: BookingRecord): LeadRecord {
     lastContactedAt: "", tentativeCalendarEventId: "", confirmedCalendarEventId: "",
     bookingId: booking.bookingId, paymentStatus: booking.paymentStatus, quoteUrl: "",
     quoteGeneratedAt: "", quoteVoidedAt: "", quoteAdjustments: "", orderItems: booking.orderItems,
-    quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "",
+    quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "", referredBy: "",
+    lostReason: "", urgencyFlag: "", clientNote: "",
   };
 }
 
@@ -758,8 +810,13 @@ export type PaymentEntry = {
   note: string;
   at: string;
   // "refund" entries subtract from the running total (cancelled weddings are
-  // a fact of life); everything else counts as money received.
-  kind?: "payment" | "refund";
+  // a fact of life). "tip" entries are money received but NOT against the
+  // service price, so they're tracked separately and never move the balance or
+  // payment status. Everything else counts as a payment toward the booking.
+  kind?: "payment" | "refund" | "tip";
+  // Gateway reference (e.g. Razorpay payment_id) for online entries, so the
+  // money can later be refunded through the gateway, not just on paper.
+  ref?: string;
 };
 
 // Tolerant parser: bad/empty JSON yields an empty ledger rather than throwing.
@@ -776,7 +833,11 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
           method: String(e.method ?? "").slice(0, 30),
           note: String(e.note ?? "").slice(0, 120),
           at: String(e.at ?? ""),
-          kind: e.kind === "refund" ? ("refund" as const) : ("payment" as const),
+          kind:
+            e.kind === "refund" ? ("refund" as const)
+            : e.kind === "tip" ? ("tip" as const)
+            : ("payment" as const),
+          ...(e.ref ? { ref: String(e.ref).slice(0, 60) } : {}),
         };
       })
       .filter((entry) => entry.amount > 0);
@@ -785,8 +846,19 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
   }
 }
 
+// Money received against the booking price: payments minus refunds. Tips are
+// deliberately excluded — they're a bonus on top of the price, so counting them
+// here would wrongly mark a booking overpaid / close out its balance early.
 export function paymentsTotal(log: PaymentEntry[]): number {
-  return log.reduce((sum, entry) => sum + (entry.kind === "refund" ? -entry.amount : entry.amount), 0);
+  return log.reduce((sum, entry) => {
+    if (entry.kind === "tip") return sum;
+    return sum + (entry.kind === "refund" ? -entry.amount : entry.amount);
+  }, 0);
+}
+
+// Sum of tip entries — surfaced separately (payment modal, artist's tip income).
+export function tipsTotal(log: PaymentEntry[]): number {
+  return log.reduce((sum, entry) => sum + (entry.kind === "tip" ? entry.amount : 0), 0);
 }
 
 // Payment status derived from how much has actually been received.
@@ -807,18 +879,28 @@ export async function recordBookingPayment(
   email: string,
   tokens: Credentials,
   bookingId: string,
-  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" },
+  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" | "tip"; ref?: string },
 ) {
   let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
   const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
     const log = parsePaymentsLog(current.paymentsLog);
-    log.push({
-      amount: Math.round(input.amount),
-      method: String(input.method ?? "UPI").slice(0, 30),
-      note: String(input.note ?? "").slice(0, 120),
-      at: new Date().toISOString(),
-      kind: input.type === "refund" ? "refund" : "payment",
-    });
+    const kind = input.type === "refund" ? "refund" : input.type === "tip" ? "tip" : "payment";
+    // Idempotency for online payments: Razorpay entries carry the gateway
+    // payment_id as `ref`. If a retried /verify or a webhook race lands the
+    // same ref twice, don't record it again — just recompute status from the
+    // log we already have. Manual entries have no ref and are never deduped,
+    // so two legitimate cash instalments still both count.
+    const isDuplicate = Boolean(input.ref) && log.some((e) => e.ref === String(input.ref).slice(0, 60) && e.kind === kind);
+    if (!isDuplicate) {
+      log.push({
+        amount: Math.round(input.amount),
+        method: String(input.method ?? "UPI").slice(0, 30),
+        note: String(input.note ?? "").slice(0, 120),
+        at: new Date().toISOString(),
+        kind,
+        ...(input.ref ? { ref: String(input.ref).slice(0, 60) } : {}),
+      });
+    }
     const paidTotal = paymentsTotal(log);
     derived = derivePaymentStatus(current.finalPrice, current.advanceAmount, paidTotal);
     return {
@@ -841,6 +923,44 @@ export async function recordBookingPayment(
   return booking;
 }
 
+// Removes a single mis-entered ledger line by its position. Entries have no IDs,
+// so the index (as shown in the modal, newest-first) is the handle. Recomputes
+// payment status and balance so a deleted advance correctly reopens the balance.
+export async function deleteBookingPaymentEntry(
+  email: string,
+  tokens: Credentials,
+  bookingId: string,
+  index: number,
+) {
+  let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
+  const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
+    const log = parsePaymentsLog(current.paymentsLog);
+    if (index < 0 || index >= log.length) {
+      throw new Error("That payment entry no longer exists — refresh and try again.");
+    }
+    log.splice(index, 1);
+    const paidTotal = paymentsTotal(log);
+    derived = derivePaymentStatus(current.finalPrice, current.advanceAmount, paidTotal);
+    return {
+      ...current,
+      paymentsLog: JSON.stringify(log),
+      paymentStatus: derived,
+      balanceDue: Math.max(0, current.finalPrice - paidTotal),
+    };
+  });
+
+  if (booking.leadId) {
+    await updateLeadRecord(email, tokens, booking.leadId, (lead) => ({
+      ...lead,
+      paymentStatus: derived,
+      status: derived === "Paid in Full" ? "Payment Received" : (lead.status === "Payment Received" ? "Confirmed" : lead.status),
+      lastContactedAt: new Date().toISOString(),
+    })).catch(() => undefined);
+  }
+
+  return booking;
+}
+
 // ---- Client import ----
 // Brings her existing client list in (from a notebook, Excel, or another app)
 // as completed past clients: they appear in the Clients directory and power
@@ -854,6 +974,17 @@ export type ImportClientRow = {
   locationText?: string;
   clientTags?: string;
 };
+
+export async function toggleLeadUrgency(
+  email: string,
+  tokens: Credentials,
+  leadId: string,
+): Promise<LeadRecord> {
+  return updateLeadRecord(email, tokens, leadId, (lead) => ({
+    ...lead,
+    urgencyFlag: lead.urgencyFlag === "Urgent" ? "" : "Urgent",
+  }));
+}
 
 export async function importClients(
   email: string,
@@ -919,6 +1050,10 @@ export async function importClients(
       quoteNumber: "",
       quoteViewedAt: "",
       quoteAcceptedAt: "",
+      referredBy: "",
+      lostReason: "",
+      urgencyFlag: "",
+      clientNote: "",
     });
   }
 
@@ -943,6 +1078,23 @@ export async function countActiveLeadsForDate(
 ) {
   const workspace = await getRequiredWorkspace(email);
   return getDemandCountForDate(workspace, tokens, eventDate);
+}
+
+// Active (not lost/completed, not waitlisted) leads on a date — the jobs that
+// actually occupy her timeline. Used for duration-aware slot availability.
+export async function listActiveLeadsForDate(
+  email: string,
+  tokens: Credentials,
+  eventDate: string,
+): Promise<LeadRecord[]> {
+  const workspace = await getRequiredWorkspace(email);
+  const leads = await listLeadRows(workspace, tokens);
+  return leads.filter(
+    (lead) =>
+      lead.eventDate === eventDate &&
+      !["Lost", "Completed"].includes(lead.status) &&
+      lead.source !== "Waitlist",
+  );
 }
 
 export async function getDashboardData(email: string, tokens: Credentials): Promise<DashboardData> {
@@ -1143,7 +1295,12 @@ function calculatePricing(
     Other: workspace.config.basePriceOther,
   };
 
-  const eventMonth = new Date(input.eventDate).getMonth();
+  // Parse the month straight from the YYYY-MM-DD string. new Date(...).getMonth()
+  // reads UTC-midnight in the server's local zone, which can land on the wrong
+  // month for dates near a boundary on a non-IST server. 1-based "MM" → 0-based.
+  const eventMonth = /^\d{4}-\d{2}-\d{2}$/.test(input.eventDate)
+    ? Number(input.eventDate.slice(5, 7)) - 1
+    : new Date(input.eventDate).getMonth();
   const seasonKeys = [
     workspace.config.multiplierJan,
     workspace.config.multiplierFeb,
@@ -1175,12 +1332,7 @@ function calculatePricing(
         ? workspace.config.profileLowMultiplier
         : workspace.config.profileMidMultiplier;
 
-  const travelCost =
-    travel.distanceKm >= workspace.config.travelOutstationThresholdKm
-      ? workspace.config.travelOutstation
-      : travel.distanceKm > 25
-        ? workspace.config.travelNearbyCity
-        : workspace.config.travelWithinCity;
+  const travelCost = travelCostForDistance(workspace.config, travel.distanceKm);
 
   const rawPrice = basePrice * seasonMultiplier * demandMultiplier * profileMultiplier + travelCost;
   const finalPrice = roundToPremiumNumber(rawPrice);
@@ -1201,6 +1353,34 @@ function calculatePricing(
     scarcityTag,
     travelSource: travel.source,
   };
+}
+
+// Travel fee for a job `distanceKm` away. Two modes:
+//   - Per-km (travelPerKmRate > 0): distance × rate, rounded to ₹50.
+//   - Tiered (default): within city / nearby city / outstation flat fees, with
+//     both tier boundaries configurable (no hardcoded km values).
+// Tolerates older workspace records that predate the threshold fields.
+export function travelCostForDistance(
+  config: Pick<
+    WorkspaceRecord["config"],
+    | "travelWithinCity"
+    | "travelNearbyCity"
+    | "travelOutstation"
+    | "travelOutstationThresholdKm"
+    | "travelNearbyThresholdKm"
+    | "travelPerKmRate"
+  >,
+  distanceKm: number,
+): number {
+  const perKm = Number(config.travelPerKmRate) || 0;
+  if (perKm > 0) {
+    return Math.round((distanceKm * perKm) / 50) * 50;
+  }
+  const nearbyFrom = Number(config.travelNearbyThresholdKm) > 0 ? Number(config.travelNearbyThresholdKm) : 25;
+  const outstationFrom = Number(config.travelOutstationThresholdKm) > 0 ? Number(config.travelOutstationThresholdKm) : 100;
+  if (distanceKm >= outstationFrom) return Number(config.travelOutstation) || 0;
+  if (distanceKm > nearbyFrom) return Number(config.travelNearbyCity) || 0;
+  return Number(config.travelWithinCity) || 0;
 }
 
 export function roundToPremiumNumber(value: number) {
@@ -1522,6 +1702,72 @@ export function durationHoursForEvent(raw: string | undefined, eventType: string
   return fallback;
 }
 
+// Resolves the advance/deposit % for a service: a per-service override (from the
+// depositPercentByService JSON, e.g. {"Bridal":50}) if present, else the
+// workspace-wide default. Booksy lets pros set a bigger deposit on big jobs.
+export function depositPercentForEvent(
+  perServiceJson: string | undefined,
+  defaultPercent: number,
+  eventType: string,
+): number {
+  const fallback = Number(defaultPercent) > 0 ? Number(defaultPercent) : 30;
+  try {
+    const map = JSON.parse(String(perServiceJson || "{}")) as Record<string, unknown>;
+    const v = Number(map[eventType]);
+    if (Number.isFinite(v) && v > 0 && v <= 100) return v;
+  } catch {
+    /* malformed JSON → use the default */
+  }
+  return fallback;
+}
+
+// ---- Duration-aware slot availability ----
+// A 4-hour bridal at 09:00 occupies 09:00–13:00, so the 11:00 slot must show
+// as taken. Jobs without a time can't be placed on the timeline; they count
+// against the day capacity (bookingMaxPerDay) but not against specific slots.
+
+export type SlotAvailability = { time: string; available: boolean };
+
+function minutesOfDay(time: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(time || "").trim());
+  if (!match) return null;
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  return minutes >= 0 && minutes < 24 * 60 ? minutes : null;
+}
+
+export function computeSlotAvailability(input: {
+  timeSlots: string[];
+  serviceDurations: string;
+  requestedEventType: string;
+  busy: { eventTime: string; eventType: string; travelMinutes?: number }[];
+  // Cleanup/buffer minutes padded around every existing job, so back-to-back
+  // bookings leave the artist time to pack up, reset her kit and breathe.
+  bufferMinutes?: number;
+}): SlotAvailability[] {
+  const buffer = Math.max(0, Math.min(480, Math.round(input.bufferMinutes || 0)));
+  const requestedMinutes = durationHoursForEvent(input.serviceDurations, input.requestedEventType) * 60;
+  const busyWindows = input.busy
+    .map((job) => {
+      const start = minutesOfDay(job.eventTime);
+      if (start === null) return null;
+      const duration = durationHoursForEvent(input.serviceDurations, job.eventType) * 60;
+      // Pad each job by the buffer on both sides, plus any travel time it needs
+      // afterwards (a mobile artist must reach the next venue before she can
+      // start there). Both default to 0, so the math is unchanged when unset.
+      const travel = Math.max(0, Math.round(Number(job.travelMinutes) || 0));
+      return { start: start - buffer, end: start + duration + buffer + travel };
+    })
+    .filter((w): w is { start: number; end: number } => w !== null);
+
+  return input.timeSlots.map((time) => {
+    const start = minutesOfDay(time);
+    if (start === null) return { time, available: false };
+    const end = start + requestedMinutes;
+    const clash = busyWindows.some((w) => start < w.end && w.start < end);
+    return { time, available: !clash };
+  });
+}
+
 function buildEventWindow(eventDate: string, eventTime: string | undefined, durationHours: number) {
   const time = normalizeEventTime(eventTime);
   const ms = durationHours * 60 * 60 * 1000;
@@ -1586,6 +1832,10 @@ function leadToRow(lead: LeadRecord) {
     lead.quoteNumber,
     lead.quoteViewedAt,
     lead.quoteAcceptedAt,
+    lead.referredBy,
+    lead.lostReason,
+    lead.urgencyFlag,
+    lead.clientNote,
   ];
 }
 
@@ -1632,6 +1882,10 @@ function rowToLead(row: string[]): LeadRecord {
     quoteNumber: row[38] ?? "",
     quoteViewedAt: row[39] ?? "",
     quoteAcceptedAt: row[40] ?? "",
+    referredBy: row[41] ?? "",
+    lostReason: row[42] ?? "",
+    urgencyFlag: row[43] ?? "",
+    clientNote: row[44] ?? "",
   };
 }
 
@@ -1672,6 +1926,8 @@ function bookingToRow(booking: BookingRecord) {
     booking.paymentsLog,
     booking.invoiceViewedAt,
     booking.contractViewedAt,
+    booking.invoiceDueDate,
+    booking.arrivedAt,
   ];
 }
 
@@ -1712,6 +1968,8 @@ function rowToBooking(row: string[]): BookingRecord {
     paymentsLog: row[32] ?? "",
     invoiceViewedAt: row[33] ?? "",
     contractViewedAt: row[34] ?? "",
+    invoiceDueDate: row[35] ?? "",
+    arrivedAt: row[36] ?? "",
   };
 }
 

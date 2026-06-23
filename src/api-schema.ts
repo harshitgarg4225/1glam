@@ -2,8 +2,8 @@ import { z } from "zod";
 
 export const createLeadSchema = z.object({
   source: z.string().min(1).default("Instagram"),
-  clientName: z.string().min(1),
-  clientWhatsApp: z.string().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
+  clientName: z.string().trim().min(1),
+  clientWhatsApp: z.string().trim().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
   clientInstagram: z.string().optional(),
   eventType: z.string().min(1),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
@@ -14,27 +14,35 @@ export const createLeadSchema = z.object({
   profileTier: z.enum(["Low", "Mid", "High"]).optional(),
   followers: z.coerce.number().optional(),
   clientTags: z.string().optional(),
+  referredBy: z.string().max(120).optional(),
 });
 
 export const publicBookingSchema = z.object({
-  clientName: z.string().min(1).max(120),
-  clientWhatsApp: z.string().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
+  // .trim() before .min(1) rejects whitespace-only input ("   ") that would
+  // otherwise pass length checks and create a junk lead with a blank name.
+  clientName: z.string().trim().min(1).max(120),
+  clientWhatsApp: z.string().trim().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
   clientInstagram: z.string().max(120).optional(),
-  eventType: z.string().min(1).max(40),
+  eventType: z.string().trim().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   eventTime: z.string().max(20).optional(),
-  locationText: z.string().min(1).max(200),
+  // Venue is often unknown when a bride first requests a date; the artist
+  // confirms it on WhatsApp anyway. Accept a blank and default to a clear
+  // placeholder rather than blocking the request.
+  locationText: z.string().trim().max(200).optional().default("To be decided"),
   addons: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
+  promoCode: z.string().max(40).optional(),
+  preferredArtist: z.string().max(80).optional(),
 });
 
 // One-shot walk-in/phone booking: creates the lead and confirms it in a single
 // call so the owner never has to walk the pipeline for a client she already
 // said yes to.
 export const quickBookingSchema = z.object({
-  clientName: z.string().min(1).max(120),
-  clientWhatsApp: z.string().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
-  eventType: z.string().min(1).max(40),
+  clientName: z.string().trim().min(1).max(120),
+  clientWhatsApp: z.string().trim().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
+  eventType: z.string().trim().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   eventTime: z.string().max(20).optional(),
   // Venue and price are optional — artists often block the date first and
@@ -63,6 +71,7 @@ export const ownerDecisionSchema = z.object({
   decision: z.enum(["YES", "NO", "EDIT"]),
   approvedPrice: z.coerce.number().optional(),
   ownerNotes: z.string().optional(),
+  lostReason: z.string().max(100).optional(),
 });
 
 export const paymentStatusSchema = z.object({

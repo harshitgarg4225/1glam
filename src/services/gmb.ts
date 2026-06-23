@@ -331,3 +331,135 @@ export async function postGmbReply(
     return false;
   }
 }
+
+// ---- GMB Posts (Google Business updates/offers/events) ----
+
+export type GmbPost = {
+  postName: string;
+  summary: string;
+  topicType: "STANDARD" | "OFFER" | "EVENT";
+  createdAt: string;
+  state: string;
+  callToAction?: { actionType: string; url?: string };
+};
+
+export async function listGmbPosts(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+): Promise<{ apiAvailable: boolean; posts: GmbPost[] }> {
+  if (!gmbApiAvailable(workspace)) return { apiAvailable: false, posts: [] };
+  try {
+    const target = await resolvePrimaryLocation(tokens);
+    if (!target) return { apiAvailable: false, posts: [] };
+
+    const { auth } = createGoogleClients(tokens);
+    const headers = await auth.getRequestHeaders();
+    const res = await fetchWithTimeout(
+      `https://mybusiness.googleapis.com/v4/${target.location}/localPosts?pageSize=10`,
+      { headers },
+    );
+    if (!res.ok) return { apiAvailable: false, posts: [] };
+
+    const json = (await res.json()) as {
+      localPosts?: Array<{
+        name?: string;
+        summary?: string;
+        topicType?: string;
+        createTime?: string;
+        state?: string;
+        callToAction?: { actionType?: string; url?: string };
+      }>;
+    };
+    const posts: GmbPost[] = (json.localPosts ?? []).map((p) => ({
+      postName: p.name || "",
+      summary: p.summary || "",
+      topicType: (p.topicType as GmbPost["topicType"]) || "STANDARD",
+      createdAt: p.createTime || "",
+      state: p.state || "",
+      callToAction: p.callToAction
+        ? { actionType: p.callToAction.actionType || "LEARN_MORE", url: p.callToAction.url }
+        : undefined,
+    }));
+    return { apiAvailable: true, posts };
+  } catch {
+    return { apiAvailable: false, posts: [] };
+  }
+}
+
+export type GmbPostInput = {
+  summary: string;
+  topicType?: "STANDARD" | "OFFER" | "EVENT";
+  callToActionType?: string;
+  callToActionUrl?: string;
+};
+
+export async function createGmbPost(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  input: GmbPostInput,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!gmbApiAvailable(workspace)) return { ok: false, error: "GMB API not available" };
+  try {
+    const target = await resolvePrimaryLocation(tokens);
+    if (!target) return { ok: false, error: "Could not resolve business location" };
+
+    const { auth } = createGoogleClients(tokens);
+    const headers = await auth.getRequestHeaders();
+
+    const body: Record<string, unknown> = {
+      summary: input.summary,
+      topicType: input.topicType || "STANDARD",
+    };
+    if (input.callToActionType && input.callToActionUrl) {
+      body.callToAction = { actionType: input.callToActionType, url: input.callToActionUrl };
+    }
+
+    const res = await fetchWithTimeout(
+      `https://mybusiness.googleapis.com/v4/${target.location}/localPosts`,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!res.ok) {
+      const err = await extractApiError(res);
+      return { ok: false, error: err };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Unknown error" };
+  }
+}
+
+// ---- Reputation summary ----
+// Aggregates live GMB review data (when available) and internal review-request stats.
+export type ReputationSummary = {
+  apiAvailable: boolean;
+  averageRating: number;
+  totalReviews: number;
+  unansweredCount: number;
+  responseRate: number; // 0-100
+};
+
+export async function getReputationSummary(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+): Promise<ReputationSummary> {
+  const { apiAvailable, reviews } = await listGmbReviews(workspace, tokens);
+  if (!apiAvailable || !reviews.length) {
+    const rating = Number(workspace.config.googleRating) || 0;
+    const count = Number(workspace.config.googleReviewCount) || 0;
+    return { apiAvailable: false, averageRating: rating, totalReviews: count, unansweredCount: 0, responseRate: 0 };
+  }
+  const total = reviews.length;
+  const ratingSum = reviews.reduce((s, r) => s + r.rating, 0);
+  const answered = reviews.filter((r) => r.reply).length;
+  return {
+    apiAvailable: true,
+    averageRating: total ? Math.round((ratingSum / total) * 10) / 10 : 0,
+    totalReviews: total,
+    unansweredCount: total - answered,
+    responseRate: total ? Math.round((answered / total) * 100) : 0,
+  };
+}

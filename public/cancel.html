@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cancel your booking</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/brand.css" />
+  <meta name="theme-color" content="#C26B45" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="BusyDays" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Design tokens come from /brand.css — keep this page in lockstep with the
+       rest of the product. Only page-specific values would live here. */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    * { -webkit-tap-highlight-color: transparent; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 24px 16px 60px; }
+    .card { background: var(--card); border-radius: var(--radius-lg); box-shadow: var(--shadow); width: 100%; max-width: 440px; padding: 32px 28px; }
+    .brand { text-align: center; margin-bottom: 24px; }
+    .brand-name { font-size: 22px; font-weight: 700; color: var(--accent); }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .sub { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    .info-box { background: var(--surface); border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; font-size: 14px; }
+    .info-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--line); gap: 12px; }
+    .info-row:last-child { border: none; }
+    .info-label { color: var(--muted); flex-shrink: 0; }
+    .info-value { font-weight: 600; text-align: right; }
+    .fee-note { border-radius: 10px; padding: 13px 15px; margin-bottom: 18px; font-size: 13.5px; line-height: 1.55; }
+    .fee-note.warn { background: #fdf4e3; border: 1px solid #efd9ae; color: #9a6b1f; }
+    .fee-note.ok { background: #e8f7ee; border: 1px solid #bfe6cd; color: #1e7a3f; }
+    .policy { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-bottom: 18px; }
+    .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; color: #fff; transition: opacity .15s, transform .08s ease; touch-action: manipulation; }
+    .btn:active:not(:disabled) { transform: scale(.98); }
+    .btn-danger { background: var(--danger); }
+    .btn-danger.armed { background: #7f1414; animation: armed-pulse 1s ease-in-out infinite; }
+    @keyframes armed-pulse { 0%,100% { opacity: 1; } 50% { opacity: .82; } }
+    .btn-keep { background: transparent; color: var(--muted); border: 1px solid var(--line); margin-top: 10px; font-weight: 600; }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .status { margin-top: 14px; text-align: center; font-size: 14px; }
+    .status.error { color: var(--danger); }
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .done-screen { text-align: center; padding: 20px 0; }
+    .done-icon { font-size: 48px; margin-bottom: 16px; }
+    .done-screen h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .done-screen p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .skeleton { background: linear-gradient(90deg, #f0ece7 25%, #e8e3de 50%, #f0ece7 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="brand"><div class="brand-name skeleton" id="brand-name" style="height:28px;width:160px;margin:0 auto;border-radius:8px;"></div></div>
+    <div id="main-content">
+      <div class="skeleton" style="height:22px;width:70%;margin-bottom:10px;"></div>
+      <div class="skeleton" style="height:14px;width:100%;margin-bottom:4px;"></div>
+      <div class="skeleton" style="height:14px;width:85%;margin-bottom:20px;"></div>
+      <div class="skeleton" style="height:120px;border-radius:10px;margin-bottom:20px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const pathParts = location.pathname.split("/");
+    const workspaceId = pathParts[pathParts.length - 2];
+    const bookingId = pathParts[pathParts.length - 1];
+    const sig = params.get("sig");
+    const exp = params.get("exp");
+
+    const qs = `?sig=${encodeURIComponent(sig || "")}&exp=${encodeURIComponent(exp || "")}`;
+
+    function inr(n) { return "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN"); }
+    function formatDate(d) {
+      if (!d) return "—";
+      try { return new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "long", year: "numeric" }); }
+      catch { return d; }
+    }
+    function escHtml(s) {
+      return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    async function init() {
+      const res = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/cancel/${encodeURIComponent(bookingId)}${qs}`);
+      const data = await res.json();
+      if (!data.ok) {
+        document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:var(--danger);font-size:15px;">${escHtml(data.error || "This link has expired. Please contact the studio.")}</p>`;
+        document.getElementById("brand-name").textContent = "BusyDays";
+        return;
+      }
+
+      document.documentElement.style.setProperty("--accent", data.brandColor || "#C26B45");
+      document.getElementById("brand-name").className = "";
+      document.getElementById("brand-name").textContent = data.businessName;
+
+      if (data.alreadyCancelled) {
+        renderDone("This booking is already cancelled.", "Nothing more to do here.");
+        return;
+      }
+
+      const b = data.booking;
+      const feeBlock = data.withinWindow && data.feeAmount > 0
+        ? `<div class="fee-note warn">⚠️ Your event is in ${data.daysUntil} day${data.daysUntil === 1 ? "" : "s"} — inside the studio's ${data.windowDays}-day cancellation window. A cancellation fee of <strong>${inr(data.feeAmount)}</strong> (${data.feePercent}%) may apply${data.paidSoFar > 0 ? `, and you've paid ${inr(data.paidSoFar)} so far` : ""}.</div>`
+        : `<div class="fee-note ok">✓ You're cancelling outside the studio's cancellation window, so no cancellation fee applies.${data.paidSoFar > 0 ? ` Any refund of the ${inr(data.paidSoFar)} you've paid will be arranged by the studio.` : ""}</div>`;
+
+      document.getElementById("main-content").innerHTML = `
+        <h1>Cancel your booking</h1>
+        <p class="sub">Hi ${escHtml(b.clientName)}, we're sorry you can't make it. Please review the details before confirming.</p>
+        <div class="info-box">
+          <div class="info-row"><span class="info-label">Service</span><span class="info-value">${escHtml(b.eventType)}</span></div>
+          <div class="info-row"><span class="info-label">Date</span><span class="info-value">${formatDate(b.eventDate)}${b.eventTime ? " · " + escHtml(b.eventTime) : ""}</span></div>
+          ${b.venue ? `<div class="info-row"><span class="info-label">Venue</span><span class="info-value">${escHtml(b.venue)}</span></div>` : ""}
+          ${b.finalPrice ? `<div class="info-row"><span class="info-label">Booking value</span><span class="info-value">${inr(b.finalPrice)}</span></div>` : ""}
+        </div>
+        ${feeBlock}
+        ${data.cancellationPolicy ? `<p class="policy">${escHtml(data.cancellationPolicy)}</p>` : ""}
+        <button class="btn btn-danger" id="confirm-btn" type="button">Cancel my booking</button>
+        <button class="btn btn-keep" id="keep-btn" type="button">Keep my booking</button>
+        <div class="status" id="status"></div>
+      `;
+      // Cancelling a (possibly paid) booking is irreversible — require a second,
+      // deliberate tap rather than firing on a single fat-finger.
+      let cancelArmed = false;
+      const confirmBtn = document.getElementById("confirm-btn");
+      confirmBtn.addEventListener("click", () => {
+        if (!cancelArmed) {
+          cancelArmed = true;
+          confirmBtn.textContent = "Tap again to confirm cancellation";
+          confirmBtn.classList.add("armed");
+          setTimeout(() => {
+            if (cancelArmed) { cancelArmed = false; confirmBtn.textContent = "Cancel my booking"; confirmBtn.classList.remove("armed"); }
+          }, 4000);
+          return;
+        }
+        submitCancel();
+      });
+      // "Keep" should return the client to their appointment, never dump them on
+      // the marketing root where they can't get back to their booking.
+      document.getElementById("keep-btn").addEventListener("click", () => {
+        if (b.leadId) {
+          location.href = `/appointment/${encodeURIComponent(workspaceId)}/${encodeURIComponent(b.leadId)}`;
+        } else {
+          renderDone("Your booking is unchanged.", "Glad you're still coming — see you then! You can close this page.");
+        }
+      });
+    }
+
+    async function submitCancel() {
+      const btn = document.getElementById("confirm-btn");
+      const statusEl = document.getElementById("status");
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span>Cancelling…`;
+      statusEl.textContent = "";
+      try {
+        const res = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/cancel/${encodeURIComponent(bookingId)}${qs}`, { method: "POST" });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Something went wrong");
+        renderDone(
+          "Your booking is cancelled.",
+          data.withinWindow && data.feeAmount > 0
+            ? `A cancellation fee of ${inr(data.feeAmount)} may apply — the studio will be in touch.`
+            : "The studio has been notified. We hope to see you another time!",
+        );
+      } catch (err) {
+        statusEl.textContent = err.message;
+        statusEl.className = "status error";
+        btn.disabled = false;
+        btn.textContent = "Cancel my booking";
+      }
+    }
+
+    function renderDone(title, sub) {
+      document.getElementById("main-content").innerHTML = `
+        <div class="done-screen">
+          <div class="done-icon">🗓️</div>
+          <h2>${escHtml(title)}</h2>
+          <p>${escHtml(sub)}</p>
+        </div>`;
+    }
+
+    init().catch((err) => {
+      document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:var(--danger);">${escHtml(err.message)}</p>`;
+      document.getElementById("brand-name").textContent = "BusyDays";
+    });
+  </script>
+</body>
+</html>
