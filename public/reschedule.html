@@ -43,6 +43,10 @@
     .done-screen p { font-size: 14px; color: var(--muted); line-height: 1.6; }
     .skeleton { background: linear-gradient(90deg, #f0ece7 25%, #e8e3de 50%, #f0ece7 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }
     @keyframes shimmer { to { background-position: -200% 0; } }
+    .slot { padding: 9px 18px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; font: inherit; font-size: 14px; min-height: 40px; touch-action: manipulation; transition: border-color .15s, background .15s, opacity .15s; }
+    .slot:hover:not(:disabled) { border-color: var(--accent); }
+    .slot.slot-selected { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+    .slot-taken { opacity: 0.45; cursor: not-allowed !important; text-decoration: line-through; }
     /* Native-app polish */
     html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     * { -webkit-tap-highlight-color: transparent; }
@@ -143,34 +147,36 @@
         <div class="status" id="status"></div>
       `;
 
+      let renderSlots = null;
       if (hasSlots) {
         const slotsEl = document.getElementById("time-slots");
-        eventSlots.forEach((slot) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "slot";
-          btn.style.cssText = "padding:9px 18px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;font:inherit;font-size:14px;transition:border-color .15s,background .15s;";
-          btn.textContent = formatSlot(slot);
-          btn.dataset.value = slot;
-          if (b.eventTime && b.eventTime.slice(0,5) === slot) {
-            btn.style.borderColor = "var(--accent)";
-            btn.style.background = "#FBF0EA";
-            btn.style.fontWeight = "600";
-            selectedSlotTime = slot;
-            document.getElementById("new-time").value = slot;
-          }
-          btn.addEventListener("click", () => {
-            slotsEl.querySelectorAll(".slot").forEach((s) => {
-              s.style.borderColor = ""; s.style.background = ""; s.style.fontWeight = "";
+        renderSlots = function(takenTimes) {
+          slotsEl.innerHTML = "";
+          eventSlots.forEach((slot) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.dataset.value = slot;
+            const isTaken = Array.isArray(takenTimes) && takenTimes.includes(slot);
+            const preSelected = !selectedSlotTime && b.eventTime && b.eventTime.slice(0, 5) === slot;
+            const isSelected = selectedSlotTime === slot || preSelected;
+            btn.className = "slot" + (isSelected && !isTaken ? " slot-selected" : "") + (isTaken ? " slot-taken" : "");
+            btn.textContent = formatSlot(slot) + (isTaken ? " — taken" : "");
+            btn.disabled = isTaken;
+            if (preSelected && !isTaken) {
+              selectedSlotTime = slot;
+              document.getElementById("new-time").value = slot;
+            }
+            btn.addEventListener("click", () => {
+              if (btn.disabled) return;
+              slotsEl.querySelectorAll(".slot").forEach((s) => s.classList.remove("slot-selected"));
+              btn.classList.add("slot-selected");
+              selectedSlotTime = slot;
+              document.getElementById("new-time").value = slot;
             });
-            btn.style.borderColor = "var(--accent)";
-            btn.style.background = "#FBF0EA";
-            btn.style.fontWeight = "600";
-            selectedSlotTime = slot;
-            document.getElementById("new-time").value = slot;
+            slotsEl.appendChild(btn);
           });
-          slotsEl.appendChild(btn);
-        });
+        };
+        renderSlots(null);
       }
 
       document.getElementById("new-date").addEventListener("change", (e) => {
@@ -178,6 +184,19 @@
         const err = dateError(e.target.value);
         hint.textContent = err || "";
         hint.className = "status" + (err ? " error" : "");
+        if (!err && e.target.value && renderSlots) {
+          selectedSlotTime = "";
+          document.getElementById("new-time").value = "";
+          hint.textContent = "Checking availability…";
+          fetch(`/api/public/${encodeURIComponent(workspaceId)}/slots?date=${encodeURIComponent(e.target.value)}&eventType=${encodeURIComponent(b.eventType || "")}`)
+            .then((r) => r.json())
+            .then((data) => {
+              hint.textContent = "";
+              const taken = (data.slots || []).filter((s) => !s.available).map((s) => s.time);
+              renderSlots(taken);
+            })
+            .catch(() => { hint.textContent = ""; renderSlots(null); });
+        }
       });
 
       document.getElementById("submit-btn").addEventListener("click", submitReschedule);

@@ -102,7 +102,7 @@
 
       const b = data.booking;
       const feeBlock = data.withinWindow && data.feeAmount > 0
-        ? `<div class="fee-note warn">⚠️ Your event is in ${data.daysUntil} day${data.daysUntil === 1 ? "" : "s"} — inside the studio's ${data.windowDays}-day cancellation window. A cancellation fee of <strong>${inr(data.feeAmount)}</strong> (${data.feePercent}%) may apply${data.paidSoFar > 0 ? `, and you've paid ${inr(data.paidSoFar)} so far` : ""}.</div>`
+        ? `<div class="fee-note warn">⚠️ Your event is in ${data.daysUntil} day${data.daysUntil === 1 ? "" : "s"} — inside the studio's ${data.windowDays}-day cancellation window. Cancellation fee: <strong>${data.feePercent}%</strong> × ${inr(b.finalPrice || 0)} = <strong>${inr(data.feeAmount)}</strong>${data.paidSoFar > 0 ? `. You've paid ${inr(data.paidSoFar)} so far` : ""}.</div>`
         : `<div class="fee-note ok">✓ You're cancelling outside the studio's cancellation window, so no cancellation fee applies.${data.paidSoFar > 0 ? ` Any refund of the ${inr(data.paidSoFar)} you've paid will be arranged by the studio.` : ""}</div>`;
 
       document.getElementById("main-content").innerHTML = `

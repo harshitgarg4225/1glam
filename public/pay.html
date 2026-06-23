@@ -12,26 +12,14 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="BusyDays" />
   <style>
-    :root {
-      --bg: #FAF8F5;
-      --surface: #F4F0EA;
-      --card: #FFFFFF;
-      --text: #1C1917;
-      --muted: #78716C;
-      --line: #E8E2DA;
-      --accent: #C26B45;
-      --accent-hover: #A85A38;
-      --accent-soft: #FBF0EA;
-      --danger: #9B1C1C;
-      --success: #166534;
-      --shadow: 0 4px 16px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
-    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); display: flex; align-items: center; justify-content: center; padding: 20px; }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 36px 32px; max-width: 420px; width: 100%; box-shadow: var(--shadow); }
     .kicker { text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
     h1 { font-size: 26px; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }
-    .biz { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
+    .booking-meta { margin-bottom: 20px; display: flex; flex-direction: column; gap: 5px; }
+    .booking-meta-row { font-size: 14px; color: var(--muted); display: flex; align-items: baseline; gap: 7px; }
+    .booking-meta-row .meta-val { color: var(--text); font-weight: 600; }
     .summary { background: var(--surface); border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; border: 1px solid var(--line); }
     .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 15px; }
     .row:not(:last-child) { border-bottom: 1px solid var(--line); }
@@ -86,9 +74,9 @@
     <div class="card hidden" id="error-card"><p class="error" id="error-msg">Payment page not found.</p></div>
 
     <div class="card hidden" id="payment-card">
-      <p class="kicker">Advance Payment</p>
+      <p class="kicker" id="payment-stage-label">Advance Payment</p>
       <h1 id="biz-name"></h1>
-      <p class="biz" id="event-summary"></p>
+      <div class="booking-meta" id="booking-meta"></div>
 
       <div class="summary">
         <div class="row">
@@ -167,6 +155,15 @@
     function inr(n) {
       return "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
     }
+    function fmtDate(s) {
+      if (!s) return "";
+      const d = new Date(s + "T00:00:00");
+      return isNaN(d) ? s : d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    }
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
 
     async function load() {
       if (!workspaceId || !leadId) {
@@ -186,8 +183,12 @@
     function render(d) {
       document.getElementById("loading").classList.add("hidden");
       document.getElementById("biz-name").textContent = d.businessName;
-      document.getElementById("event-summary").textContent =
-        d.clientName + " · " + d.eventType + " · " + d.eventDate;
+      const metaRows = [
+        d.eventType ? `<div class="booking-meta-row">📋 <span class="meta-val">${esc(d.eventType)}</span></div>` : "",
+        `<div class="booking-meta-row">📅 <span class="meta-val">${esc(fmtDate(d.eventDate))}${d.eventTime ? " · " + esc(d.eventTime) : ""}</span></div>`,
+        d.venue ? `<div class="booking-meta-row">📍 <span class="meta-val">${esc(d.venue)}</span></div>` : "",
+      ].filter(Boolean).join("");
+      document.getElementById("booking-meta").innerHTML = metaRows;
       document.getElementById("total-price").textContent = inr(d.finalApprovedPrice);
       document.getElementById("advance-amount").textContent = inr(d.advanceAmount);
       document.getElementById("balance-due").textContent = inr(d.balanceDue);
@@ -200,6 +201,7 @@
       const balanceStage = advanceIn && Number(d.balanceDue) > 0;
       const stageAmount = balanceStage ? Number(d.balanceDue) : Number(d.advanceAmount);
       payStage = balanceStage ? "balance" : "advance";
+      document.getElementById("payment-stage-label").textContent = balanceStage ? "Balance Payment" : "Advance Payment";
 
       if (fullyPaid || (advanceIn && !balanceStage)) {
         document.getElementById("already-paid-banner").textContent = fullyPaid

@@ -12,13 +12,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="BusyDays" />
   <style>
-    :root {
-      --bg: #FAF8F5; --surface: #F4F0EA; --card: #FFFFFF;
-      --text: #1C1917; --muted: #78716C; --line: #E8E2DA;
-      --accent: #C26B45; --accent-hover: #A85A38; --accent-soft: #FBF0EA;
-      --danger: #9B1C1C; --success: #166534;
-      --shadow: 0 4px 16px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
-    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-text-size-adjust: 100%; }
     * { -webkit-tap-highlight-color: transparent; }
@@ -92,6 +85,7 @@
           <span id="balance-due" style="font-weight:700;color:var(--accent);"></span>
         </div>
       </div>
+      <div id="pay-action-incard"></div>
     </div>
 
     <div id="actions"></div>
@@ -184,13 +178,18 @@
       document.getElementById("balance-due").style.color = "var(--success)";
     }
 
+    // Pay button directly inside the payment card — immediate and contextual
+    if (d.balanceDue > 0 && ["Awaiting Client", "Confirmed"].includes(d.leadStatus)) {
+      const isAdvanceStage = (d.paymentStatus || "") !== "Advance Paid";
+      const stageDue = isAdvanceStage ? d.advanceAmount : d.balanceDue;
+      const stageLabel = isAdvanceStage ? "Pay advance" : "Pay balance";
+      document.getElementById("pay-action-incard").innerHTML =
+        `<a class="action-btn primary" style="margin-top:12px;" href="/pay/${workspaceId}/${leadId}">${stageLabel} ${fmt(stageDue)} →</a>`;
+    }
+
     // Actions
     const actionsEl = document.getElementById("actions");
     const btns = [];
-
-    if (d.balanceDue > 0 && ["Awaiting Client", "Confirmed"].includes(d.leadStatus)) {
-      btns.push(`<a class="action-btn primary" href="/pay/${workspaceId}/${leadId}">💳 Pay now</a>`);
-    }
     // Sign / reschedule / cancel each need their own signed token, so we use the
     // pre-signed URLs the server hands back rather than building bare paths
     // (which would land the client on a "link expired" page).
