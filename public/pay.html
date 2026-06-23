@@ -350,7 +350,9 @@
 
     function setupTips(d) {
       if (!d.tipsEnabled) return;
-      stageAmountGlobal = d.advanceAmount || 0;
+      // Base the tip on what they're actually paying at THIS stage — on the
+      // balance stage a "15%" tip should be 15% of the balance, not the advance.
+      stageAmountGlobal = (payStage === "balance" ? Number(d.balanceDue) : Number(d.advanceAmount)) || 0;
       document.getElementById("tip-section").classList.remove("hidden");
       document.querySelectorAll(".tip-btn[data-tip-pct]").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -370,7 +372,12 @@
         document.getElementById("tip-custom-input").focus();
       });
       document.getElementById("tip-custom-input").addEventListener("input", (e) => {
-        tipAmount = Math.round(Number(e.target.value) || 0);
+        // Cap the custom tip so a fat-fingered extra zero can't turn a ₹500 tip
+        // into ₹50,000. A tip above 3× the amount due is almost certainly a typo.
+        const cap = Math.max(20000, Math.round(stageAmountGlobal * 3));
+        let v = Math.round(Number(e.target.value) || 0);
+        if (v > cap) { v = cap; e.target.value = String(cap); }
+        tipAmount = Math.max(0, v);
         updateTipDisplay();
       });
       document.querySelector(".tip-btn[data-tip-none]").addEventListener("click", () => {
