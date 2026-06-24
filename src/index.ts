@@ -44,7 +44,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, markWebhookEventProcessed, pingDatabase, saveWorkspace } from "./services/database.js";
+import { cleanupOldWebhookEvents, closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, markWebhookEventProcessed, pingDatabase, saveWorkspace } from "./services/database.js";
 import {
   createOrderWithKeys,
   createRazorpayOrder,
@@ -108,7 +108,7 @@ import { generateConversationReply, deriveToneProfile } from "./services/grok.js
 import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
-import { fetchWithTimeout } from "./services/http.js";
+import { fetchWithTimeout, isPublicHttpUrl } from "./services/http.js";
 import { encryptionEnabled } from "./services/crypto.js";
 import {
   generateInvoiceDocument,
@@ -868,12 +868,14 @@ app.get("/auth/google/business", (_req, res) => {
 app.get("/auth/meta/start", (req, res, next) => {
   try {
     const channel = req.query.channel;
-    const workspaceEmail =
-      typeof req.query.workspaceEmail === "string"
-        ? req.query.workspaceEmail
-        : req.session.profile?.email;
-
-    if ((channel !== "instagram" && channel !== "whatsapp") || !workspaceEmail) {
+    // Bind the connection to the *authenticated* account only. Trusting a
+    // ?workspaceEmail query param would let anyone start an OAuth flow that
+    // links a Meta account to a workspace they don't own.
+    const workspaceEmail = req.session.profile?.email;
+    if (!workspaceEmail) {
+      return res.status(401).send("Please sign in before connecting a channel.");
+    }
+    if (channel !== "instagram" && channel !== "whatsapp") {
       return res.status(400).send("Missing or invalid Meta connect parameters.");
     }
 
@@ -1059,6 +1061,14 @@ app.get("/auth/meta/callback", async (req, res, next) => {
     }
 
     const parsedState = parseMetaState(state);
+    // Defence in depth: even with a validly signed state, only the signed-in
+    // owner of that workspace may complete the binding. This closes the OAuth
+    // CSRF where a victim is tricked into finishing an attacker-started flow.
+    if (!req.session.profile || req.session.profile.email !== parsedState.workspaceEmail) {
+      return res
+        .status(403)
+        .send("This connection link doesn't match your signed-in account. Please sign in and try connecting again.");
+    }
     const shortLived = await exchangeMetaCode(code);
     const longLived = await exchangeForLongLivedToken(shortLived.access_token).catch(
       () => shortLived,
@@ -3007,6 +3017,11 @@ app.post("/api/campaigns/broadcast", async (req, res, next) => {
     if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
     const { segment, message, imageUrl } = req.body as { segment: CampaignSegment; message: string; imageUrl?: string };
     if (!segment || !message?.trim()) return res.status(400).json({ error: "segment and message are required" });
+    // Only forward a clean, public https image URL to WhatsApp — never a
+    // file:/data:/javascript: scheme or a private-network address.
+    if (imageUrl && !isPublicHttpUrl(imageUrl)) {
+      return res.status(400).json({ error: "Image link must be a public https URL." });
+    }
     const job = startCampaignBroadcast(req.session.profile.email, req.session.googleTokens, { segment, message: message.trim(), imageUrl });
     res.status(202).json({ ok: true, jobId: job.id });
   } catch (error) { next(error); }
@@ -7335,14 +7350,35 @@ const RESERVED_SLUGS = new Set([
   "settings", "dashboard", "index", "manifest.json", "sw.js", "favicon.ico", "robots.txt",
 ]);
 
+// The pretty link is a public, unauthenticated route hit by bots and crawlers.
+// listWorkspaces() scans every workspace, so a per-request scan is a needless
+// load multiplier. Slugs change rarely, so cache the slug→workspaceId map for a
+// short window; the worst case is a freshly-set slug taking up to a minute to
+// resolve, which is invisible for a redirect.
+let slugMapCache: { map: Map<string, string>; expires: number } | null = null;
+const SLUG_CACHE_TTL_MS = 60_000;
+
+async function resolveSlugToWorkspaceId(slug: string): Promise<string | null> {
+  const now = Date.now();
+  if (!slugMapCache || slugMapCache.expires < now) {
+    const all = await listWorkspaces();
+    const map = new Map<string, string>();
+    for (const w of all) {
+      const s = normalizeSlug(w.config?.bookingSlug || "");
+      if (s) map.set(s, w.workspaceId);
+    }
+    slugMapCache = { map, expires: now + SLUG_CACHE_TTL_MS };
+  }
+  return slugMapCache.map.get(slug) ?? null;
+}
+
 app.get("/:slug", async (req, res, next) => {
   try {
     const slug = normalizeSlug(String(req.params.slug ?? ""));
     if (!slug || RESERVED_SLUGS.has(slug)) return next();
-    const all = await listWorkspaces();
-    const match = all.find((w) => normalizeSlug(w.config?.bookingSlug || "") === slug);
-    if (!match) return next();
-    res.redirect(302, `/book/${encodeURIComponent(match.workspaceId)}`);
+    const workspaceId = await resolveSlugToWorkspaceId(slug);
+    if (!workspaceId) return next();
+    res.redirect(302, `/book/${encodeURIComponent(workspaceId)}`);
   } catch {
     next();
   }
@@ -7421,6 +7457,11 @@ if (isMainModule) {
     });
     startReminderScheduler();
     void rehydrateInterruptedCampaigns();
+    // Housekeeping: trim the webhook dedup ledger now and once a day so it
+    // never grows unbounded. unref() keeps it from holding the process open.
+    void cleanupOldWebhookEvents();
+    const webhookCleanup = setInterval(() => void cleanupOldWebhookEvents(), 24 * 60 * 60 * 1000);
+    webhookCleanup.unref();
   });
 
   // Graceful shutdown: on a deploy/restart Railway sends SIGTERM. Stop accepting

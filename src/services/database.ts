@@ -141,6 +141,25 @@ export async function markWebhookEventProcessed(scope: string, eventId: string):
   }
 }
 
+// Trims the webhook dedup ledger so it can't grow without bound. Providers
+// (Meta, Leegality) only ever redeliver an event for a few days, so anything
+// older than the retention window is safe to drop. No-op in file mode (the
+// in-memory set is already self-bounding in markWebhookEventProcessed).
+export async function cleanupOldWebhookEvents(retentionDays = 30): Promise<number> {
+  if (!hasPostgres()) return 0;
+  try {
+    await ensurePostgres();
+    const result = await getPool().query(
+      `DELETE FROM processed_webhook_events
+       WHERE created_at < NOW() - ($1 || ' days')::interval`,
+      [String(Math.max(1, Math.floor(retentionDays)))],
+    );
+    return result.rowCount ?? 0;
+  } catch {
+    return 0; // best-effort housekeeping; never throw on the caller's path
+  }
+}
+
 // Liveness probe for the health endpoint. Reuses the shared pool (rather than
 // spinning up a throwaway connection per call) so frequent health checks don't
 // churn connections. Returns false in file mode (nothing to ping).

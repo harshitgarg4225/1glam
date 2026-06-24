@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, listActiveLeadsForDate, updateLeadRecord, updateBookingRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
+import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, listActiveLeadsForDate, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
 import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -704,29 +704,21 @@ export async function submitPaymentScreenshot(
   const fileUrl =
     response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
 
-  // A screenshot at this stage means the client has paid the advance to lock
-  // the slot. Mark the lead "Advance Paid" / "Payment Received" and keep a
-  // note pointing at the proof so the artist can verify.
-  const noteLine = `Payment screenshot uploaded ${new Date().toISOString().slice(0, 10)}: ${fileUrl}`;
+  // A screenshot is *unverified* proof — anyone can upload any image. We must
+  // NOT mark the booking paid on the client's word alone (that would let a
+  // client lock a slot with a blank screenshot). Move it to "Payment Pending"
+  // so it surfaces in the artist's queue for verification, and leave the
+  // authoritative paymentStatus untouched until a human confirms.
+  const istDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const noteLine = `Payment screenshot uploaded ${istDate} — VERIFY before confirming: ${fileUrl}`;
   await updateLeadRecord(workspace.email, tokens, leadId, (l) => ({
     ...l,
-    paymentStatus: "Advance Paid",
-    status: "Payment Received" as typeof l.status,
+    // Only advance the workflow status, never the payment status. Don't
+    // downgrade a lead that's already further along (e.g. "Confirmed").
+    status: (l.status === "Awaiting Client" ? "Payment Pending" : l.status) as typeof l.status,
     ownerNotes: l.ownerNotes ? `${l.ownerNotes}\n${noteLine}` : noteLine,
     lastContactedAt: new Date().toISOString(),
   }));
-
-  // Keep the booking record in sync when the lead has already been confirmed.
-  if (lead.bookingId) {
-    try {
-      await updateBookingRecord(workspace.email, tokens, lead.bookingId, (b) => ({
-        ...b,
-        paymentStatus: "Advance Paid",
-      }));
-    } catch {
-      // Booking row may not exist yet — lead-level status is the source of truth.
-    }
-  }
 
   // Audit trail so the upload is visible in the Conversations/activity view.
   try {

@@ -7553,13 +7553,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       function renderMetaConnections(workspace, profile) {
         const instagram = workspace?.metaConnections?.instagram;
         const whatsapp = workspace?.metaConnections?.whatsapp;
-        const email = encodeURIComponent(profile?.email || "");
         function block(label, channel, connection) {
           const status = connection?.status || "not connected";
           const handle = channel === "instagram"
             ? (connection?.instagramUsername || connection?.pageName || "No asset selected yet")
             : (connection?.businessAccountName || connection?.phoneNumberId || "No phone number linked yet");
-          const oauthButton = `<a class="button small" href="/auth/meta/start?channel=${channel}&workspaceEmail=${email}">Connect via Facebook</a>`;
+          const oauthButton = `<a class="button small" href="/auth/meta/start?channel=${channel}">Connect via Facebook</a>`;
           const extraControl = channel === "instagram"
             ? `<details class="collapse" style="margin-top:12px;padding:2px 14px;"><summary style="font-size:14px;padding:12px 0;">Advanced: paste token</summary><div class="collapse-body" style="padding-bottom:14px;"><input type="password" placeholder="Paste Instagram token" data-instagram-token-input style="width:100%;margin-bottom:8px;" /><button class="button small secondary" type="button" data-instagram-token-save>Save Token</button></div></details>`
             : `<div style="margin-top:10px;"><button class="button small secondary" type="button" data-whatsapp-test-connect>Use Test Number</button></div>`;
