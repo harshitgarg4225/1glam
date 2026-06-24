@@ -44,7 +44,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { cleanupOldWebhookEvents, closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, markWebhookEventProcessed, pingDatabase, saveWorkspace } from "./services/database.js";
+import { cleanupOldWebhookEvents, closePool, deleteWorkspace, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, isPhoneOptedOut, listOptedOutPhones, listWorkspaces, markPhoneOptedOut, markWebhookEventProcessed, pingDatabase, removePhoneOptOut, saveWorkspace } from "./services/database.js";
 import {
   createOrderWithKeys,
   createRazorpayOrder,
@@ -2994,6 +2994,95 @@ app.get("/api/export/accountant", async (req, res, next) => {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     // UTF-8 BOM so Excel opens ₹/Indian names correctly.
     res.send("\uFEFF" + rows.join("\n"));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Personal data export (GDPR / DPDPA right to portability) ─────────────────
+// Returns a JSON bundle of everything BusyDays holds for this workspace.
+// The artist's client data lives in their own Google Sheet; this covers what
+// we store in our own database (workspace config, wallet, meta connections).
+app.get("/api/export/my-data", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    // Scrub secrets before export — tokens and API keys are not personal data,
+    // and sending them in a download would be a credential leak.
+    const safe = scrubWorkspaceTokens(workspace);
+    const optedOutPhones = await listOptedOutPhones(workspace.workspaceId);
+
+    const exportBundle = {
+      exportedAt: new Date().toISOString(),
+      email: req.session.profile.email,
+      workspaceId: workspace.workspaceId,
+      config: safe?.config ?? {},
+      wallet: safe?.wallet ?? null,
+      metaConnections: safe?.metaConnections ?? {},
+      whatsappOptouts: optedOutPhones,
+      note: "Your leads, bookings and client records are stored in your own Google Sheet. Open it from Google Drive to export that data.",
+    };
+
+    const filename = `busydays-my-data-${new Date().toISOString().slice(0, 10)}.json`;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(JSON.stringify(exportBundle, null, 2));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Self-service workspace deletion ──────────────────────────────────────────
+// GDPR / DPDPA Art. 17 right to erasure. Requires the artist to be signed in
+// and to confirm deletion in the request body (prevents accidental deletes from
+// e.g. a rogue prefetch). Session is destroyed afterward.
+app.delete("/api/workspace", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    // Require explicit confirmation string to prevent accidental deletion.
+    if (req.body?.confirm !== "DELETE MY WORKSPACE") {
+      return res.status(400).json({ error: 'Send { "confirm": "DELETE MY WORKSPACE" } to confirm.' });
+    }
+    const email = req.session.profile.email;
+    const deleted = await deleteWorkspace(email);
+    if (!deleted) return res.status(404).json({ error: "Workspace not found." });
+
+    // Destroy the session so the browser is immediately signed out.
+    req.session.destroy(() => {
+      res.json({ ok: true, message: "Your workspace has been permanently deleted. You have been signed out." });
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── WhatsApp opt-out management (artist view) ────────────────────────────────
+// Artists can see who has opted out and re-add contacts who have re-consented.
+app.get("/api/optouts/whatsapp", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phones = await listOptedOutPhones(workspace.workspaceId);
+    res.json({ ok: true, optedOut: phones });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Re-opt-in: only the artist can do this, and only after the contact has
+// confirmed they want to receive messages again (best handled via WhatsApp DM).
+app.delete("/api/optouts/whatsapp/:phone", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+    if (!phone || phone.length < 8) return res.status(400).json({ error: "Invalid phone number." });
+    await removePhoneOptOut(workspace.workspaceId, phone);
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -6939,6 +7028,24 @@ app.post("/webhooks/meta", async (req, res, next) => {
           leadCreated = true;
         }
       } else if (channel === "WhatsApp" && inboundText) {
+        // ── WhatsApp opt-out: honour STOP / UNSUBSCRIBE / OPT OUT ────────────
+        // WhatsApp Business Policy and many national anti-spam laws (TCPA, PDPA,
+        // TRAI) require that a STOP request is processed immediately and silently.
+        // We mark the phone opted-out and skip all further processing so no
+        // lead is created and no auto-reply is sent (which would be a second
+        // unwanted message).
+        const stopKeywords = /^\s*(stop|unsubscribe|opt.?out|end|quit|cancel)\s*$/i;
+        if (stopKeywords.test(inboundText) && actorId) {
+          const senderPhone = actorId.replace(/\D/g, "");
+          await markPhoneOptedOut(workspace.workspaceId, senderPhone).catch(() => null);
+          logger.info("whatsapp_optout", { workspaceId: workspace.workspaceId, phone: senderPhone });
+          // Do NOT send any reply — sending even an "unsubscribed" confirmation
+          // to someone who said STOP would be a compliance violation in some
+          // jurisdictions. The artist can see the event in the Conversations tab.
+          res.sendStatus(200);
+          return;
+        }
+
         const entry = Array.isArray(body.entry) ? (body.entry[0] as Record<string, unknown>) : undefined;
         const change = entry && Array.isArray(entry.changes) ? (entry.changes[0] as Record<string, unknown>) : undefined;
         const value = change?.value as Record<string, unknown> | undefined;
@@ -7253,6 +7360,15 @@ app.get("/legal/privacy", (_req, res) => {
   <li>We do <strong>not</strong> sell your data or your clients' data, and we do not use it for advertising.</li>
 </ul>
 
+<h2>2a. Google API Limited Use disclosure</h2>
+<p>BusyDays' use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements. Specifically:</p>
+<ul>
+  <li>We use Google Sheets access only to read and write the booking/lead spreadsheet we create in your own Drive. We do not read any other spreadsheets.</li>
+  <li>We use Google Calendar access only to create, update and delete booking events we create on your behalf. We do not read events we did not create, except to check free/busy availability at your explicit request.</li>
+  <li>We use Drive file access (drive.file scope) only to upload files our app generates — payment screenshots, portfolio photos, and your business logo. We cannot see or access other files in your Drive.</li>
+  <li>We do not use data obtained via Google APIs to serve advertisements, and we do not transfer it to any third party except as necessary to provide the features you explicitly activate.</li>
+</ul>
+
 <h2>3. Third parties we share with</h2>
 <p>We share data only with the processors needed to deliver the service: Google (Sheets, Calendar, Drive), Meta (WhatsApp/Instagram messaging), xAI (AI generation), Razorpay (payments), and Leegality (e-signature, when you send a contract). Each receives only what is necessary for its function.</p>
 
@@ -7266,10 +7382,15 @@ app.get("/legal/privacy", (_req, res) => {
 <ul>
   <li>Disconnect Google or Meta at any time from Settings; this revokes our access.</li>
   <li>Request deletion of your data — see our <a href="/legal/data-deletion">Data Deletion</a> page.</li>
+  <li>Export your personal data at any time from Settings → Account → Export my data.</li>
+  <li>Delete your workspace instantly via Settings → Account → Delete workspace, or by emailing us.</li>
   <li>Access or export your records directly from the Google Sheet you own.</li>
 </ul>
 
-<h2>7. Contact</h2>
+<h2>7. WhatsApp messaging opt-out</h2>
+<p>Clients who receive WhatsApp messages through BusyDays may reply <strong>STOP</strong> (or UNSUBSCRIBE / OPT OUT) at any time. We record the opt-out immediately and exclude that contact from all future campaign messages sent by that artist. Artists can view opted-out contacts in Settings → Campaigns → Opt-outs.</p>
+
+<h2>8. Contact</h2>
 <p>Questions or requests: <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>`,
     ),
   );
@@ -7321,7 +7442,13 @@ app.get("/legal/data-deletion", (_req, res) => {
 <h2>2. Delete your workspace</h2>
 <p>To delete your entire workspace and the records we hold for it, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a> from your account email with the subject "Delete my workspace". We will remove your workspace records from our database within 30 days and confirm by email. Data stored in the Google Sheet you own remains in your Google account for you to delete directly.</p>
 
-<h2>3. Meta data deletion callback</h2>
+<h2>3. Self-service workspace deletion</h2>
+<p>Sign in and go to <strong>Settings → Account → Delete workspace</strong> to permanently delete your entire workspace immediately. This removes your leads, bookings, payment records, and all stored tokens from our database. Data in your own Google Sheet (which you own) is not affected.</p>
+
+<h2>4. WhatsApp opt-out</h2>
+<p>If a client replies <strong>STOP</strong> to a WhatsApp message sent via BusyDays, they are automatically added to the opt-out list and will not receive future campaign messages from that artist. Artists can view and manage opt-outs in Settings → Campaigns → Opt-outs. To request removal of a specific client's opt-out record (e.g. they have re-consented), email us at <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>
+
+<h2>5. Meta data deletion callback</h2>
 <p>If you remove BusyDays from your Facebook/Instagram account, Meta sends us a signed data-deletion request. We verify it, disconnect the associated channels, and return a confirmation code and this status URL, as required by Meta Platform policy. The callback endpoint is <code>/compliance/meta/data-deletion</code>.</p>
 
 <h2>What gets deleted</h2>
@@ -7329,6 +7456,7 @@ app.get("/legal/data-deletion", (_req, res) => {
   <li>OAuth access and refresh tokens (revoked and removed).</li>
   <li>Meta channel connection records for your workspace.</li>
   <li>On full workspace deletion: lead, booking, interaction, wallet and conversation-memory records in our database.</li>
+  <li>WhatsApp opt-out records for your workspace are also purged on deletion.</li>
 </ul>`,
     ),
   );
