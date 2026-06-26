@@ -1187,6 +1187,67 @@
       /* ─── Intake form questions ─── */
       .intake-question-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 13px; margin: 3px 4px 3px 0; }
       .intake-question-chip button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; padding: 0 0 0 4px; }
+
+      /* ─── Google OAuth demo recording guide ─── */
+      #demo-guide {
+        position: fixed; bottom: 24px; right: 24px; z-index: 9800;
+        width: min(420px, calc(100vw - 32px));
+        background: #1c1917; color: #f5f0ea;
+        border-radius: 16px; box-shadow: 0 12px 48px rgba(0,0,0,0.55);
+        overflow: hidden; display: none;
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+      }
+      #demo-guide.open { display: block; }
+      .demo-guide-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 16px; background: #111; border-bottom: 1px solid rgba(255,255,255,.08);
+      }
+      .demo-guide-rec {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+        color: #f87171;
+      }
+      .demo-guide-rec-dot {
+        width: 8px; height: 8px; border-radius: 50%; background: #f87171;
+        animation: demo-blink 1.2s step-start infinite;
+      }
+      @keyframes demo-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+      .demo-guide-steps { font-size: 12px; color: rgba(255,255,255,.45); }
+      .demo-guide-close { background: none; border: none; color: rgba(255,255,255,.5); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 0 0 8px; }
+      .demo-guide-close:hover { color: #fff; }
+      .demo-guide-body { padding: 16px 18px; }
+      .demo-guide-step-kicker { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: #c26b45; margin-bottom: 4px; }
+      .demo-guide-step-title { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+      .demo-guide-narration {
+        background: rgba(255,255,255,.06); border-radius: 8px; padding: 10px 12px;
+        font-size: 13px; line-height: 1.6; color: rgba(255,255,255,.8); margin-bottom: 12px;
+        border-left: 3px solid #c26b45;
+      }
+      .demo-guide-narration em { font-style: italic; color: rgba(255,255,255,.55); font-size: 12px; }
+      .demo-guide-checklist { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+      .demo-guide-checklist li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: rgba(255,255,255,.75); }
+      .demo-guide-checklist li::before { content: "→"; color: #c26b45; flex-shrink: 0; font-weight: 700; line-height: 1.5; }
+      .demo-guide-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+      .demo-guide-actions a, .demo-guide-actions button {
+        background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18);
+        color: #fff; border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 13px;
+        font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block;
+        transition: background .15s;
+      }
+      .demo-guide-actions a:hover, .demo-guide-actions button:hover { background: rgba(255,255,255,.18); }
+      .demo-guide-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .demo-guide-dots { display: flex; gap: 5px; flex: 1; justify-content: center; }
+      .demo-guide-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.2); cursor: pointer; transition: background .15s; }
+      .demo-guide-dot.active { background: #c26b45; }
+      .demo-guide-btn {
+        background: #c26b45; border: none; color: #fff; border-radius: 8px;
+        padding: 9px 16px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+        transition: background .15s; white-space: nowrap;
+      }
+      .demo-guide-btn:hover { background: #a85a38; }
+      .demo-guide-btn.secondary { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); }
+      .demo-guide-btn.secondary:hover { background: rgba(255,255,255,.18); }
+      .demo-guide-btn:disabled { opacity: .35; cursor: not-allowed; }
     </style>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
@@ -2994,6 +3055,18 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
+          <details class="collapse" id="oauth-demo-section">
+            <summary>🎬 Google OAuth verification — recording guide</summary>
+            <div class="collapse-body">
+              <p class="muted" style="margin-bottom:12px;font-size:14px;">
+                Google requires a screen-recording that shows your app name, the OAuth consent screen, and each sensitive scope actually being used. This guided overlay walks you through every shot while you record — so you don't miss anything and the video comes out clean on the first take.
+              </p>
+              <div class="action-row">
+                <button class="button" type="button" id="start-demo-guide-btn">🎬 Start recording guide</button>
+              </div>
+            </div>
+          </details>
+
           <input type="hidden" name="basePriceShoot" value="10000" />
           <input type="hidden" name="basePriceOther" value="8000" />
           <input type="hidden" name="multiplierJan" value="1" />
@@ -3197,6 +3270,23 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
       </div><!-- /tab-panels -->
     </main>
     <div class="toast-shelf" id="toast-shelf" role="status" aria-live="polite" aria-atomic="false"></div>
+
+    <!-- Google OAuth demo recording guide — floating overlay -->
+    <div id="demo-guide" role="dialog" aria-label="Google OAuth recording guide" aria-modal="false">
+      <div class="demo-guide-header">
+        <div class="demo-guide-rec"><span class="demo-guide-rec-dot"></span> REC GUIDE</div>
+        <span class="demo-guide-steps" id="demo-guide-steps">Step 1 of 7</span>
+        <button class="demo-guide-close" type="button" id="demo-guide-close" aria-label="Close guide">✕</button>
+      </div>
+      <div class="demo-guide-body" id="demo-guide-body">
+        <!-- filled by JS -->
+      </div>
+      <div style="padding: 0 18px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <button class="demo-guide-btn secondary" type="button" id="demo-guide-prev">← Prev</button>
+        <div class="demo-guide-dots" id="demo-guide-dots"></div>
+        <button class="demo-guide-btn" type="button" id="demo-guide-next">Next →</button>
+      </div>
+    </div>
 
     <!-- Pull-to-refresh indicator (mobile) -->
     <div id="bd-ptr"><div class="bd-ptr-spinner"></div></div>
@@ -10990,6 +11080,162 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           if (stored) { activateTab(stored); sessionStorage.removeItem("activeTab"); }
         })
         .catch((error) => { loginState.textContent = error.message || "Unable to load session."; });
+
+      // ─── Google OAuth demo recording guide ───────────────────────────────
+      (function () {
+        const STEPS = [
+          {
+            kicker: "Shot 1 — Identify the app (10s)",
+            title: "Show your app URL and Client ID",
+            narration: "\"This is BusyDays. The OAuth Client ID under review is shown in the Google Cloud Console.\"",
+            hint: "Narrate this out loud so it's on the recording.",
+            checks: [
+              "Your domain is visible in the browser's address bar",
+              "Open the Google Cloud Console in a new tab and show the OAuth Client ID, or keep it visible in the consent URL later",
+            ],
+            actions: [],
+          },
+          {
+            kicker: "Shot 2 — Start sign-in (10s)",
+            title: "Click \"Sign in with Google\"",
+            narration: "\"An artist signs in with Google to set up their account.\"",
+            hint: "Click the button below to start the OAuth flow now.",
+            checks: [
+              "The browser opens the Google sign-in page",
+              "Stay on your production domain (not localhost)",
+            ],
+            actions: [{ label: "↗ Go to sign-in page", href: "/auth/google" }],
+          },
+          {
+            kicker: "Shot 3 — Consent screen (20s) — REQUIRED",
+            title: "Show the Google consent screen",
+            narration: "\"Google asks the artist to grant access to Sheets, Calendar, and Drive files.\"",
+            hint: "Slow down here — let all scopes be clearly readable. Then click Allow.",
+            checks: [
+              "App name 'BusyDays' and logo are visible",
+              "Sheets, Calendar, and Drive.file scopes are listed",
+              "Client ID is visible in the URL: accounts.google.com/…client_id=XXXX",
+              "Click Allow and return to the app",
+            ],
+            actions: [],
+          },
+          {
+            kicker: "Shot 4 — Sheets scope in use (40s)",
+            title: "Show a booking written to your Google Sheet",
+            narration: "\"BusyDays created a Google Sheet in the artist's own Drive — this is our database. Every booking is stored there.\"",
+            hint: "Add or edit a booking in the app, then open your Sheet to show the same row was written.",
+            checks: [
+              "Go to the Requests or Bookings tab and open any lead",
+              "Edit a field (e.g. add an owner note) and save",
+              "Open your Google Sheet in a new tab to show the matching row was updated",
+            ],
+            actions: [{ label: "↗ Open my Google Sheet", id: "demo-open-sheet" }],
+          },
+          {
+            kicker: "Shot 5 — Calendar scope in use (30s)",
+            title: "Show a booking on Google Calendar",
+            narration: "\"When a booking is confirmed, we put a hold on the artist's Google Calendar so they don't double-book.\"",
+            hint: "Confirm a booking in the app, then switch to Google Calendar to show the event.",
+            checks: [
+              "Go to Bookings and confirm (or open) a confirmed booking",
+              "Switch to Google Calendar and show the event on the right date",
+              "Optionally reschedule in the app and show the calendar event move",
+            ],
+            actions: [{ label: "↗ Open Google Calendar", href: "https://calendar.google.com/calendar/u/0/r" }],
+          },
+          {
+            kicker: "Shot 6 — Drive.file scope in use (20s)",
+            title: "Upload a payment screenshot",
+            narration: "\"Clients upload a payment screenshot; we store it as an app file in their Drive using the drive.file scope.\"",
+            hint: "Go to a booking's payment page and upload any image file.",
+            checks: [
+              "Open a booking and tap the payment link (or go to /pay/:id)",
+              "Upload a screenshot — any image works",
+              "The file appears attached to the booking in the app",
+            ],
+            actions: [],
+          },
+          {
+            kicker: "Shot 7 — Close (5s)",
+            title: "Show the sign-out control",
+            narration: "\"All Google data stays in the artist's own account. They can disconnect or sign out any time from here.\"",
+            hint: "Point to the Log out button in the top-right of the app, then stop recording.",
+            checks: [
+              "The Log out button is visible in the top bar",
+              "Mention that data stays in the user's own Google account",
+              "Stop your screen recording",
+            ],
+            actions: [],
+          },
+        ];
+
+        let currentStep = 0;
+        const guide = document.getElementById("demo-guide");
+        const body = document.getElementById("demo-guide-body");
+        const stepsLabel = document.getElementById("demo-guide-steps");
+        const dotsEl = document.getElementById("demo-guide-dots");
+        const prevBtn = document.getElementById("demo-guide-prev");
+        const nextBtn = document.getElementById("demo-guide-next");
+        const closeBtn = document.getElementById("demo-guide-close");
+        const startBtn = document.getElementById("start-demo-guide-btn");
+
+        function renderStep() {
+          const s = STEPS[currentStep];
+          const total = STEPS.length;
+          stepsLabel.textContent = `Step ${currentStep + 1} of ${total}`;
+
+          const actionHtml = s.actions.map((a) => {
+            if (a.id === "demo-open-sheet") {
+              const sheetUrl = sessionState?.workspace?.spreadsheetUrl;
+              if (sheetUrl) {
+                return `<a href="${sheetUrl}" target="_blank" rel="noreferrer">${a.label}</a>`;
+              }
+              return "";
+            }
+            return `<a href="${a.href}" target="_blank" rel="noreferrer">${a.label}</a>`;
+          }).filter(Boolean).join("");
+
+          body.innerHTML = `
+            <div class="demo-guide-step-kicker">${s.kicker}</div>
+            <div class="demo-guide-step-title">${s.title}</div>
+            <div class="demo-guide-narration">🎙 Say: <strong>${s.narration}</strong><br><em>${s.hint}</em></div>
+            <ul class="demo-guide-checklist">${s.checks.map((c) => `<li>${c}</li>`).join("")}</ul>
+            ${actionHtml ? `<div class="demo-guide-actions">${actionHtml}</div>` : ""}
+          `;
+
+          // Dots
+          dotsEl.innerHTML = STEPS.map((_, i) =>
+            `<span class="demo-guide-dot${i === currentStep ? " active" : ""}" data-step="${i}" role="button" tabindex="0" aria-label="Go to step ${i + 1}"></span>`
+          ).join("");
+          dotsEl.querySelectorAll(".demo-guide-dot").forEach((dot) => {
+            dot.addEventListener("click", () => { currentStep = parseInt(dot.dataset.step, 10); renderStep(); });
+            dot.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { currentStep = parseInt(dot.dataset.step, 10); renderStep(); } });
+          });
+
+          prevBtn.disabled = currentStep === 0;
+          if (currentStep === total - 1) {
+            nextBtn.textContent = "Done ✓";
+            nextBtn.onclick = closeGuide;
+          } else {
+            nextBtn.textContent = "Next →";
+            nextBtn.onclick = () => { currentStep++; renderStep(); };
+          }
+        }
+
+        function openGuide() {
+          currentStep = 0;
+          renderStep();
+          guide.classList.add("open");
+        }
+
+        function closeGuide() {
+          guide.classList.remove("open");
+        }
+
+        if (startBtn) startBtn.addEventListener("click", openGuide);
+        if (closeBtn) closeBtn.addEventListener("click", closeGuide);
+        prevBtn?.addEventListener("click", () => { if (currentStep > 0) { currentStep--; renderStep(); } });
+      })();
     </script>
   </body>
 </html>
