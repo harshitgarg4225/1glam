@@ -82,6 +82,9 @@ export type WorkspaceConfig = PricingRuleConfig & {
   reminderTemplateLang: string;
   reminderDaysBefore: string;
   autoPaymentReminders: string;
+  // Status that triggers post-status payment reminders (1 & 5 days after the
+  // booking reaches this status, while it's still not fully paid). Default "Completed".
+  paymentReminderStatus: string;
   // Morning push digest: today's jobs + what needs her attention.
   dailyDigest: string;
   waitlistOfferTemplate: string;
@@ -107,6 +110,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   portfolioImages: string;
   aboutText: string;
   reviewRequestDaysAfter: string;
+  // Status that triggers the Google review request (default "Completed").
+  reviewRequestStatus: string;
   reviewTemplate: string;
   reviewTemplateLang: string;
   // Automated rebook nudge: WhatsApp template sent N days after an event.

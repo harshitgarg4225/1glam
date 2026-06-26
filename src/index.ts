@@ -6574,6 +6574,37 @@ app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
   }
 });
 
+// One-tap "I've left them a message, reaching out shortly". Records the contact
+// (so the lead stops showing as "quiet" / overdue) without needing a connected
+// WhatsApp/Instagram channel — the artist messages from their own phone via the
+// wa.me deep link the UI opens alongside this call.
+app.post("/api/leads/:leadId/mark-contacted", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const stamp = new Date().toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    const note = `Left a message — reaching out shortly (${stamp})`;
+    const updated = await updateLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+      (current) => ({
+        ...current,
+        ownerNotes: current.ownerNotes ? `${current.ownerNotes}\n${note}` : note,
+        lastContactedAt: new Date().toISOString(),
+      }),
+    );
+    res.json({ ok: true, lastContactedAt: updated.lastContactedAt });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/leads/:leadId/reply", async (req, res, next) => {
   try {
     if (!req.session.profile || !req.session.googleTokens) {
