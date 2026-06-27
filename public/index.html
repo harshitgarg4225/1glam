@@ -1982,9 +1982,19 @@
             </div>
           </div>
           <div id="gmb-setup">
+            <div class="mini-card" style="margin-bottom:14px;border-color:var(--accent);">
+              <div class="kicker" style="color:var(--accent);">Fastest — paste your link</div>
+              <p class="muted" style="margin:6px 0 10px;font-size:13px;">Already have a Google listing? Open it on Google, tap <strong>Share</strong>, copy the link and paste it here. We'll send every review request straight to it.</p>
+              <div class="filter-bar">
+                <input type="text" id="gmb-paste-link" class="grow" placeholder="Paste your Google link (Maps, g.page, or review link)" inputmode="url" />
+                <button class="button" type="button" id="gmb-paste-save">Save link</button>
+              </div>
+              <div class="status" id="gmb-paste-status"></div>
+            </div>
+            <p class="muted" style="font-size:12.5px;margin:0 0 8px;text-align:center;">— or search Google for your business —</p>
             <div class="filter-bar" style="margin-bottom:10px;">
               <input type="text" id="gmb-query" class="grow" placeholder="Your business name and city, e.g. Glow by Aisha, Mumbai" />
-              <button class="button" type="button" id="gmb-search-btn">Find my business</button>
+              <button class="button secondary" type="button" id="gmb-search-btn">Find my business</button>
             </div>
             <div id="gmb-results"></div>
             <div class="status" id="gmb-status"></div>
@@ -2574,7 +2584,7 @@
                 <div><label for="ownerName">Your name</label><input id="ownerName" name="ownerName" required /></div>
                 <div><label for="ownerEmail">Your email</label><input id="ownerEmail" name="ownerEmail" type="email" required /></div>
                 <div><label for="ownerWhatsApp">Your WhatsApp number</label><input id="ownerWhatsApp" name="ownerWhatsApp" required placeholder="+91…" /></div>
-                <div><label for="city">City</label><input id="city" name="city" required /></div>
+                <div><label for="city">Base city</label><input id="city" name="city" required placeholder="e.g. Mumbai" /><p class="hint" style="margin:4px 0 0;font-size:11.5px;color:var(--muted);">Where you're based — travel charges are calculated from here to the venue.</p></div>
                 <div><label for="instagramHandle">Instagram handle (optional)</label><input id="instagramHandle" name="instagramHandle" placeholder="glowbyaisha" /></div>
               </div>
             </div>
@@ -6319,6 +6329,34 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.getElementById("gmb-change").addEventListener("click", () => { gmbForceSetup = true; renderGmbState(); });
       document.getElementById("gmb-copy").addEventListener("click", (e) =>
         copyToClipboard(document.getElementById("gmb-link").value, e.currentTarget));
+
+      // Fastest path: paste an existing Google link and save it as the review link.
+      async function saveGmbPastedLink() {
+        const input = document.getElementById("gmb-paste-link");
+        const status = document.getElementById("gmb-paste-status");
+        const btn = document.getElementById("gmb-paste-save");
+        const link = (input.value || "").trim();
+        if (!link) { status.textContent = "Paste your Google link first."; return; }
+        setLoading(btn, "Saving…");
+        status.textContent = "";
+        try {
+          const payload = await postJson("/api/gmb/set-link", { link });
+          if (!payload?.ok) throw new Error(payload?.error || "Couldn't save that link.");
+          await refreshSession();
+          gmbForceSetup = false;
+          input.value = "";
+          renderGmbState();
+          toast("Saved! Review requests now point to your Google page.", "success");
+        } catch (error) {
+          status.textContent = error.message;
+        } finally {
+          clearLoading(btn, "Save link");
+        }
+      }
+      document.getElementById("gmb-paste-save")?.addEventListener("click", saveGmbPastedLink);
+      document.getElementById("gmb-paste-link")?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); saveGmbPastedLink(); }
+      });
 
       document.getElementById("gmb-search-btn").addEventListener("click", async () => {
         const q = document.getElementById("gmb-query").value.trim();

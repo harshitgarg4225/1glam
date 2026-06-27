@@ -1457,6 +1457,51 @@ app.post("/api/gmb/select", async (req, res, next) => {
   }
 });
 
+// Paste-your-own-link path: the artist already has a Google review/Maps/Business
+// link and just wants reviews pointed at it. Accept any Google URL, normalise a
+// couple of common forms, and save it as the review link — no Maps API needed.
+app.post("/api/gmb/set-link", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    let raw = typeof req.body?.link === "string" ? req.body.link.trim() : "";
+    if (!raw) return res.status(400).json({ error: "Paste your Google link first." });
+    if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      return res.status(400).json({ error: "That doesn't look like a valid link. Copy it straight from Google." });
+    }
+    // Only accept Google-owned hosts so we never point clients somewhere wrong.
+    const host = parsed.hostname.toLowerCase();
+    const isGoogle =
+      /(^|\.)google\.[a-z.]+$/.test(host) ||
+      host === "g.page" ||
+      host === "g.co" ||
+      host === "goo.gl" ||
+      host === "maps.app.goo.gl" ||
+      host === "search.google.com";
+    if (!isGoogle) {
+      return res.status(400).json({ error: "Please paste a Google link (Maps, g.page, or your Google review link)." });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const updated = await updateWorkspaceConfig(
+      req.session.profile.email,
+      { ...workspace.config, googleReviewLink: parsed.toString().slice(0, 600) },
+      req.session.googleTokens,
+    );
+    res.json({ ok: true, googleReviewLink: updated.config.googleReviewLink, workspace: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ---- GMB review agent ----
 // Reports whether the agent is running in assisted (AI-draft) or auto (API)
 // mode, so the UI can explain what's happening to the artist.
