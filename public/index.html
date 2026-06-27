@@ -3958,6 +3958,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // ─── Toast notifications ───
       // Optional `action: { label, onClick }` adds a tappable next-step button
       // ("Send quote now →") so feedback teaches the flow instead of just confirming it.
+      // Business-initiated reminders (review / payment) fall back to a wa.me
+      // link until the WhatsApp API pipe is connected. When the server returns
+      // one, open WhatsApp with the message ready; otherwise it was sent via the
+      // API. Either way the reminder is recorded as done server-side.
+      function openReminderWa(result, sentMessage) {
+        if (result && result.waLink) {
+          window.open(result.waLink, "_blank", "noopener");
+          toast("WhatsApp opened — tap send to deliver it.", "success");
+        } else {
+          toast(sentMessage, "success");
+        }
+      }
+
       function toast(message, type = "info", action) {
         const shelf = document.getElementById("toast-shelf");
         const el = document.createElement("div");
@@ -8780,9 +8793,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); toast("Contract sent for e-signing — the client will get an email to sign it.", "success"); }
           else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); toast("Contract sent to client.", "success"); }
           else if (action === "sync-contract") { const r = await postJson(`/api/bookings/${bookingId}/contract/sync`, {}); toast(`Contract: ${r.booking?.contractStatus || "Updated"}.`, "success"); }
-          else if (action === "review") { await postJson(`/api/bookings/${bookingId}/send-review`, {}); toast("Review request sent.", "success"); }
-          else if (action === "advance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); toast("Advance reminder sent.", "success"); }
-          else if (action === "balance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); toast("Balance reminder sent.", "success"); }
+          else if (action === "review") { const r = await postJson(`/api/bookings/${bookingId}/send-review`, {}); openReminderWa(r, "Review request sent."); }
+          else if (action === "advance-reminder") { const r = await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); openReminderWa(r, "Advance reminder sent."); }
+          else if (action === "balance-reminder") { const r = await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); openReminderWa(r, "Balance reminder sent."); }
           else if (action === "advance") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Advance Paid" }); toast("Marked as advance paid.", "success"); }
           else if (action === "full") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Paid in Full" }); toast("Marked as paid in full.", "success"); }
           else if (action === "complete") { await postJson(`/api/bookings/${bookingId}/complete`, {}); toast("Marked completed — lovely work! 🎉", "success"); }

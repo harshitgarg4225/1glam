@@ -30,6 +30,7 @@ import {
   getMonthlyRecap,
   importClients,
   listActiveBookings,
+  markBookingReminderSent,
   parsePaymentsLog,
   paymentsTotal,
   recordBookingPayment,
@@ -5099,7 +5100,30 @@ app.post("/api/bookings/:bookingId/send-review", async (req, res, next) => {
     }
     const channelContext = resolveLeadMessagingContext(workspace, lead);
     if (!channelContext) {
-      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
+      // No automated WhatsApp pipe yet → hand the artist a ready-to-send wa.me
+      // link. Tapping it opens WhatsApp with the message filled in, and we record
+      // the request as done so it stops surfacing.
+      const message = buildReviewRequestMessage(workspace, booking);
+      const waLink = buildWaMeReminderLink(booking.clientWhatsApp, message);
+      if (!waLink) {
+        return res.status(400).json({ error: "This client has no WhatsApp number on file." });
+      }
+      await markBookingReminderSent(req.session.profile.email, req.session.googleTokens, booking.bookingId, "review").catch(() => {});
+      await upsertReviewRequest(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        clientName: booking.clientName,
+        eventDate: booking.eventDate,
+        type: "request",
+      }).catch(() => {});
+      await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        direction: "Outbound",
+        channel: "WhatsApp",
+        actor: booking.clientWhatsApp,
+        message,
+        aiSummary: "Review request — opened via WhatsApp link (manual)",
+      }).catch(() => {});
+      return res.json({ ok: true, waLink, manual: true });
     }
 
     const message = buildReviewRequestMessage(workspace, booking);
@@ -6586,12 +6610,34 @@ app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
     if (!lead) {
       return res.status(404).json({ error: "Lead not found for booking" });
     }
+    const kind = req.body?.kind === "balance" ? "balance" : "advance";
     const channelContext = resolveLeadMessagingContext(workspace, lead);
     if (!channelContext) {
-      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
+      // No automated WhatsApp pipe yet → return a ready-to-send wa.me link and
+      // log the reminder as sent so it isn't re-surfaced.
+      const message = buildCollectionReminderMessage(workspace, booking, kind);
+      const waLink = buildWaMeReminderLink(booking.clientWhatsApp, message);
+      if (!waLink) {
+        return res.status(400).json({ error: "This client has no WhatsApp number on file." });
+      }
+      await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        type: kind === "balance" ? "Balance Reminder" : "Advance Reminder",
+        channel: "WhatsApp",
+        messagePreview: message,
+        status: "Sent",
+      }).catch(() => {});
+      await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        direction: "Outbound",
+        channel: "WhatsApp",
+        actor: booking.clientWhatsApp,
+        message,
+        aiSummary: `${kind === "balance" ? "Balance" : "Advance"} reminder — opened via WhatsApp link (manual)`,
+      }).catch(() => {});
+      return res.json({ ok: true, waLink, manual: true });
     }
 
-    const kind = req.body?.kind === "balance" ? "balance" : "advance";
     const message = buildCollectionReminderMessage(workspace, booking, kind);
     const dueAmount = kind === "balance" ? booking.balanceDue : booking.advanceAmount;
     await sendBusinessMessage({
@@ -7979,6 +8025,16 @@ async function notifyClientOfReschedule(
   } catch {
     return false;
   }
+}
+
+// wa.me deep link with the message prefilled. Used as the manual fallback for
+// business-initiated reminders before the WhatsApp API pipe is connected: the
+// artist taps it, WhatsApp opens with the message ready, and the reminder is
+// recorded as handled. Returns "" when there's no usable phone number.
+function buildWaMeReminderLink(phone: string, message: string): string {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
 function buildReviewRequestMessage(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {
