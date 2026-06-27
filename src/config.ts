@@ -166,6 +166,13 @@ export function assertDeploymentConfig(): void {
       "SESSION_SECRET must be at least 32 characters — it signs session cookies and document URLs. Generate one with: openssl rand -base64 32",
     );
   }
+  // Without Google OAuth credentials no one can sign in — the entire product is
+  // gated behind "Sign in with Google". Fatal in a deployed environment.
+  if (appConfig.isDeployed && (!appConfig.googleClientId || !appConfig.googleClientSecret)) {
+    errors.push(
+      "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required — without them the 'Sign in with Google' flow returns an error and no one can log in.",
+    );
+  }
 
   if (!errors.length) return;
 
