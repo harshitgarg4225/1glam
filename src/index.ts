@@ -1111,11 +1111,13 @@ app.get("/auth/instagram/callback", (_req, res) => {
 function scrubWorkspaceTokens(workspace: WorkspaceRecord | null): WorkspaceRecord | null {
   if (!workspace) return null;
   const { googleTokens: _gt, ...rest } = workspace;
-  // Never ship the Razorpay key secret to the browser; the frontend only needs
-  // to know whether one is set.
+  // Never ship stored credentials to the browser; the frontend only needs to
+  // know whether one is set. Both the Razorpay key secret and the SMTP password
+  // are masked here (and preserved on save when the masked value comes back).
   const safeConfig = {
     ...rest.config,
     razorpayKeySecret: rest.config?.razorpayKeySecret ? "********" : "",
+    smtpPass: rest.config?.smtpPass ? "********" : "",
   };
   const base = { ...rest, config: safeConfig } as WorkspaceRecord;
   if (!base.metaConnections) return base;
@@ -1157,11 +1159,20 @@ app.post("/api/workspace/config", async (req, res, next) => {
     }
 
     const parsed = workspaceConfigSchema.parse(req.body);
-    // The browser only ever sees a masked Razorpay secret — a blank or masked
-    // value on save means "keep what's stored", never "erase it".
-    if (!parsed.razorpayKeySecret || parsed.razorpayKeySecret === "********") {
+    // The browser only ever sees masked secrets (Razorpay key, SMTP password) —
+    // a blank or masked value on save means "keep what's stored", never "erase
+    // it". One workspace fetch covers both.
+    if (
+      !parsed.razorpayKeySecret || parsed.razorpayKeySecret === "********" ||
+      !parsed.smtpPass || parsed.smtpPass === "********"
+    ) {
       const existing = await getWorkspaceByEmail(req.session.profile.email);
-      parsed.razorpayKeySecret = existing?.config.razorpayKeySecret || "";
+      if (!parsed.razorpayKeySecret || parsed.razorpayKeySecret === "********") {
+        parsed.razorpayKeySecret = existing?.config.razorpayKeySecret || "";
+      }
+      if (!parsed.smtpPass || parsed.smtpPass === "********") {
+        parsed.smtpPass = existing?.config.smtpPass || "";
+      }
     }
     // Pretty booking slug: normalized, validated, and unique across all
     // workspaces — it becomes a top-level public URL.
@@ -1451,7 +1462,7 @@ app.post("/api/gmb/select", async (req, res, next) => {
       },
       req.session.googleTokens,
     );
-    res.json({ ok: true, googleReviewLink, workspace: updated });
+    res.json({ ok: true, googleReviewLink, workspace: scrubWorkspaceTokens(updated) });
   } catch (error) {
     next(error);
   }
@@ -1496,7 +1507,7 @@ app.post("/api/gmb/set-link", async (req, res, next) => {
       { ...workspace.config, googleReviewLink: parsed.toString().slice(0, 600) },
       req.session.googleTokens,
     );
-    res.json({ ok: true, googleReviewLink: updated.config.googleReviewLink, workspace: updated });
+    res.json({ ok: true, googleReviewLink: updated.config.googleReviewLink, workspace: scrubWorkspaceTokens(updated) });
   } catch (error) {
     next(error);
   }

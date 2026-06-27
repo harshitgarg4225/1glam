@@ -214,7 +214,10 @@ async function runReviewRequestJob() {
         if (!booking.clientWhatsApp || booking.status !== triggerStatus) continue;
 
         const elapsed = daysSinceIso(statusAnchorIso(booking));
-        if (elapsed === null || elapsed < daysAfter) continue;
+        // Within the window only: from the target day up to 14 days past it.
+        // The upper bound stops a first-run flood of review asks to every
+        // historical completed booking the moment this ships.
+        if (elapsed === null || elapsed < daysAfter || elapsed > daysAfter + 14) continue;
 
         const alreadySent = (booking.remindersSent || "")
           .split(",")
@@ -552,9 +555,11 @@ async function runPaymentReminderJob() {
         }
         // Status-anchored completion reminders: 1 then 5 days after the chosen
         // status, as long as money is still owed. Works on Completed bookings too.
+        // Cap at 30 days so this never blasts ancient unpaid-but-completed
+        // bookings the first time it runs after shipping.
         if (!kind && booking.status === payTriggerStatus && booking.balanceDue > 0) {
           const elapsed = daysSinceIso(statusAnchorIso(booking));
-          if (elapsed !== null) {
+          if (elapsed !== null && elapsed <= 30) {
             if (elapsed >= 5 && !sent.includes("paystatus5")) { kind = "balance"; marker = "paystatus5"; }
             else if (elapsed >= 1 && !sent.includes("paystatus1")) { kind = "balance"; marker = "paystatus1"; }
           }

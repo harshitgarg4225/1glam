@@ -466,6 +466,14 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     throw new Error("Lead not found");
   }
 
+  // Idempotency: if this lead was already confirmed (e.g. a double-tap or a
+  // retried request), return the existing booking instead of creating a second
+  // one with a duplicate calendar hold.
+  if (lead.record.bookingId) {
+    const existing = await findBookingById(workspace, tokens, lead.record.bookingId);
+    if (existing) return { lead: lead.record, booking: existing.record };
+  }
+
   const bookingId = buildId("B");
   const advancePct = depositPercentForEvent(
     workspace.config.depositPercentByService,
@@ -715,7 +723,7 @@ export async function completeBooking(email: string, tokens: Credentials, bookin
   if (booking.record.status === "Cancelled") throw new Error("This booking was cancelled.");
   if (booking.record.status === "Completed") return booking.record;
 
-  const updatedBooking: BookingRecord = { ...booking.record, status: "Completed" };
+  const updatedBooking: BookingRecord = { ...booking.record, status: "Completed", statusChangedAt: new Date().toISOString() };
   await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
 
   const lead = await findLeadById(workspace, tokens, booking.record.leadId);
@@ -741,6 +749,7 @@ export async function cancelBooking(email: string, tokens: Credentials, bookingI
     ...booking.record,
     status: "Cancelled",
     confirmedCalendarEventId: "",
+    statusChangedAt: new Date().toISOString(),
   };
   await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
 
@@ -1581,7 +1590,10 @@ async function updateBookingPaymentStatus(
     if (!found) return;
     const booking = found.record;
     booking.paymentStatus = paymentStatus;
-    booking.status = paymentStatus === "Paid in Full" ? "Paid" : booking.status;
+    if (paymentStatus === "Paid in Full" && booking.status !== "Paid") {
+      booking.status = "Paid";
+      booking.statusChangedAt = new Date().toISOString();
+    }
     await updateBookingRow(workspace, tokens, found.rowNumber, booking);
   });
 }
@@ -1906,7 +1918,7 @@ function rowToLead(row: string[]): LeadRecord {
   };
 }
 
-function bookingToRow(booking: BookingRecord) {
+export function bookingToRow(booking: BookingRecord) {
   return [
     booking.bookingId,
     booking.leadId,
@@ -1949,7 +1961,7 @@ function bookingToRow(booking: BookingRecord) {
   ];
 }
 
-function rowToBooking(row: string[]): BookingRecord {
+export function rowToBooking(row: string[]): BookingRecord {
   return {
     bookingId: row[0] ?? "",
     leadId: row[1] ?? "",
