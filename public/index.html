@@ -3827,8 +3827,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <!-- Document viewer modal: full-width iframe so docs open inside the app -->
     <div class="modal-overlay" id="doc-viewer-modal" style="z-index:9500;padding:0;">
-      <div style="background:var(--surface);border-radius:0;width:100vw;height:100dvh;display:flex;flex-direction:column;overflow:hidden;">
-        <div style="display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);gap:10px;flex-shrink:0;background:var(--surface);">
+      <div style="background:var(--surface);border-radius:0;width:100vw;height:100dvh;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;">
+        <div style="display:flex;align-items:center;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;border-bottom:1px solid var(--line);gap:10px;flex-shrink:0;background:var(--surface);">
           <span id="doc-viewer-title" style="flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
           <a id="doc-viewer-download" href="#" download class="button small secondary" style="white-space:nowrap;">⬇ Download</a>
           <a id="doc-viewer-newtab" href="#" target="_blank" rel="noreferrer" class="button small secondary" style="white-space:nowrap;">↗ New tab</a>
@@ -4265,6 +4265,23 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // Document viewer modal — opens any document (PDF or branded HTML page)
       // inside the app rather than in a new browser tab.
       function openDocModal(url, title, isPdf = true) {
+        // Android (Chrome + the app's WebView) renders a PDF as a BLANK page
+        // inside an iframe, but renders it fine on a direct navigation. So for
+        // PDFs on Android, open a new tab instead of showing an empty viewer.
+        // iOS Safari and desktop render in-iframe correctly, so they keep the modal.
+        if (isPdf && /Android/i.test(navigator.userAgent)) {
+          // No "noopener" here: with it, window.open returns null even on
+          // success, so we couldn't tell whether the tab actually opened. The
+          // URL is same-origin and trusted, so a window reference is safe.
+          const win = window.open(url, "_blank");
+          if (win) {
+            if (url.includes("/documents/sample/") || url.includes("/quote/preview") || url.includes("/invoice/preview") || url.includes("/contract/preview")) {
+              try { localStorage.setItem("bd-doc-previewed", "1"); } catch {}
+            }
+            return;
+          }
+          // Popup blocked → fall through to the modal so Download / New tab still work.
+        }
         const overlay = document.getElementById("doc-viewer-modal");
         const iframe  = document.getElementById("doc-viewer-iframe");
         const dl      = document.getElementById("doc-viewer-download");
