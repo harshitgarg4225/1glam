@@ -297,10 +297,29 @@ export function verifyMetaWebhook(mode?: string, token?: string, challenge?: str
 }
 
 export function parseMetaState(state: string) {
-  const decoded = Buffer.from(state, "base64url").toString("utf8");
-  const parsed = JSON.parse(decoded) as { workspaceEmail: string; channel: MetaChannel };
+  // State is `<payload>.<sig>` where sig is an HMAC over the payload. An
+  // unsigned state could be forged to bind a Meta account to any workspace;
+  // the signature makes the workspaceEmail tamper-proof.
+  const [payload, sig] = state.split(".");
+  if (!payload || !sig) throw new Error("Invalid Meta state");
+  const expected = metaStateSignature(payload);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(sig);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    throw new Error("Meta state signature mismatch");
+  }
+  const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+    workspaceEmail: string;
+    channel: MetaChannel;
+    ts: number;
+  };
   if (!parsed.workspaceEmail || !parsed.channel) {
     throw new Error("Invalid Meta state");
+  }
+  // The dialog must be completed promptly — a stale state is rejected so an old
+  // connect link can't be replayed later.
+  if (!parsed.ts || Date.now() - parsed.ts > 15 * 60 * 1000) {
+    throw new Error("This connect link has expired. Start the connection again.");
   }
   return parsed;
 }
@@ -330,8 +349,16 @@ export function verifyAndParseMetaSignedRequest(signedRequest: string) {
   };
 }
 
+function metaStateSignature(payload: string): string {
+  return crypto.createHmac("sha256", appConfig.sessionSecret).update(payload).digest("base64url");
+}
+
 function encodeState(input: { workspaceEmail: string; channel: MetaChannel }) {
-  return Buffer.from(JSON.stringify(input), "utf8").toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({ ...input, ts: Date.now() }),
+    "utf8",
+  ).toString("base64url");
+  return `${payload}.${metaStateSignature(payload)}`;
 }
 
 function getMetaScopes(channel: MetaChannel) {

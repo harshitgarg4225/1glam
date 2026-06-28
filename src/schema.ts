@@ -79,6 +79,7 @@ export const workspaceConfigSchema = z.object({
   reminderTemplateLang: z.string().optional().default("en"),
   reminderDaysBefore: z.string().optional().default("7,1"),
   autoPaymentReminders: z.string().optional().default("Yes"),
+  paymentReminderStatus: z.string().optional().default("Completed"),
   // Morning push digest: today's jobs + what needs her attention.
   dailyDigest: z.string().optional().default("Yes"),
   waitlistOfferTemplate: z.string().optional().default(""),
@@ -104,6 +105,7 @@ export const workspaceConfigSchema = z.object({
   portfolioImages: z.string().optional().default(""),
   aboutText: z.string().optional().default(""),
   reviewRequestDaysAfter: z.string().optional().default(""),
+  reviewRequestStatus: z.string().optional().default("Completed"),
   reviewTemplate: z.string().optional().default(""),
   reviewTemplateLang: z.string().optional().default("en"),
   rebookNudgeDaysAfter: z.string().optional().default(""),

@@ -1,5 +1,5 @@
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { getDashboardData, listActiveBookings, markBookingReminderSent, recordReviewRequest } from "./booking.js";
+import { getDashboardData, listActiveBookings, listAllBookings, markBookingReminderSent, recordReviewRequest } from "./booking.js";
 import { loadClientNotes, markBirthdayGreeted } from "./client-notes.js";
 import { listWorkspaces, withDistributedLock } from "./database.js";
 import { buildDigestSummary } from "./insights.js";
@@ -201,14 +201,23 @@ async function runReviewRequestJob() {
     const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
     if (!connectionCanSend && !envCanSend) continue;
 
-    const targetDate = addDaysToIso(-daysAfter);
+    // Status that should trigger the review ask (default "Completed"). We fire
+    // once the booking has been in that status for `daysAfter` days — anchored
+    // to when it entered the status, not the event date.
+    const triggerStatus = String(workspace.config.reviewRequestStatus || "Completed");
 
     try {
       const tokens = await getWorkspaceCredentials(workspace.email);
-      const bookings = await listActiveBookings(workspace.email, tokens);
+      const bookings = await listAllBookings(workspace.email, tokens);
 
       for (const booking of bookings) {
-        if (!booking.clientWhatsApp || booking.eventDate !== targetDate) continue;
+        if (!booking.clientWhatsApp || booking.status !== triggerStatus) continue;
+
+        const elapsed = daysSinceIso(statusAnchorIso(booking));
+        // Within the window only: from the target day up to 14 days past it.
+        // The upper bound stops a first-run flood of review asks to every
+        // historical completed booking the moment this ships.
+        if (elapsed === null || elapsed < daysAfter || elapsed > daysAfter + 14) continue;
 
         const alreadySent = (booking.remindersSent || "")
           .split(",")
@@ -521,20 +530,38 @@ async function runPaymentReminderJob() {
 
     try {
       const tokens = await getWorkspaceCredentials(workspace.email);
-      const bookings = await listActiveBookings(workspace.email, tokens);
+      const bookings = await listAllBookings(workspace.email, tokens);
+      // Status that triggers post-status payment-completion reminders, sent 1
+      // and 5 days after the booking enters it while still unpaid (default
+      // "Completed"). Independent of the date-based advance/balance nudges below.
+      const payTriggerStatus = String(workspace.config.paymentReminderStatus || "Completed");
 
       for (const booking of bookings) {
         if (!booking.clientWhatsApp) continue;
         const recipientPhone = booking.clientWhatsApp.replace(/[^\d]/g, "");
+        const isActive = !["Completed", "Cancelled"].includes(booking.status);
+        const sent = (booking.remindersSent || "").split(",").map((s) => s.trim());
 
         let kind: "advance" | "balance" | null = null;
         let marker = "";
-        if (booking.paymentStatus === "Advance Due" && booking.advanceAmount > 0) {
+        // Date-based nudges — unchanged behaviour, only for still-active bookings.
+        if (isActive && booking.paymentStatus === "Advance Due" && booking.advanceAmount > 0) {
           const m = dueAdvanceMarker(booking.bookedAt, booking.remindersSent);
           if (m) { kind = "advance"; marker = m; }
-        } else if (booking.paymentStatus === "Advance Paid" && booking.balanceDue > 0) {
+        } else if (isActive && booking.paymentStatus === "Advance Paid" && booking.balanceDue > 0) {
           if (balanceReminderDue(booking.eventDate, booking.remindersSent)) {
             kind = "balance"; marker = "paybal";
+          }
+        }
+        // Status-anchored completion reminders: 1 then 5 days after the chosen
+        // status, as long as money is still owed. Works on Completed bookings too.
+        // Cap at 30 days so this never blasts ancient unpaid-but-completed
+        // bookings the first time it runs after shipping.
+        if (!kind && booking.status === payTriggerStatus && booking.balanceDue > 0) {
+          const elapsed = daysSinceIso(statusAnchorIso(booking));
+          if (elapsed !== null && elapsed <= 30) {
+            if (elapsed >= 5 && !sent.includes("paystatus5")) { kind = "balance"; marker = "paystatus5"; }
+            else if (elapsed >= 1 && !sent.includes("paystatus1")) { kind = "balance"; marker = "paystatus1"; }
           }
         }
         if (!kind) continue;
@@ -591,4 +618,21 @@ function addDaysToIso(days: number): string {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+// Whole days elapsed since an ISO timestamp or date (UTC, floored). Null if the
+// input is empty or unparseable — callers treat null as "no anchor yet".
+export function daysSinceIso(iso: string, now: Date = new Date()): number | null {
+  if (!iso) return null;
+  const t = new Date(iso);
+  if (isNaN(t.getTime())) return null;
+  return Math.floor((now.getTime() - t.getTime()) / 86_400_000);
+}
+
+// Anchor a status-triggered automation: the moment the booking entered its
+// current status (statusChangedAt), falling back to the event date for legacy
+// rows written before status timestamps existed.
+export function statusAnchorIso(booking: { statusChangedAt: string; eventDate: string }): string {
+  if (booking.statusChangedAt) return booking.statusChangedAt;
+  return booking.eventDate ? `${booking.eventDate}T00:00:00Z` : "";
 }

@@ -30,6 +30,7 @@ import {
   getMonthlyRecap,
   importClients,
   listActiveBookings,
+  markBookingReminderSent,
   parsePaymentsLog,
   paymentsTotal,
   recordBookingPayment,
@@ -44,7 +45,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { closePool, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, listWorkspaces, markWebhookEventProcessed, pingDatabase, saveWorkspace } from "./services/database.js";
+import { cleanupOldWebhookEvents, closePool, countWorkspaces, deleteWorkspace, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, isPhoneOptedOut, listOptedOutPhones, listWorkspaces, markPhoneOptedOut, markWebhookEventProcessed, pingDatabase, removePhoneOptOut, saveWorkspace } from "./services/database.js";
 import {
   createOrderWithKeys,
   createRazorpayOrder,
@@ -58,7 +59,7 @@ import {
   verifyWebhookSignature,
 } from "./services/razorpay.js";
 import { CREDIT_PACKS, USAGE_COSTS, USAGE_LABELS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford, type UsageKind } from "./services/wallet.js";
-import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
+import { createGoogleClients, exchangeCodeForTokens, exchangeNativeAuthCode, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   buildImageMarker,
   extractInboundMediaFromMetaWebhook,
@@ -73,7 +74,7 @@ import {
 import { deactivateArtist, reactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { buildAvailability, createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability, getPublicArtists } from "./services/public-booking.js";
 import { buildServicesContext, computeInsights } from "./services/insights.js";
-import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
+import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestCities, suggestPlaces } from "./services/places.js";
 import { resolveTravelIntelligence } from "./services/maps.js";
 import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply, listGmbPosts, createGmbPost, getReputationSummary } from "./services/gmb.js";
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
@@ -108,7 +109,7 @@ import { generateConversationReply, deriveToneProfile } from "./services/grok.js
 import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
-import { fetchWithTimeout } from "./services/http.js";
+import { fetchWithTimeout, isPublicHttpUrl } from "./services/http.js";
 import { encryptionEnabled } from "./services/crypto.js";
 import {
   generateInvoiceDocument,
@@ -380,7 +381,7 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // /api/session is intentionally public: it reports authenticated:false for
 // logged-out visitors so the landing page can render without bouncing them (and
 // Google's OAuth-verification crawler) to a login screen.
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token"]);
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token", "/api/auth/google/native-code", "/api/config/phone-codes", "/api/push/config"]);
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
@@ -519,6 +520,22 @@ app.get("/api/public/:workspaceId/travel", publicReadLimiter, async (req, res, n
     const travel = await resolveTravelIntelligence({ originCity, destinationText: venue, outstationThresholdKm });
     const travelFee = travelCostForDistance(config, travel.distanceKm);
     res.json({ ok: true, travelFee, distanceKm: Math.round(travel.distanceKm) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Venue autocomplete for the public booking page. Public (the page is
+// unauthenticated) and rate-limited; returns [] without a Maps key so the field
+// stays a plain input. Only resolves for a real workspace so it can't be abused
+// as an open Places proxy.
+app.get("/api/public/:workspaceId/places", publicReadLimiter, async (req, res, next) => {
+  try {
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace) return res.json({ ok: true, suggestions: [] });
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const suggestions = await suggestPlaces(q).catch(() => []);
+    res.json({ ok: true, suggestions });
   } catch (error) {
     next(error);
   }
@@ -868,12 +885,14 @@ app.get("/auth/google/business", (_req, res) => {
 app.get("/auth/meta/start", (req, res, next) => {
   try {
     const channel = req.query.channel;
-    const workspaceEmail =
-      typeof req.query.workspaceEmail === "string"
-        ? req.query.workspaceEmail
-        : req.session.profile?.email;
-
-    if ((channel !== "instagram" && channel !== "whatsapp") || !workspaceEmail) {
+    // Bind the connection to the *authenticated* account only. Trusting a
+    // ?workspaceEmail query param would let anyone start an OAuth flow that
+    // links a Meta account to a workspace they don't own.
+    const workspaceEmail = req.session.profile?.email;
+    if (!workspaceEmail) {
+      return res.status(401).send("Please sign in before connecting a channel.");
+    }
+    if (channel !== "instagram" && channel !== "whatsapp") {
       return res.status(400).send("Missing or invalid Meta connect parameters.");
     }
 
@@ -892,6 +911,21 @@ app.get("/auth/google/callback", async (req, res, next) => {
 
     const tokens = await exchangeCodeForTokens(code);
     const profile = await fetchGoogleProfile(tokens);
+
+    // Signup cap: keep existing users flowing, but queue brand-new signups once
+    // we hit the configured limit (protects the ~100-user Google sensitive-scope
+    // cap and stops a launch stampede of Sheet/Calendar provisioning). Checked
+    // before we create a session so a queued user lands cleanly on the waitlist.
+    if (appConfig.maxWorkspaces > 0) {
+      const alreadyHasWorkspace = await getWorkspaceByEmail(profile.email);
+      if (!alreadyHasWorkspace) {
+        const count = await countWorkspaces();
+        if (count >= appConfig.maxWorkspaces) {
+          logger.info("signup_capped", { email: profile.email, count, cap: appConfig.maxWorkspaces });
+          return res.redirect("/?waitlist=1");
+        }
+      }
+    }
 
     await new Promise<void>((resolve, reject) =>
       req.session.regenerate((err) => (err ? reject(err) : resolve())),
@@ -999,6 +1033,64 @@ app.post("/api/auth/google/id-token", publicWriteLimiter, async (req, res, next)
   }
 });
 
+// Native mobile sign-in for FIRST-TIME users without a browser tab. The native
+// Google SDK returns a one-time server auth code (with offline access + our
+// scopes); we exchange it, provision the workspace, and open a session — all
+// server-side. Strictly fail-safe: if the code doesn't yield offline tokens with
+// the Sheets/Calendar/Drive scopes we need (or the signup cap is hit), we return
+// requiresFullAuth so the app falls back to the existing Custom Tab flow. So this
+// can only ever REMOVE the tab, never break sign-in.
+app.post("/api/auth/google/native-code", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const code = String(req.body?.code ?? "");
+    if (!code) return res.status(400).json({ error: "code required" });
+    if (!appConfig.googleClientId || !appConfig.googleClientSecret) {
+      return res.status(503).json({ error: "Google Sign-In not configured" });
+    }
+
+    let tokens;
+    try {
+      tokens = await exchangeNativeAuthCode(code);
+    } catch {
+      // Bad/expired code or a plugin that didn't request offline access → tab.
+      return res.json({ ok: false, requiresFullAuth: true });
+    }
+
+    // Must have offline tokens AND the sensitive scopes, or provisioning (which
+    // creates a Google Sheet/Calendar) would fail. Otherwise → Custom Tab.
+    const granted = String(tokens.scope || "");
+    const hasScopes = ["spreadsheets", "calendar", "drive.file"].every((s) => granted.includes(s));
+    if (!tokens.access_token || !tokens.refresh_token || !hasScopes) {
+      return res.json({ ok: false, requiresFullAuth: true });
+    }
+
+    const profile = await fetchGoogleProfile(tokens);
+
+    // Respect the signup cap; a capped new user falls back to the tab, which
+    // routes them to the waitlist page — no cap bypass here.
+    if (appConfig.maxWorkspaces > 0) {
+      const already = await getWorkspaceByEmail(profile.email);
+      if (!already && (await countWorkspaces()) >= appConfig.maxWorkspaces) {
+        return res.json({ ok: false, requiresFullAuth: true });
+      }
+    }
+
+    await new Promise<void>((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve())),
+    );
+    req.session.googleTokens = tokens;
+    req.session.profile = profile;
+    await provisionWorkspace(profile, tokens);
+    await persistWorkspaceTokens(profile.email, tokens);
+    await new Promise<void>((resolve, reject) =>
+      req.session.save((err) => (err ? reject(err) : resolve())),
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Dev-only login + seed. Triple-gated: only mounts when APP_ENV=development,
 // NODE_ENV is not production, AND DEV_LOGIN=1. Used to drive the authenticated UI
 // locally without Google OAuth. Never available in staging/production — the extra
@@ -1059,6 +1151,14 @@ app.get("/auth/meta/callback", async (req, res, next) => {
     }
 
     const parsedState = parseMetaState(state);
+    // Defence in depth: even with a validly signed state, only the signed-in
+    // owner of that workspace may complete the binding. This closes the OAuth
+    // CSRF where a victim is tricked into finishing an attacker-started flow.
+    if (!req.session.profile || req.session.profile.email !== parsedState.workspaceEmail) {
+      return res
+        .status(403)
+        .send("This connection link doesn't match your signed-in account. Please sign in and try connecting again.");
+    }
     const shortLived = await exchangeMetaCode(code);
     const longLived = await exchangeForLongLivedToken(shortLived.access_token).catch(
       () => shortLived,
@@ -1101,11 +1201,13 @@ app.get("/auth/instagram/callback", (_req, res) => {
 function scrubWorkspaceTokens(workspace: WorkspaceRecord | null): WorkspaceRecord | null {
   if (!workspace) return null;
   const { googleTokens: _gt, ...rest } = workspace;
-  // Never ship the Razorpay key secret to the browser; the frontend only needs
-  // to know whether one is set.
+  // Never ship stored credentials to the browser; the frontend only needs to
+  // know whether one is set. Both the Razorpay key secret and the SMTP password
+  // are masked here (and preserved on save when the masked value comes back).
   const safeConfig = {
     ...rest.config,
     razorpayKeySecret: rest.config?.razorpayKeySecret ? "********" : "",
+    smtpPass: rest.config?.smtpPass ? "********" : "",
   };
   const base = { ...rest, config: safeConfig } as WorkspaceRecord;
   if (!base.metaConnections) return base;
@@ -1147,11 +1249,20 @@ app.post("/api/workspace/config", async (req, res, next) => {
     }
 
     const parsed = workspaceConfigSchema.parse(req.body);
-    // The browser only ever sees a masked Razorpay secret — a blank or masked
-    // value on save means "keep what's stored", never "erase it".
-    if (!parsed.razorpayKeySecret || parsed.razorpayKeySecret === "********") {
+    // The browser only ever sees masked secrets (Razorpay key, SMTP password) —
+    // a blank or masked value on save means "keep what's stored", never "erase
+    // it". One workspace fetch covers both.
+    if (
+      !parsed.razorpayKeySecret || parsed.razorpayKeySecret === "********" ||
+      !parsed.smtpPass || parsed.smtpPass === "********"
+    ) {
       const existing = await getWorkspaceByEmail(req.session.profile.email);
-      parsed.razorpayKeySecret = existing?.config.razorpayKeySecret || "";
+      if (!parsed.razorpayKeySecret || parsed.razorpayKeySecret === "********") {
+        parsed.razorpayKeySecret = existing?.config.razorpayKeySecret || "";
+      }
+      if (!parsed.smtpPass || parsed.smtpPass === "********") {
+        parsed.smtpPass = existing?.config.smtpPass || "";
+      }
     }
     // Pretty booking slug: normalized, validated, and unique across all
     // workspaces — it becomes a top-level public URL.
@@ -1441,7 +1552,52 @@ app.post("/api/gmb/select", async (req, res, next) => {
       },
       req.session.googleTokens,
     );
-    res.json({ ok: true, googleReviewLink, workspace: updated });
+    res.json({ ok: true, googleReviewLink, workspace: scrubWorkspaceTokens(updated) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Paste-your-own-link path: the artist already has a Google review/Maps/Business
+// link and just wants reviews pointed at it. Accept any Google URL, normalise a
+// couple of common forms, and save it as the review link — no Maps API needed.
+app.post("/api/gmb/set-link", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    let raw = typeof req.body?.link === "string" ? req.body.link.trim() : "";
+    if (!raw) return res.status(400).json({ error: "Paste your Google link first." });
+    if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      return res.status(400).json({ error: "That doesn't look like a valid link. Copy it straight from Google." });
+    }
+    // Only accept Google-owned hosts so we never point clients somewhere wrong.
+    const host = parsed.hostname.toLowerCase();
+    const isGoogle =
+      /(^|\.)google\.[a-z.]+$/.test(host) ||
+      host === "g.page" ||
+      host === "g.co" ||
+      host === "goo.gl" ||
+      host === "maps.app.goo.gl" ||
+      host === "search.google.com";
+    if (!isGoogle) {
+      return res.status(400).json({ error: "Please paste a Google link (Maps, g.page, or your Google review link)." });
+    }
+
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    const updated = await updateWorkspaceConfig(
+      req.session.profile.email,
+      { ...workspace.config, googleReviewLink: parsed.toString().slice(0, 600) },
+      req.session.googleTokens,
+    );
+    res.json({ ok: true, googleReviewLink: updated.config.googleReviewLink, workspace: scrubWorkspaceTokens(updated) });
   } catch (error) {
     next(error);
   }
@@ -1778,11 +1934,28 @@ app.get("/api/wallet", async (req, res, next) => {
     const workspace = await getWorkspaceByEmail(req.session.profile.email);
     if (!workspace) return res.status(404).json({ error: "Workspace not found" });
     const wallet = getWallet(workspace);
+    // Itemized usage for the current calendar month: count + credits per action,
+    // so the artist can see exactly what the service is costing them (how many
+    // WhatsApps, emails, e-sign documents, AI calls, etc.).
+    const monthPrefix = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    const usageMap: Record<string, { label: string; count: number; credits: number }> = {};
+    for (const entry of wallet.ledger) {
+      if (entry.type !== "debit") continue;
+      if (!String(entry.createdAt || "").startsWith(monthPrefix)) continue;
+      const label = entry.reason || "Other";
+      if (!usageMap[label]) usageMap[label] = { label, count: 0, credits: 0 };
+      usageMap[label].count += 1;
+      usageMap[label].credits += entry.credits;
+    }
+    const usageThisMonth = Object.values(usageMap).sort((a, b) => b.credits - a.credits);
+    const creditsUsedThisMonth = usageThisMonth.reduce((s, u) => s + u.credits, 0);
     res.json({
       ok: true,
       balanceCredits: wallet.balanceCredits,
       lowBalance: isLowBalance(wallet.balanceCredits),
       ledger: wallet.ledger.slice(0, 50),
+      usageThisMonth,
+      creditsUsedThisMonth,
       packs: CREDIT_PACKS,
       // What each automated action costs, so the artist can see where credits go
       // instead of running out without warning.
@@ -1964,6 +2137,44 @@ app.get("/api/maps/places", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// City autocomplete for the "your city" / base-location field. Cities only, so
+// the artist picks a clean place name instead of typing it. [] without a key.
+app.get("/api/maps/cities", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const suggestions = await suggestCities(q).catch(() => []);
+    res.json({ ok: true, suggestions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Country dialling codes for the phone-number fields. Public (the booking page
+// is unauthenticated) and tiny — India is the default since this is an India-first
+// product. A curated short list covers the common diaspora; the field still
+// accepts any typed number.
+app.get("/api/config/phone-codes", (_req, res) => {
+  res.json({
+    ok: true,
+    default: "+91",
+    codes: [
+      { code: "+91", label: "🇮🇳 India +91" },
+      { code: "+1", label: "🇺🇸 USA/Canada +1" },
+      { code: "+44", label: "🇬🇧 UK +44" },
+      { code: "+971", label: "🇦🇪 UAE +971" },
+      { code: "+61", label: "🇦🇺 Australia +61" },
+      { code: "+65", label: "🇸🇬 Singapore +65" },
+      { code: "+966", label: "🇸🇦 Saudi Arabia +966" },
+      { code: "+60", label: "🇲🇾 Malaysia +60" },
+      { code: "+64", label: "🇳🇿 New Zealand +64" },
+      { code: "+974", label: "🇶🇦 Qatar +974" },
+      { code: "+973", label: "🇧🇭 Bahrain +973" },
+      { code: "+968", label: "🇴🇲 Oman +968" },
+    ],
+  });
 });
 
 // Lists the available document design themes for the picker.
@@ -2676,9 +2887,12 @@ function esc(v: string) {
 }
 
 // ---- Push notifications (web push for PWA, FCM for the native app) ----
-app.get("/api/push/config", (req, res) => {
-  if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
-  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured(), googleClientId: appConfig.googleClientId || null });
+// Public on purpose: the native app reads googleClientId here BEFORE sign-in to
+// drive the native Google account picker (no browser tab). Every field is
+// non-secret — a VAPID *public* key, feature booleans, and the OAuth client ID
+// that already appears in every consent URL.
+app.get("/api/push/config", (_req, res) => {
+  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured(), googleClientId: appConfig.googleClientId || null, googleScopes: appConfig.googleScopes });
 });
 
 app.post("/api/push/subscribe", async (req, res, next) => {
@@ -2989,6 +3203,95 @@ app.get("/api/export/accountant", async (req, res, next) => {
   }
 });
 
+// ── Personal data export (GDPR / DPDPA right to portability) ─────────────────
+// Returns a JSON bundle of everything BusyDays holds for this workspace.
+// The artist's client data lives in their own Google Sheet; this covers what
+// we store in our own database (workspace config, wallet, meta connections).
+app.get("/api/export/my-data", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+    // Scrub secrets before export — tokens and API keys are not personal data,
+    // and sending them in a download would be a credential leak.
+    const safe = scrubWorkspaceTokens(workspace);
+    const optedOutPhones = await listOptedOutPhones(workspace.workspaceId);
+
+    const exportBundle = {
+      exportedAt: new Date().toISOString(),
+      email: req.session.profile.email,
+      workspaceId: workspace.workspaceId,
+      config: safe?.config ?? {},
+      wallet: safe?.wallet ?? null,
+      metaConnections: safe?.metaConnections ?? {},
+      whatsappOptouts: optedOutPhones,
+      note: "Your leads, bookings and client records are stored in your own Google Sheet. Open it from Google Drive to export that data.",
+    };
+
+    const filename = `busydays-my-data-${new Date().toISOString().slice(0, 10)}.json`;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(JSON.stringify(exportBundle, null, 2));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Self-service workspace deletion ──────────────────────────────────────────
+// GDPR / DPDPA Art. 17 right to erasure. Requires the artist to be signed in
+// and to confirm deletion in the request body (prevents accidental deletes from
+// e.g. a rogue prefetch). Session is destroyed afterward.
+app.delete("/api/workspace", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    // Require explicit confirmation string to prevent accidental deletion.
+    if (req.body?.confirm !== "DELETE MY WORKSPACE") {
+      return res.status(400).json({ error: 'Send { "confirm": "DELETE MY WORKSPACE" } to confirm.' });
+    }
+    const email = req.session.profile.email;
+    const deleted = await deleteWorkspace(email);
+    if (!deleted) return res.status(404).json({ error: "Workspace not found." });
+
+    // Destroy the session so the browser is immediately signed out.
+    req.session.destroy(() => {
+      res.json({ ok: true, message: "Your workspace has been permanently deleted. You have been signed out." });
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── WhatsApp opt-out management (artist view) ────────────────────────────────
+// Artists can see who has opted out and re-add contacts who have re-consented.
+app.get("/api/optouts/whatsapp", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phones = await listOptedOutPhones(workspace.workspaceId);
+    res.json({ ok: true, optedOut: phones });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Re-opt-in: only the artist can do this, and only after the contact has
+// confirmed they want to receive messages again (best handled via WhatsApp DM).
+app.delete("/api/optouts/whatsapp/:phone", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const phone = String(req.params.phone ?? "").replace(/\D/g, "");
+    if (!phone || phone.length < 8) return res.status(400).json({ error: "Invalid phone number." });
+    await removePhoneOptOut(workspace.workspaceId, phone);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ── Re-engagement campaigns ─────────────────────────────────────────────────
 
 app.get("/api/campaigns/reach", async (req, res, next) => {
@@ -3007,6 +3310,11 @@ app.post("/api/campaigns/broadcast", async (req, res, next) => {
     if (!req.session.profile || !req.session.googleTokens) return res.status(401).json({ error: "Unauthorized" });
     const { segment, message, imageUrl } = req.body as { segment: CampaignSegment; message: string; imageUrl?: string };
     if (!segment || !message?.trim()) return res.status(400).json({ error: "segment and message are required" });
+    // Only forward a clean, public https image URL to WhatsApp — never a
+    // file:/data:/javascript: scheme or a private-network address.
+    if (imageUrl && !isPublicHttpUrl(imageUrl)) {
+      return res.status(400).json({ error: "Image link must be a public https URL." });
+    }
     const job = startCampaignBroadcast(req.session.profile.email, req.session.googleTokens, { segment, message: message.trim(), imageUrl });
     res.status(202).json({ ok: true, jobId: job.id });
   } catch (error) { next(error); }
@@ -3781,7 +4089,9 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
           <p>Amount due: <strong>Rs. ${Math.round(currentBooking.balanceDue).toLocaleString("en-IN")}</strong></p>
           <p>Thank you — ${esc(workspace.config.businessName || workspace.config.ownerName)}</p>
         `),
-      }).catch(() => undefined);
+      })
+        .then((r) => { if (r?.ok) meterUsage(workspace.email, "email").catch(() => {}); })
+        .catch(() => undefined);
     }
 
     res.json({ ok: true, booking: currentBooking });
@@ -4728,6 +5038,7 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
         aiSummary: `Leegality create sent${contract.documentId ? ` (documentId ${contract.documentId})` : ""}`,
       });
 
+      await meterUsage(req.session.profile.email, "esignDocument").catch(() => {});
       return res.json({ ok: true, booking: updatedBooking, contract });
     }
 
@@ -4744,6 +5055,7 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
       }),
     );
 
+    await meterUsage(req.session.profile.email, "esignDocument").catch(() => {});
     res.json({ ok: true, booking: updatedBooking });
   } catch (error) {
     next(error);
@@ -4939,7 +5251,30 @@ app.post("/api/bookings/:bookingId/send-review", async (req, res, next) => {
     }
     const channelContext = resolveLeadMessagingContext(workspace, lead);
     if (!channelContext) {
-      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
+      // No automated WhatsApp pipe yet → hand the artist a ready-to-send wa.me
+      // link. Tapping it opens WhatsApp with the message filled in, and we record
+      // the request as done so it stops surfacing.
+      const message = buildReviewRequestMessage(workspace, booking);
+      const waLink = buildWaMeReminderLink(booking.clientWhatsApp, message);
+      if (!waLink) {
+        return res.status(400).json({ error: "This client has no WhatsApp number on file." });
+      }
+      await markBookingReminderSent(req.session.profile.email, req.session.googleTokens, booking.bookingId, "review").catch(() => {});
+      await upsertReviewRequest(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        clientName: booking.clientName,
+        eventDate: booking.eventDate,
+        type: "request",
+      }).catch(() => {});
+      await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        direction: "Outbound",
+        channel: "WhatsApp",
+        actor: booking.clientWhatsApp,
+        message,
+        aiSummary: "Review request — opened via WhatsApp link (manual)",
+      }).catch(() => {});
+      return res.json({ ok: true, waLink, manual: true });
     }
 
     const message = buildReviewRequestMessage(workspace, booking);
@@ -6426,12 +6761,34 @@ app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
     if (!lead) {
       return res.status(404).json({ error: "Lead not found for booking" });
     }
+    const kind = req.body?.kind === "balance" ? "balance" : "advance";
     const channelContext = resolveLeadMessagingContext(workspace, lead);
     if (!channelContext) {
-      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
+      // No automated WhatsApp pipe yet → return a ready-to-send wa.me link and
+      // log the reminder as sent so it isn't re-surfaced.
+      const message = buildCollectionReminderMessage(workspace, booking, kind);
+      const waLink = buildWaMeReminderLink(booking.clientWhatsApp, message);
+      if (!waLink) {
+        return res.status(400).json({ error: "This client has no WhatsApp number on file." });
+      }
+      await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        type: kind === "balance" ? "Balance Reminder" : "Advance Reminder",
+        channel: "WhatsApp",
+        messagePreview: message,
+        status: "Sent",
+      }).catch(() => {});
+      await logInteractionForWorkspace(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        direction: "Outbound",
+        channel: "WhatsApp",
+        actor: booking.clientWhatsApp,
+        message,
+        aiSummary: `${kind === "balance" ? "Balance" : "Advance"} reminder — opened via WhatsApp link (manual)`,
+      }).catch(() => {});
+      return res.json({ ok: true, waLink, manual: true });
     }
 
-    const kind = req.body?.kind === "balance" ? "balance" : "advance";
     const message = buildCollectionReminderMessage(workspace, booking, kind);
     const dueAmount = kind === "balance" ? booking.balanceDue : booking.advanceAmount;
     await sendBusinessMessage({
@@ -6465,6 +6822,37 @@ app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
     });
 
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One-tap "I've left them a message, reaching out shortly". Records the contact
+// (so the lead stops showing as "quiet" / overdue) without needing a connected
+// WhatsApp/Instagram channel — the artist messages from their own phone via the
+// wa.me deep link the UI opens alongside this call.
+app.post("/api/leads/:leadId/mark-contacted", async (req, res, next) => {
+  try {
+    if (!req.session.profile || !req.session.googleTokens) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const stamp = new Date().toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    const note = `Left a message — reaching out shortly (${stamp})`;
+    const updated = await updateLeadRecord(
+      req.session.profile.email,
+      req.session.googleTokens,
+      req.params.leadId,
+      (current) => ({
+        ...current,
+        ownerNotes: current.ownerNotes ? `${current.ownerNotes}\n${note}` : note,
+        lastContactedAt: new Date().toISOString(),
+      }),
+    );
+    res.json({ ok: true, lastContactedAt: updated.lastContactedAt });
   } catch (error) {
     next(error);
   }
@@ -6924,6 +7312,24 @@ app.post("/webhooks/meta", async (req, res, next) => {
           leadCreated = true;
         }
       } else if (channel === "WhatsApp" && inboundText) {
+        // ── WhatsApp opt-out: honour STOP / UNSUBSCRIBE / OPT OUT ────────────
+        // WhatsApp Business Policy and many national anti-spam laws (TCPA, PDPA,
+        // TRAI) require that a STOP request is processed immediately and silently.
+        // We mark the phone opted-out and skip all further processing so no
+        // lead is created and no auto-reply is sent (which would be a second
+        // unwanted message).
+        const stopKeywords = /^\s*(stop|unsubscribe|opt.?out|end|quit|cancel)\s*$/i;
+        if (stopKeywords.test(inboundText) && actorId) {
+          const senderPhone = actorId.replace(/\D/g, "");
+          await markPhoneOptedOut(workspace.workspaceId, senderPhone).catch(() => null);
+          logger.info("whatsapp_optout", { workspaceId: workspace.workspaceId, phone: senderPhone });
+          // Do NOT send any reply — sending even an "unsubscribed" confirmation
+          // to someone who said STOP would be a compliance violation in some
+          // jurisdictions. The artist can see the event in the Conversations tab.
+          res.sendStatus(200);
+          return;
+        }
+
         const entry = Array.isArray(body.entry) ? (body.entry[0] as Record<string, unknown>) : undefined;
         const change = entry && Array.isArray(entry.changes) ? (entry.changes[0] as Record<string, unknown>) : undefined;
         const value = change?.value as Record<string, unknown> | undefined;
@@ -7238,6 +7644,15 @@ app.get("/legal/privacy", (_req, res) => {
   <li>We do <strong>not</strong> sell your data or your clients' data, and we do not use it for advertising.</li>
 </ul>
 
+<h2>2a. Google API Limited Use disclosure</h2>
+<p>BusyDays' use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements. Specifically:</p>
+<ul>
+  <li>We use Google Sheets access only to read and write the booking/lead spreadsheet we create in your own Drive. We do not read any other spreadsheets.</li>
+  <li>We use Google Calendar access only to create, update and delete booking events we create on your behalf. We do not read events we did not create, except to check free/busy availability at your explicit request.</li>
+  <li>We use Drive file access (drive.file scope) only to upload files our app generates — payment screenshots, portfolio photos, and your business logo. We cannot see or access other files in your Drive.</li>
+  <li>We do not use data obtained via Google APIs to serve advertisements, and we do not transfer it to any third party except as necessary to provide the features you explicitly activate.</li>
+</ul>
+
 <h2>3. Third parties we share with</h2>
 <p>We share data only with the processors needed to deliver the service: Google (Sheets, Calendar, Drive), Meta (WhatsApp/Instagram messaging), xAI (AI generation), Razorpay (payments), and Leegality (e-signature, when you send a contract). Each receives only what is necessary for its function.</p>
 
@@ -7251,10 +7666,15 @@ app.get("/legal/privacy", (_req, res) => {
 <ul>
   <li>Disconnect Google or Meta at any time from Settings; this revokes our access.</li>
   <li>Request deletion of your data — see our <a href="/legal/data-deletion">Data Deletion</a> page.</li>
+  <li>Export your personal data at any time from Settings → Account → Export my data.</li>
+  <li>Delete your workspace instantly via Settings → Account → Delete workspace, or by emailing us.</li>
   <li>Access or export your records directly from the Google Sheet you own.</li>
 </ul>
 
-<h2>7. Contact</h2>
+<h2>7. WhatsApp messaging opt-out</h2>
+<p>Clients who receive WhatsApp messages through BusyDays may reply <strong>STOP</strong> (or UNSUBSCRIBE / OPT OUT) at any time. We record the opt-out immediately and exclude that contact from all future campaign messages sent by that artist. Artists can view opted-out contacts in Settings → Campaigns → Opt-outs.</p>
+
+<h2>8. Contact</h2>
 <p>Questions or requests: <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>`,
     ),
   );
@@ -7306,7 +7726,13 @@ app.get("/legal/data-deletion", (_req, res) => {
 <h2>2. Delete your workspace</h2>
 <p>To delete your entire workspace and the records we hold for it, email <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a> from your account email with the subject "Delete my workspace". We will remove your workspace records from our database within 30 days and confirm by email. Data stored in the Google Sheet you own remains in your Google account for you to delete directly.</p>
 
-<h2>3. Meta data deletion callback</h2>
+<h2>3. Self-service workspace deletion</h2>
+<p>Sign in and go to <strong>Settings → Account → Delete workspace</strong> to permanently delete your entire workspace immediately. This removes your leads, bookings, payment records, and all stored tokens from our database. Data in your own Google Sheet (which you own) is not affected.</p>
+
+<h2>4. WhatsApp opt-out</h2>
+<p>If a client replies <strong>STOP</strong> to a WhatsApp message sent via BusyDays, they are automatically added to the opt-out list and will not receive future campaign messages from that artist. Artists can view and manage opt-outs in Settings → Campaigns → Opt-outs. To request removal of a specific client's opt-out record (e.g. they have re-consented), email us at <a href="mailto:${escapeAttr(LEGAL_CONTACT_EMAIL)}">${escapeAttr(LEGAL_CONTACT_EMAIL)}</a>.</p>
+
+<h2>5. Meta data deletion callback</h2>
 <p>If you remove BusyDays from your Facebook/Instagram account, Meta sends us a signed data-deletion request. We verify it, disconnect the associated channels, and return a confirmation code and this status URL, as required by Meta Platform policy. The callback endpoint is <code>/compliance/meta/data-deletion</code>.</p>
 
 <h2>What gets deleted</h2>
@@ -7314,6 +7740,7 @@ app.get("/legal/data-deletion", (_req, res) => {
   <li>OAuth access and refresh tokens (revoked and removed).</li>
   <li>Meta channel connection records for your workspace.</li>
   <li>On full workspace deletion: lead, booking, interaction, wallet and conversation-memory records in our database.</li>
+  <li>WhatsApp opt-out records for your workspace are also purged on deletion.</li>
 </ul>`,
     ),
   );
@@ -7335,14 +7762,35 @@ const RESERVED_SLUGS = new Set([
   "settings", "dashboard", "index", "manifest.json", "sw.js", "favicon.ico", "robots.txt",
 ]);
 
+// The pretty link is a public, unauthenticated route hit by bots and crawlers.
+// listWorkspaces() scans every workspace, so a per-request scan is a needless
+// load multiplier. Slugs change rarely, so cache the slug→workspaceId map for a
+// short window; the worst case is a freshly-set slug taking up to a minute to
+// resolve, which is invisible for a redirect.
+let slugMapCache: { map: Map<string, string>; expires: number } | null = null;
+const SLUG_CACHE_TTL_MS = 60_000;
+
+async function resolveSlugToWorkspaceId(slug: string): Promise<string | null> {
+  const now = Date.now();
+  if (!slugMapCache || slugMapCache.expires < now) {
+    const all = await listWorkspaces();
+    const map = new Map<string, string>();
+    for (const w of all) {
+      const s = normalizeSlug(w.config?.bookingSlug || "");
+      if (s) map.set(s, w.workspaceId);
+    }
+    slugMapCache = { map, expires: now + SLUG_CACHE_TTL_MS };
+  }
+  return slugMapCache.map.get(slug) ?? null;
+}
+
 app.get("/:slug", async (req, res, next) => {
   try {
     const slug = normalizeSlug(String(req.params.slug ?? ""));
     if (!slug || RESERVED_SLUGS.has(slug)) return next();
-    const all = await listWorkspaces();
-    const match = all.find((w) => normalizeSlug(w.config?.bookingSlug || "") === slug);
-    if (!match) return next();
-    res.redirect(302, `/book/${encodeURIComponent(match.workspaceId)}`);
+    const workspaceId = await resolveSlugToWorkspaceId(slug);
+    if (!workspaceId) return next();
+    res.redirect(302, `/book/${encodeURIComponent(workspaceId)}`);
   } catch {
     next();
   }
@@ -7421,6 +7869,11 @@ if (isMainModule) {
     });
     startReminderScheduler();
     void rehydrateInterruptedCampaigns();
+    // Housekeeping: trim the webhook dedup ledger now and once a day so it
+    // never grows unbounded. unref() keeps it from holding the process open.
+    void cleanupOldWebhookEvents();
+    const webhookCleanup = setInterval(() => void cleanupOldWebhookEvents(), 24 * 60 * 60 * 1000);
+    webhookCleanup.unref();
   });
 
   // Graceful shutdown: on a deploy/restart Railway sends SIGTERM. Stop accepting
@@ -7723,6 +8176,16 @@ async function notifyClientOfReschedule(
   } catch {
     return false;
   }
+}
+
+// wa.me deep link with the message prefilled. Used as the manual fallback for
+// business-initiated reminders before the WhatsApp API pipe is connected: the
+// artist taps it, WhatsApp opens with the message ready, and the reminder is
+// recorded as handled. Returns "" when there's no usable phone number.
+function buildWaMeReminderLink(phone: string, message: string): string {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
 function buildReviewRequestMessage(workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceByEmail>>>, booking: BookingRecord) {

@@ -1187,6 +1187,20 @@
       /* ─── Intake form questions ─── */
       .intake-question-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 13px; margin: 3px 4px 3px 0; }
       .intake-question-chip button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; padding: 0 0 0 4px; }
+
+      /* City autocomplete + phone country-code */
+      .ac-wrap { position: relative; }
+      .ac-menu {
+        position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 9600;
+        background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-sm);
+        box-shadow: var(--shadow); overflow: hidden; display: none;
+      }
+      .ac-menu.open { display: block; }
+      .ac-item { padding: 10px 13px; font-size: 14px; cursor: pointer; }
+      .ac-item:hover, .ac-item.active { background: var(--accent-soft); color: var(--accent); }
+      .cc-row { display: flex; gap: 6px; align-items: stretch; }
+      .cc-select { flex: 0 0 auto; width: auto; min-width: 96px; padding-right: 6px; }
+      .cc-row > input { flex: 1; min-width: 0; }
     </style>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
@@ -1238,6 +1252,21 @@
 
       <!-- Landing -->
       <section id="landing" class="landing-hero">
+        <!-- Waitlist: shown when signups are capped and this is a brand-new user.
+             They're redirected here with ?waitlist=1 instead of a broken consent
+             screen, so the experience stays warm while we let people in steadily. -->
+        <div id="waitlist-banner" style="display:none;max-width:560px;margin:0 auto 18px;background:#EEF2EE;border:1px solid #C9D8CC;border-radius:14px;padding:18px 20px;text-align:left;color:#2f4733;">
+          <div style="font-weight:700;font-size:16px;margin-bottom:6px;">💚 You're on the list!</div>
+          <p style="margin:0;font-size:13.5px;line-height:1.6;">We're welcoming our first artists in small batches to give everyone a smooth start. Your spot is saved with this Google account — we'll email you the moment it's your turn, usually within a day or two. Thank you for your patience! ✨</p>
+        </div>
+        <!-- In-app browser warning: Google blocks OAuth inside Instagram/WhatsApp/
+             Facebook webviews ("disallowed_useragent"), which is the #1 reason
+             sign-in "doesn't work on my phone". Shown only inside those webviews. -->
+        <div id="inapp-browser-banner" style="display:none;max-width:560px;margin:0 auto 18px;background:#FEF3C7;border:1px solid #F0C674;border-radius:14px;padding:16px 18px;text-align:left;color:#7a5b12;">
+          <div style="font-weight:700;font-size:15px;margin-bottom:6px;">⚠️ Open in your browser to sign in</div>
+          <p style="margin:0 0 12px;font-size:13.5px;line-height:1.55;">Google won't let you sign in inside the Instagram / WhatsApp in-app browser. Tap the <strong>⋯</strong> (or <strong>share</strong>) icon at the top and choose <strong>“Open in Chrome”</strong> or <strong>“Open in Safari”</strong> — then sign in there.</p>
+          <button type="button" id="inapp-copy-link" class="button small" style="background:#7a5b12;">📋 Copy the link to paste in your browser</button>
+        </div>
         <div class="hero-inner">
           <div class="hero-wordmark">BusyDays</div>
           <div class="hero-eyebrow">Made for makeup artists &amp; beauty professionals</div>
@@ -1320,10 +1349,15 @@
                 delete it at any time. See our
                 <a href="/legal/privacy">Privacy Policy</a> for full details.
               </p>
+              <p style="font-size:12px;color:#6b6b80;margin-top:8px;">
+                BusyDays' use of Google user data adheres to the
+                <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener" style="color:#6b6b80;">Google API Services User Data Policy</a>,
+                including the Limited Use requirements.
+              </p>
             </div>
 
             <div class="explain-cta">
-              <a href="/auth/google" class="button hero-cta">Get started with Google</a>
+              <a href="/auth/google" class="button hero-cta">Sign in with Google</a>
             </div>
           </div>
         </div>
@@ -1908,9 +1942,19 @@
             </div>
           </div>
           <div id="gmb-setup">
+            <div class="mini-card" style="margin-bottom:14px;border-color:var(--accent);">
+              <div class="kicker" style="color:var(--accent);">Fastest — paste your link</div>
+              <p class="muted" style="margin:6px 0 10px;font-size:13px;">Already have a Google listing? Open it on Google, tap <strong>Share</strong>, copy the link and paste it here. We'll send every review request straight to it.</p>
+              <div class="filter-bar">
+                <input type="text" id="gmb-paste-link" class="grow" placeholder="Paste your Google link (Maps, g.page, or review link)" inputmode="url" />
+                <button class="button" type="button" id="gmb-paste-save">Save link</button>
+              </div>
+              <div class="status" id="gmb-paste-status"></div>
+            </div>
+            <p class="muted" style="font-size:12.5px;margin:0 0 8px;text-align:center;">— or search Google for your business —</p>
             <div class="filter-bar" style="margin-bottom:10px;">
               <input type="text" id="gmb-query" class="grow" placeholder="Your business name and city, e.g. Glow by Aisha, Mumbai" />
-              <button class="button" type="button" id="gmb-search-btn">Find my business</button>
+              <button class="button secondary" type="button" id="gmb-search-btn">Find my business</button>
             </div>
             <div id="gmb-results"></div>
             <div class="status" id="gmb-status"></div>
@@ -2162,6 +2206,13 @@
           <div class="kicker">Top up</div>
           <h3 style="margin:4px 0 14px;font-size:16px;">Choose a credit pack</h3>
           <div id="wallet-packs" class="mini-grid"></div>
+        </div>
+
+        <div class="panel section" style="margin-bottom:20px;" id="wallet-usage-panel">
+          <div class="kicker">This month</div>
+          <h3 style="margin:4px 0 4px;font-size:16px;">What you've used this month</h3>
+          <p class="muted" style="margin:0 0 12px;font-size:13px;">Every WhatsApp, email, AI reply and e-signed document, itemised — so you always know what the service is costing you. About 1 credit ≈ ₹1.</p>
+          <div id="wallet-usage-month"></div>
         </div>
 
         <div class="panel section" style="margin-bottom:20px;" id="wallet-costs-panel">
@@ -2500,7 +2551,7 @@
                 <div><label for="ownerName">Your name</label><input id="ownerName" name="ownerName" required /></div>
                 <div><label for="ownerEmail">Your email</label><input id="ownerEmail" name="ownerEmail" type="email" required /></div>
                 <div><label for="ownerWhatsApp">Your WhatsApp number</label><input id="ownerWhatsApp" name="ownerWhatsApp" required placeholder="+91…" /></div>
-                <div><label for="city">City</label><input id="city" name="city" required /></div>
+                <div><label for="city">Base city</label><input id="city" name="city" required placeholder="e.g. Mumbai" /><p class="hint" style="margin:4px 0 0;font-size:11.5px;color:var(--muted);">Where you're based — travel charges are calculated from here to the venue.</p></div>
                 <div><label for="instagramHandle">Instagram handle (optional)</label><input id="instagramHandle" name="instagramHandle" placeholder="glowbyaisha" /></div>
               </div>
             </div>
@@ -2592,7 +2643,24 @@
                 </div>
                 <div><label for="bookingWeeklyOffDays">Your days off each week</label><input id="bookingWeeklyOffDays" name="bookingWeeklyOffDays" placeholder="Sun, Mon" /></div>
                 <div><label for="bookingLeadTimeDays">Minimum notice (days)</label><input id="bookingLeadTimeDays" name="bookingLeadTimeDays" type="number" min="0" placeholder="2" /></div>
-                <div class="wide"><label for="bookingTimeSlots">Default times you offer (leave empty for flexible)</label><input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" /></div>
+                <div class="wide">
+                  <label for="bookingTimeSlots">Default times you offer (leave empty for flexible)</label>
+                  <input id="bookingTimeSlots" name="bookingTimeSlots" placeholder="09:00,11:00,14:00,16:00" />
+                  <div id="slot-chip-row" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;">
+                    <span class="muted" style="font-size:12px;">Tap to add:</span>
+                    <button type="button" class="button tiny secondary" data-add-slot="08:00">8 AM</button>
+                    <button type="button" class="button tiny secondary" data-add-slot="09:00">9 AM</button>
+                    <button type="button" class="button tiny secondary" data-add-slot="10:00">10 AM</button>
+                    <button type="button" class="button tiny secondary" data-add-slot="11:00">11 AM</button>
+                    <button type="button" class="button tiny secondary" data-add-slot="14:00">2 PM</button>
+                    <button type="button" class="button tiny secondary" data-add-slot="16:00">4 PM</button>
+                    <button type="button" class="button tiny secondary" data-add-slot="18:00">6 PM</button>
+                    <button type="button" class="button tiny secondary" data-add-slot="19:00">7 PM</button>
+                    <input type="time" id="slot-custom-time" style="width:auto;padding:5px 8px;font-size:12px;" aria-label="Custom time" />
+                    <button type="button" class="button tiny secondary" id="slot-add-custom">+ Add</button>
+                    <button type="button" class="button tiny secondary" id="slot-clear" style="margin-left:auto;">Clear</button>
+                  </div>
+                </div>
                 <div class="wide"><label for="bookingBlockedDates">Dates you're not available</label><input id="bookingBlockedDates" name="bookingBlockedDates" placeholder="2026-12-25, 2027-01-01" /></div>
               </div>
 
@@ -2633,6 +2701,15 @@
                     </div>
                     <div><label for="reminderDaysBefore">Remind clients this many days before</label><input id="reminderDaysBefore" name="reminderDaysBefore" placeholder="7,1" /></div>
                     <div><label for="reviewRequestDaysAfter">Ask for a review this many days after</label><input id="reviewRequestDaysAfter" name="reviewRequestDaysAfter" placeholder="3 (blank = off)" /></div>
+                    <div>
+                      <label for="reviewRequestStatus">…after a booking reaches this status</label>
+                      <select id="reviewRequestStatus" name="reviewRequestStatus">
+                        <option>Completed</option>
+                        <option>Payment Received</option>
+                        <option>Confirmed</option>
+                      </select>
+                      <p class="muted" style="margin:3px 0 0;font-size:12px;">The Google review request is sent once a booking has been in this status for the number of days above. Default: <strong>Completed</strong>.</p>
+                    </div>
                     <div><label for="rebookNudgeDaysAfter">"Time to rebook" nudge — days after event</label><input id="rebookNudgeDaysAfter" name="rebookNudgeDaysAfter" placeholder="90 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Sends a friendly WhatsApp once, asking the client to book again. Needs the rebook template (create it under WhatsApp &amp; Instagram).</p></div>
                     <div><label for="winbackDaysAfter">Win-back lapsed clients after (days)</label><input id="winbackDaysAfter" name="winbackDaysAfter" placeholder="120 (blank = off)" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Messages a past client once when they haven't booked in this long. Needs the win-back template.</p></div>
                     <div><label for="cancellationWindowDays">Late cancellation window (days)</label><input id="cancellationWindowDays" name="cancellationWindowDays" type="number" min="0" max="60" placeholder="7" /><p class="muted" style="margin:3px 0 0;font-size:12px;">Cancellations inside this many days before the event will prompt you to charge a fee.</p></div>
@@ -2641,6 +2718,15 @@
                       <label for="autoPaymentReminders">Auto-remind clients about payments?</label>
                       <select id="autoPaymentReminders" name="autoPaymentReminders"><option>Yes</option><option>No</option></select>
                       <p class="muted" style="margin:4px 0 0;font-size:12px;">Gentle nudges for unpaid advances (2, 5, 8 days after booking) and the balance (2 days before the event). Needs your payment-reminder WhatsApp template.</p>
+                    </div>
+                    <div>
+                      <label for="paymentReminderStatus">Chase pending payment after status reaches</label>
+                      <select id="paymentReminderStatus" name="paymentReminderStatus">
+                        <option>Completed</option>
+                        <option>Payment Received</option>
+                        <option>Confirmed</option>
+                      </select>
+                      <p class="muted" style="margin:4px 0 0;font-size:12px;">If any money is still owed, clients get a reminder <strong>1 day</strong> and again <strong>5 days</strong> after a booking reaches this status. Default: <strong>Completed</strong>. (Honours "Auto-remind" above and needs your payment-reminder template.)</p>
                     </div>
                     <div>
                       <label for="dailyDigest">Morning digest on your phone?</label>
@@ -2688,8 +2774,12 @@
                   </div>
                   <input type="hidden" id="logoUrl" name="logoUrl" />
                 </div>
+                <div class="wide" style="margin-top:4px;">
+                  <strong style="font-size:13.5px;">Tax / GST</strong>
+                  <p class="muted" style="margin:2px 0 0;font-size:12.5px;">Only if you're GST-registered. Set a rate and a GST line is added to every quote and invoice (e.g. 18%); your GSTIN is printed on them. Leave the rate at 0 for no tax line.</p>
+                </div>
                 <div>
-                  <label for="gstNumber">GST number (optional — only if you're GST-registered)</label>
+                  <label for="gstNumber">GST number (GSTIN)</label>
                   <input id="gstNumber" name="gstNumber" placeholder="22AAAAA0000A1Z5" />
                 </div>
                 <div>
@@ -3556,7 +3646,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="wizard-field" style="flex:1;"><label for="le-date">Event date</label><input id="le-date" type="date" required /></div>
             <div class="wizard-field" style="flex:1;"><label for="le-time">Time (optional)</label><input id="le-time" type="time" /></div>
           </div>
-          <div class="wizard-field"><label for="le-venue">Where?</label><input id="le-venue" required maxlength="200" placeholder="Venue or area, city" /></div>
+          <div class="wizard-field suggest-wrap"><label for="le-venue">Where?</label><input id="le-venue" required maxlength="200" autocomplete="off" placeholder="Venue or area, city" /></div>
           <div class="wizard-field"><label for="le-notes">Notes / tags</label><input id="le-notes" maxlength="500" placeholder="e.g. luxury bride, trial on 12th" /></div>
           <div id="le-conflict" style="margin-bottom:14px;"></div>
           <button class="button" type="submit" id="le-submit" style="width:100%;">Save changes</button>
@@ -3654,8 +3744,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <!-- Document viewer modal: full-width iframe so docs open inside the app -->
     <div class="modal-overlay" id="doc-viewer-modal" style="z-index:9500;padding:0;">
-      <div style="background:var(--surface);border-radius:0;width:100vw;height:100dvh;display:flex;flex-direction:column;overflow:hidden;">
-        <div style="display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);gap:10px;flex-shrink:0;background:var(--surface);">
+      <div style="background:var(--surface);border-radius:0;width:100vw;height:100dvh;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;">
+        <div style="display:flex;align-items:center;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;border-bottom:1px solid var(--line);gap:10px;flex-shrink:0;background:var(--surface);">
           <span id="doc-viewer-title" style="flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
           <a id="doc-viewer-download" href="#" download class="button small secondary" style="white-space:nowrap;">⬇ Download</a>
           <a id="doc-viewer-newtab" href="#" target="_blank" rel="noreferrer" class="button small secondary" style="white-space:nowrap;">↗ New tab</a>
@@ -3741,6 +3831,133 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           }
         });
       });
+      // ─── Tap-to-add time slots (no comma-typing) ───
+      (function () {
+        const slotInput = document.getElementById("bookingTimeSlots");
+        const chipRow = document.getElementById("slot-chip-row");
+        if (!slotInput || !chipRow) return;
+        const fmt = (n) => String(n).padStart(2, "0");
+        function currentSlots() {
+          return slotInput.value.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+        function setSlots(list) {
+          // De-dupe and sort chronologically so the list always reads cleanly.
+          const uniq = [...new Set(list.filter((t) => /^\d{1,2}:\d{2}$/.test(t)).map((t) => {
+            const [h, m] = t.split(":"); return `${fmt(h)}:${fmt(m)}`;
+          }))].sort();
+          slotInput.value = uniq.join(",");
+          slotInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        chipRow.addEventListener("click", (e) => {
+          const add = e.target.closest("[data-add-slot]");
+          if (add) { setSlots([...currentSlots(), add.getAttribute("data-add-slot")]); return; }
+          if (e.target.id === "slot-add-custom") {
+            const v = document.getElementById("slot-custom-time").value;
+            if (v) setSlots([...currentSlots(), v]);
+            return;
+          }
+          if (e.target.id === "slot-clear") { setSlots([]); }
+        });
+      })();
+
+      // ─── City autocomplete (Google Places) ───
+      // Attaches a suggestion dropdown to a city input. Degrades to a plain text
+      // field if the Maps key isn't set (endpoint returns []).
+      function attachCityAutocomplete(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input || input.dataset.acDone) return;
+        input.dataset.acDone = "1";
+        const wrap = document.createElement("div");
+        wrap.className = "ac-wrap";
+        input.parentNode.insertBefore(wrap, input);
+        wrap.appendChild(input);
+        const menu = document.createElement("div");
+        menu.className = "ac-menu";
+        wrap.appendChild(menu);
+        let timer = null, items = [], active = -1;
+        const close = () => { menu.classList.remove("open"); menu.innerHTML = ""; items = []; active = -1; };
+        const render = () => {
+          menu.innerHTML = items.map((s, i) => `<div class="ac-item${i === active ? " active" : ""}" data-i="${i}">${escapeHtml(s)}</div>`).join("");
+          menu.classList.toggle("open", items.length > 0);
+        };
+        input.addEventListener("input", () => {
+          clearTimeout(timer);
+          const q = input.value.trim();
+          if (q.length < 2) { close(); return; }
+          timer = setTimeout(async () => {
+            try {
+              const r = await getJson(`/api/maps/cities?q=${encodeURIComponent(q)}`);
+              items = (r && r.suggestions) || []; active = -1; render();
+            } catch { close(); }
+          }, 250);
+        });
+        menu.addEventListener("mousedown", (e) => {
+          const it = e.target.closest(".ac-item");
+          if (!it) return;
+          e.preventDefault();
+          input.value = items[Number(it.dataset.i)] || input.value;
+          close();
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        input.addEventListener("keydown", (e) => {
+          if (!menu.classList.contains("open")) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, items.length - 1); render(); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
+          else if (e.key === "Enter" && active >= 0) { e.preventDefault(); input.value = items[active]; close(); }
+          else if (e.key === "Escape") close();
+        });
+        input.addEventListener("blur", () => setTimeout(close, 150));
+      }
+
+      // ─── Phone country code (default +91, list from backend) ───
+      let _phoneCodesCache = null;
+      async function fetchPhoneCodes() {
+        if (_phoneCodesCache) return _phoneCodesCache;
+        try { _phoneCodesCache = await getJson("/api/config/phone-codes"); }
+        catch { _phoneCodesCache = { default: "+91", codes: [{ code: "+91", label: "🇮🇳 India +91" }] }; }
+        return _phoneCodesCache;
+      }
+      async function attachPhoneCountryCode(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input || input.dataset.ccDone) return;
+        input.dataset.ccDone = "1";
+        const data = await fetchPhoneCodes();
+        const sel = document.createElement("select");
+        sel.className = "cc-select";
+        sel.setAttribute("aria-label", "Country code");
+        data.codes.forEach((c) => { const o = document.createElement("option"); o.value = c.code; o.textContent = c.label; sel.appendChild(o); });
+        sel.value = data.default;
+        const row = document.createElement("div");
+        row.className = "cc-row";
+        input.parentNode.insertBefore(row, input);
+        row.appendChild(sel); row.appendChild(input);
+        const stripCode = (v) => v.replace(/^\s*\+\d{1,4}\s*/, "").trim();
+        // Reflect an already-saved number's code into the selector.
+        const existing = (input.value || "").trim();
+        if (existing) {
+          const match = data.codes.map((c) => c.code).sort((a, b) => b.length - a.length).find((c) => existing.replace(/\s/g, "").startsWith(c));
+          if (match) sel.value = match;
+        } else {
+          input.value = data.default + " ";
+        }
+        sel.addEventListener("change", () => { input.value = sel.value + " " + stripCode(input.value); input.focus(); });
+        // Safety net: a bare number always gets the selected code prepended, so
+        // we never store a number without its country code.
+        input.addEventListener("blur", () => {
+          const v = input.value.trim();
+          if (v && !v.startsWith("+")) input.value = sel.value + " " + v;
+        });
+      }
+
+      attachCityAutocomplete("city");
+      attachCityAutocomplete("qs-city");
+      attachPhoneCountryCode("ownerWhatsApp");
+      attachPhoneCountryCode("qs-whatsapp");
+      // Client phone fields across the artist-facing forms get the same picker.
+      attachPhoneCountryCode("clientWhatsApp");
+      attachPhoneCountryCode("qb-phone");
+      attachPhoneCountryCode("le-phone");
+
       const leadForm = document.getElementById("lead-form");
       const loginState = document.getElementById("login-state");
       const connectLink = document.getElementById("connect-link");
@@ -3777,6 +3994,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // ─── Toast notifications ───
       // Optional `action: { label, onClick }` adds a tappable next-step button
       // ("Send quote now →") so feedback teaches the flow instead of just confirming it.
+      // Business-initiated reminders (review / payment) fall back to a wa.me
+      // link until the WhatsApp API pipe is connected. When the server returns
+      // one, open WhatsApp with the message ready; otherwise it was sent via the
+      // API. Either way the reminder is recorded as done server-side.
+      function openReminderWa(result, sentMessage) {
+        if (result && result.waLink) {
+          window.open(result.waLink, "_blank", "noopener");
+          toast("WhatsApp opened — tap send to deliver it.", "success");
+        } else {
+          toast(sentMessage, "success");
+        }
+      }
+
       function toast(message, type = "info", action) {
         const shelf = document.getElementById("toast-shelf");
         const el = document.createElement("div");
@@ -3956,6 +4186,23 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // Document viewer modal — opens any document (PDF or branded HTML page)
       // inside the app rather than in a new browser tab.
       function openDocModal(url, title, isPdf = true) {
+        // Android (Chrome + the app's WebView) renders a PDF as a BLANK page
+        // inside an iframe, but renders it fine on a direct navigation. So for
+        // PDFs on Android, open a new tab instead of showing an empty viewer.
+        // iOS Safari and desktop render in-iframe correctly, so they keep the modal.
+        if (isPdf && /Android/i.test(navigator.userAgent)) {
+          // No "noopener" here: with it, window.open returns null even on
+          // success, so we couldn't tell whether the tab actually opened. The
+          // URL is same-origin and trusted, so a window reference is safe.
+          const win = window.open(url, "_blank");
+          if (win) {
+            if (url.includes("/documents/sample/") || url.includes("/quote/preview") || url.includes("/invoice/preview") || url.includes("/contract/preview")) {
+              try { localStorage.setItem("bd-doc-previewed", "1"); } catch {}
+            }
+            return;
+          }
+          // Popup blocked → fall through to the modal so Download / New tab still work.
+        }
         const overlay = document.getElementById("doc-viewer-modal");
         const iframe  = document.getElementById("doc-viewer-iframe");
         const dl      = document.getElementById("doc-viewer-download");
@@ -3998,7 +4245,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // The six per-occasion duration inputs read from / write to the single
       // serviceDurations config string ("Bridal=4, Party=2").
       function fillDurationGrid(raw) {
-        const defaults = { Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2 };
+        const defaults = { Bridal: 3, Engagement: 1, Reception: 1, Party: 1, Shoot: 1, Other: 1 };
         document.querySelectorAll("[data-duration-for]").forEach((input) => {
           const type = input.getAttribute("data-duration-for");
           let hours = defaults[type] ?? 3;
@@ -6149,6 +6396,34 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.getElementById("gmb-copy").addEventListener("click", (e) =>
         copyToClipboard(document.getElementById("gmb-link").value, e.currentTarget));
 
+      // Fastest path: paste an existing Google link and save it as the review link.
+      async function saveGmbPastedLink() {
+        const input = document.getElementById("gmb-paste-link");
+        const status = document.getElementById("gmb-paste-status");
+        const btn = document.getElementById("gmb-paste-save");
+        const link = (input.value || "").trim();
+        if (!link) { status.textContent = "Paste your Google link first."; return; }
+        setLoading(btn, "Saving…");
+        status.textContent = "";
+        try {
+          const payload = await postJson("/api/gmb/set-link", { link });
+          if (!payload?.ok) throw new Error(payload?.error || "Couldn't save that link.");
+          await refreshSession();
+          gmbForceSetup = false;
+          input.value = "";
+          renderGmbState();
+          toast("Saved! Review requests now point to your Google page.", "success");
+        } catch (error) {
+          status.textContent = error.message;
+        } finally {
+          clearLoading(btn, "Save link");
+        }
+      }
+      document.getElementById("gmb-paste-save")?.addEventListener("click", saveGmbPastedLink);
+      document.getElementById("gmb-paste-link")?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); saveGmbPastedLink(); }
+      });
+
       document.getElementById("gmb-search-btn").addEventListener("click", async () => {
         const q = document.getElementById("gmb-query").value.trim();
         const status = document.getElementById("gmb-status");
@@ -6845,6 +7120,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const lowBanner = document.getElementById("wallet-low-banner");
           if (lowBanner) lowBanner.style.display = data.lowBalance ? "" : "none";
           renderWalletPacks(data.packs || [], data.configured);
+          renderWalletUsage(data.usageThisMonth || [], data.creditsUsedThisMonth || 0);
           renderWalletCosts(data.costs || [], data.enforced, data.balanceCredits);
           renderWalletLedger(data.ledger || []);
         } catch (error) {
@@ -6861,6 +7137,29 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${p.bonus ? `<div class="pill success" style="margin-bottom:8px;">${escapeHtml(p.bonus)}</div>` : ""}
             <button class="button ${configured ? "" : "secondary"}" type="button" data-buy-pack="${escapeHtml(p.id)}" ${configured ? "" : "disabled"} style="width:100%;margin-top:6px;">₹${p.amountInr.toLocaleString("en-IN")}</button>
           </div>`).join("");
+      }
+
+      // Itemised "what you used this month": one row per action type with a
+      // count and the credits it consumed, plus a total — so the artist can see
+      // exactly what the service is costing them.
+      function renderWalletUsage(usage, totalCredits) {
+        const box = document.getElementById("wallet-usage-month");
+        const panel = document.getElementById("wallet-usage-panel");
+        if (!box || !panel) return;
+        if (!usage.length) {
+          box.innerHTML = `<p class="muted" style="margin:0;font-size:13.5px;">Nothing used yet this month — your messages, emails and documents will show up here with their cost.</p>`;
+          return;
+        }
+        box.innerHTML =
+          usage.map((u) =>
+            `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px;">
+              <span>${escapeHtml(u.label)} <span class="muted">× ${u.count.toLocaleString("en-IN")}</span></span>
+              <span style="font-weight:600;">${u.credits.toLocaleString("en-IN")} credit${u.credits === 1 ? "" : "s"}</span>
+            </div>`).join("") +
+          `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:15px;font-weight:700;">
+            <span>Total this month</span>
+            <span style="color:var(--accent);">${totalCredits.toLocaleString("en-IN")} credits ≈ ₹${totalCredits.toLocaleString("en-IN")}</span>
+          </div>`;
       }
 
       // Shows what each automated action costs, and — when billing is enforced —
@@ -7553,13 +7852,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       function renderMetaConnections(workspace, profile) {
         const instagram = workspace?.metaConnections?.instagram;
         const whatsapp = workspace?.metaConnections?.whatsapp;
-        const email = encodeURIComponent(profile?.email || "");
         function block(label, channel, connection) {
           const status = connection?.status || "not connected";
           const handle = channel === "instagram"
             ? (connection?.instagramUsername || connection?.pageName || "No asset selected yet")
             : (connection?.businessAccountName || connection?.phoneNumberId || "No phone number linked yet");
-          const oauthButton = `<a class="button small" href="/auth/meta/start?channel=${channel}&workspaceEmail=${email}">Connect via Facebook</a>`;
+          const oauthButton = `<a class="button small" href="/auth/meta/start?channel=${channel}">Connect via Facebook</a>`;
           const extraControl = channel === "instagram"
             ? `<details class="collapse" style="margin-top:12px;padding:2px 14px;"><summary style="font-size:14px;padding:12px 0;">Advanced: paste token</summary><div class="collapse-body" style="padding-bottom:14px;"><input type="password" placeholder="Paste Instagram token" data-instagram-token-input style="width:100%;margin-bottom:8px;" /><button class="button small secondary" type="button" data-instagram-token-save>Save Token</button></div></details>`
             : `<div style="margin-top:10px;"><button class="button small secondary" type="button" data-whatsapp-test-connect>Use Test Number</button></div>`;
@@ -7705,8 +8003,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       });
 
       // Session expiry shouldn't feel like the app broke: tell her what
-      // happened, then take her back through sign-in.
+      // happened, then take her back through sign-in. CRITICAL: only do this for
+      // someone who was actually signed in. A 401 while logged out (e.g. an
+      // auth-gated call firing on the public landing page) must NOT auto-open
+      // the Google OAuth screen — that made busydays.co bounce visitors straight
+      // into sign-in before they ever saw the page.
       function handleSessionExpired() {
+        if (!document.body.classList.contains("authenticated")) return;
         toast("Your session expired — signing you back in…", "info");
         setTimeout(() => { window.location.href = "/auth/google"; }, 1200);
       }
@@ -8200,6 +8503,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           ${orderEditorHtml(lead)}
           <div class="drawer-section">
             <div class="drawer-section-title">Send a message</div>
+            ${lead.clientWhatsApp && !["Lost", "Completed"].includes(lead.status)
+              ? `<button class="button small" style="width:100%;margin-bottom:8px;" data-drawer-reaching="${lead.leadId}" data-wa="${lead.clientWhatsApp.replace(/\D/g, "")}" data-name="${escapeHtml(lead.clientName || "")}">📩 I've messaged them — reaching out shortly</button>`
+              : ""}
             ${(() => {
               const quiet = daysSince(lead.lastContactedAt);
               return quiet !== null && quiet >= 2 && !["Lost", "Completed"].includes(lead.status)
@@ -8280,6 +8586,27 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         } else if (e.target.closest("[data-order-save]")) {
           e.preventDefault();
           saveOrder();
+        } else if (e.target.closest("[data-drawer-reaching]")) {
+          // One tap: open WhatsApp to the client with a friendly "reaching out
+          // shortly" note prefilled, and record the contact so this lead stops
+          // nagging as overdue. Works without a connected channel.
+          const btn = e.target.closest("[data-drawer-reaching]");
+          const leadId = btn.getAttribute("data-drawer-reaching");
+          const wa = btn.getAttribute("data-wa");
+          const name = btn.getAttribute("data-name") || "there";
+          const firstName = name.split(" ")[0] || "there";
+          const msg = `Hi ${firstName}! Thank you so much for reaching out 💕 I've received your enquiry and will get back to you very shortly with the details.`;
+          if (wa) window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+          setLoading(btn, "Saving…");
+          try {
+            await postJson(`/api/leads/${leadId}/mark-contacted`, {});
+            toast("Marked as contacted — WhatsApp opened with your message ready to send.", "success");
+            await refreshSession();
+          } catch (error) {
+            toast(error.message, "error");
+          } finally {
+            clearLoading(btn);
+          }
         } else if (e.target.closest("[data-drawer-followup]")) {
           // AI drafts the nudge; she reviews and sends — nothing goes out alone.
           const btn = e.target.closest("[data-drawer-followup]");
@@ -8548,9 +8875,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); toast("Contract sent for e-signing — the client will get an email to sign it.", "success"); }
           else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); toast("Contract sent to client.", "success"); }
           else if (action === "sync-contract") { const r = await postJson(`/api/bookings/${bookingId}/contract/sync`, {}); toast(`Contract: ${r.booking?.contractStatus || "Updated"}.`, "success"); }
-          else if (action === "review") { await postJson(`/api/bookings/${bookingId}/send-review`, {}); toast("Review request sent.", "success"); }
-          else if (action === "advance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); toast("Advance reminder sent.", "success"); }
-          else if (action === "balance-reminder") { await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); toast("Balance reminder sent.", "success"); }
+          else if (action === "review") { const r = await postJson(`/api/bookings/${bookingId}/send-review`, {}); openReminderWa(r, "Review request sent."); }
+          else if (action === "advance-reminder") { const r = await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); openReminderWa(r, "Advance reminder sent."); }
+          else if (action === "balance-reminder") { const r = await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); openReminderWa(r, "Balance reminder sent."); }
           else if (action === "advance") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Advance Paid" }); toast("Marked as advance paid.", "success"); }
           else if (action === "full") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Paid in Full" }); toast("Marked as paid in full.", "success"); }
           else if (action === "complete") { await postJson(`/api/bookings/${bookingId}/complete`, {}); toast("Marked completed — lovely work! 🎉", "success"); }
@@ -9159,7 +9486,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // How long each occasion blocks the calendar — mirrors the server's
       // durationHoursForEvent (Settings → serviceDurations, "Bridal=4, Party=2").
       function durationHoursFor(eventType) {
-        const fallback = { Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2 }[eventType] ?? 3;
+        const fallback = { Bridal: 3, Engagement: 1, Reception: 1, Party: 1, Shoot: 1, Other: 1 }[eventType] ?? 1;
         const raw = sessionState?.workspace?.config?.serviceDurations || "";
         for (const pair of raw.split(",")) {
           const [key, value] = pair.split("=").map((s) => s.trim());
@@ -9223,6 +9550,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       attachPlaceTypeahead(document.getElementById("qb-venue"));
       attachPlaceTypeahead(document.getElementById("locationText"));
       attachPlaceTypeahead(document.getElementById("rs-venue"));
+      attachPlaceTypeahead(document.getElementById("le-venue"));
 
       // Occasion + time → show exactly what the calendar will block.
       function updateQbDurationHint() {
@@ -10968,6 +11296,33 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ptrReset();
           }
         }, { passive: true });
+      })();
+
+      // ─── In-app browser detection ───────────────────────────────────────
+      // Instagram/Facebook/WhatsApp/Line in-app webviews can't complete Google
+      // OAuth. Detect them and surface the "open in your browser" banner so the
+      // artist isn't stuck on a dead "Sign in with Google" button.
+      (function () {
+        const ua = navigator.userAgent || "";
+        const inApp = /(FBAN|FBAV|Instagram|Line\/|FB_IAB|FBIOS|WhatsApp|; wv\)|GSA\/)/i.test(ua);
+        if (!inApp) return;
+        const banner = document.getElementById("inapp-browser-banner");
+        if (banner) banner.style.display = "block";
+        const copyBtn = document.getElementById("inapp-copy-link");
+        if (copyBtn) {
+          copyBtn.addEventListener("click", async () => {
+            const link = window.location.origin + "/";
+            try { await navigator.clipboard.writeText(link); copyBtn.textContent = "✓ Link copied — paste it in Chrome/Safari"; }
+            catch { copyBtn.textContent = link; }
+          });
+        }
+      })();
+
+      // Capped signup → warm "you're on the list" message instead of a dead end.
+      (function () {
+        if (new URLSearchParams(location.search).get("waitlist") !== "1") return;
+        const banner = document.getElementById("waitlist-banner");
+        if (banner) { banner.style.display = "block"; banner.scrollIntoView({ behavior: "smooth", block: "center" }); }
       })();
 
       refreshSession()

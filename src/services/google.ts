@@ -33,6 +33,21 @@ export async function exchangeCodeForTokens(code: string) {
   return tokens;
 }
 
+// Exchanges a one-time server auth code from the NATIVE Google Sign-In SDK
+// (mobile app) for tokens. The SDK handled the redirect natively, so the
+// exchange uses an empty redirect_uri rather than the web callback URL. This
+// lets a first-time mobile user be provisioned without bouncing to a browser
+// tab — provided the SDK requested offline access and the app's scopes.
+export async function exchangeNativeAuthCode(serverAuthCode: string) {
+  const client = new google.auth.OAuth2(
+    appConfig.googleClientId,
+    appConfig.googleClientSecret,
+    "",
+  );
+  const { tokens } = await client.getToken({ code: serverAuthCode, redirect_uri: "" });
+  return tokens;
+}
+
 export function createGoogleClients(tokens: Credentials) {
   const auth = createOAuthClient();
   auth.setCredentials(tokens);

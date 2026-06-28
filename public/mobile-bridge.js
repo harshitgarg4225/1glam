@@ -36,6 +36,7 @@
   // to the Custom Tab since they need specific OAuth scopes.
 
   var googleClientId = null;  // fetched lazily from /api/push/config
+  var googleScopes = [];      // app's OAuth scopes, for the native offline-access request
 
   function fetchGoogleClientId() {
     if (googleClientId !== null) return Promise.resolve(googleClientId);
@@ -43,6 +44,7 @@
       .then(function (res) { return res.ok ? res.json() : {}; })
       .then(function (cfg) {
         googleClientId = (cfg && cfg.googleClientId) || "";
+        if (cfg && cfg.googleScopes) googleScopes = cfg.googleScopes;
         return googleClientId;
       })
       .catch(function () { return ""; });
@@ -63,19 +65,31 @@
     fetchGoogleClientId()
       .then(function (clientId) {
         if (!clientId) { openOAuthBrowser(href); return; }
-        return NativeGoogleSignIn.signIn({ webClientId: clientId })
+        // Ask for offline access + our scopes so the SDK can return a one-time
+        // server auth code; first-time users can then be provisioned WITHOUT a
+        // browser tab. Plugins that ignore these options simply won't return a
+        // serverAuthCode, and we fall back to the Custom Tab exactly as before.
+        return NativeGoogleSignIn.signIn({ webClientId: clientId, scopes: googleScopes, offlineAccess: true })
           .then(function (result) {
-            return postJson("/api/auth/google/id-token", { idToken: result.idToken });
-          })
-          .then(function (res) { return res.json(); })
-          .then(function (data) {
-            if (data.ok) {
-              // Existing user signed in natively — reload straight into the app.
-              window.location.replace("/");
-            } else {
-              // New user: needs full OAuth for Sheets/Calendar provisioning.
-              openOAuthBrowser(href);
-            }
+            return postJson("/api/auth/google/id-token", { idToken: result.idToken })
+              .then(function (res) { return res.json(); })
+              .then(function (data) {
+                if (data.ok) {
+                  // Existing user signed in natively — straight into the app.
+                  window.location.replace("/");
+                  return;
+                }
+                // New user. If the SDK gave us a server auth code with the right
+                // scopes, provision server-side (no tab). Else fall back.
+                var code = result.serverAuthCode || result.authCode;
+                if (!code) { openOAuthBrowser(href); return; }
+                return postJson("/api/auth/google/native-code", { code: code })
+                  .then(function (r) { return r.json(); })
+                  .then(function (d) {
+                    if (d && d.ok) window.location.replace("/");
+                    else openOAuthBrowser(href);
+                  });
+              });
           });
       })
       .catch(function () {

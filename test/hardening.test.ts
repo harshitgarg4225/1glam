@@ -222,11 +222,11 @@ test("durationHoursForEvent reads config, falls back per occasion, ignores junk"
   assert.equal(durationHoursForEvent(cfg, "Bridal"), 5);          // configured
   assert.equal(durationHoursForEvent(cfg, "bridal"), 5);          // case-insensitive
   assert.equal(durationHoursForEvent(cfg, "Party"), 1.5);         // decimals fine
-  assert.equal(durationHoursForEvent(cfg, "Shoot"), 3);           // junk value → default
-  assert.equal(durationHoursForEvent(cfg, "Reception"), 3);       // zero → default
-  assert.equal(durationHoursForEvent(cfg, "Engagement"), 3);      // unconfigured → default
-  assert.equal(durationHoursForEvent("", "Bridal"), 4);           // empty config → defaults
-  assert.equal(durationHoursForEvent(undefined, "Mystery"), 3);   // unknown occasion → 3h
+  assert.equal(durationHoursForEvent(cfg, "Shoot"), 1);           // junk value → default (1h)
+  assert.equal(durationHoursForEvent(cfg, "Reception"), 1);       // zero → default (1h)
+  assert.equal(durationHoursForEvent(cfg, "Engagement"), 1);      // unconfigured → default (1h)
+  assert.equal(durationHoursForEvent("", "Bridal"), 3);           // empty config → Bridal default 3h
+  assert.equal(durationHoursForEvent(undefined, "Mystery"), 1);   // unknown occasion → 1h
 });
 
 // --- Automatic payment reminders (dueAdvanceMarker / balanceReminderDue) -------

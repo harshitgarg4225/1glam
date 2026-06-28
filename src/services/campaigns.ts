@@ -7,7 +7,7 @@ import { fetchWithTimeout } from "./http.js";
 import { appConfig } from "../config.js";
 import { buildAppSecretProof } from "./meta.js";
 import { loadClientNotes } from "./client-notes.js";
-import { loadCampaignBroadcast, markInterruptedCampaigns, saveCampaignBroadcast } from "./database.js";
+import { isPhoneOptedOut, listOptedOutPhones, loadCampaignBroadcast, markInterruptedCampaigns, saveCampaignBroadcast } from "./database.js";
 import { captureException, logger } from "./logger.js";
 
 export type CampaignSegment =
@@ -203,6 +203,16 @@ async function sendOneWhatsApp(
   if (!resp.ok) throw new Error(await resp.text());
 }
 
+// WhatsApp Business Policy requires an opt-out instruction in every marketing
+// message. Append a standard footer so contacts always know how to stop.
+function withOptOutFooter(message: string, businessName: string): string {
+  const name = businessName.trim() || "this business";
+  const footer = `\n\nReply STOP to stop receiving messages from ${name}.`;
+  // Don't duplicate if the artist already wrote their own footer.
+  if (/\bSTOP\b/i.test(message)) return message;
+  return message + footer;
+}
+
 export async function broadcastCampaign(
   email: string,
   tokens: Credentials,
@@ -212,8 +222,21 @@ export async function broadcastCampaign(
   const workspace = await getWorkspaceByEmail(email);
   if (!workspace) throw new Error("Workspace not found");
 
-  const contacts = await listCampaignContacts(workspace, tokens, input.segment);
-  const capped = contacts.slice(0, 200);
+  const allContacts = await listCampaignContacts(workspace, tokens, input.segment);
+
+  // Filter out contacts who have opted out of receiving campaign messages.
+  const optedOutPhones = new Set(await listOptedOutPhones(workspace.workspaceId));
+  const eligible = allContacts.filter((c) => !optedOutPhones.has(c.phone.replace(/\D/g, "")));
+  const capped = eligible.slice(0, 200);
+  const totalSkipped = allContacts.length - eligible.length + Math.max(0, eligible.length - 200);
+
+  // Ensure every campaign message carries an opt-out instruction (WhatsApp
+  // Business Policy §4.2 / Meta Messaging Guidelines). Append footer unless the
+  // artist already included "STOP" in their message.
+  const messageWithFooter = withOptOutFooter(
+    input.message,
+    workspace.config?.ownerName || workspace.config?.businessName || "",
+  );
 
   const results: ContactStatus[] = [];
   let sent = 0;
@@ -224,17 +247,17 @@ export async function broadcastCampaign(
     // Throttle: 1 message per second to stay within API rate limits.
     if (i > 0) await new Promise((r) => setTimeout(r, 1000));
     try {
-      await sendOneWhatsApp(workspace, c.phone, input.message, input.imageUrl);
+      await sendOneWhatsApp(workspace, c.phone, messageWithFooter, input.imageUrl);
       results.push({ name: c.name, phone: c.phone, status: "sent" });
       sent++;
     } catch (err) {
       results.push({ name: c.name, phone: c.phone, status: "failed", error: String(err) });
       failed++;
     }
-    onProgress?.({ total: contacts.length, sent, failed, skipped: contacts.length - capped.length, contacts: results });
+    onProgress?.({ total: allContacts.length, sent, failed, skipped: totalSkipped, contacts: results });
   }
 
-  return { total: contacts.length, sent, failed, skipped: contacts.length - capped.length, contacts: results };
+  return { total: allContacts.length, sent, failed, skipped: totalSkipped, contacts: results };
 }
 
 // ── Background broadcast jobs ────────────────────────────────────────────────

@@ -99,6 +99,8 @@ export const bookingHeaders = [
   "Invoice Viewed At",
   "Contract Viewed At",
   "Invoice Due Date",
+  "Arrived At",
+  "Status Changed At",
 ] as const;
 
 export const artistHeaders = [

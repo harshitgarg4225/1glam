@@ -141,6 +141,25 @@ export async function markWebhookEventProcessed(scope: string, eventId: string):
   }
 }
 
+// Trims the webhook dedup ledger so it can't grow without bound. Providers
+// (Meta, Leegality) only ever redeliver an event for a few days, so anything
+// older than the retention window is safe to drop. No-op in file mode (the
+// in-memory set is already self-bounding in markWebhookEventProcessed).
+export async function cleanupOldWebhookEvents(retentionDays = 30): Promise<number> {
+  if (!hasPostgres()) return 0;
+  try {
+    await ensurePostgres();
+    const result = await getPool().query(
+      `DELETE FROM processed_webhook_events
+       WHERE created_at < NOW() - ($1 || ' days')::interval`,
+      [String(Math.max(1, Math.floor(retentionDays)))],
+    );
+    return result.rowCount ?? 0;
+  } catch {
+    return 0; // best-effort housekeeping; never throw on the caller's path
+  }
+}
+
 // Liveness probe for the health endpoint. Reuses the shared pool (rather than
 // spinning up a throwaway connection per call) so frequent health checks don't
 // churn connections. Returns false in file mode (nothing to ping).
@@ -225,6 +244,19 @@ async function ensurePostgres() {
           expires_at TIMESTAMPTZ NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      // Contacts who sent STOP or equivalent — must never receive campaign messages.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS whatsapp_optouts (
+          workspace_id TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          opted_out_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (workspace_id, phone)
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_optouts_workspace
+        ON whatsapp_optouts (workspace_id)
       `);
     } finally {
       client.release();
@@ -435,6 +467,18 @@ export async function listWorkspaces() {
   return db.workspaces;
 }
 
+// Cheap workspace count for the signup cap. Uses a SQL COUNT in Postgres so we
+// never load every record just to gate a new signup; file mode reads the array.
+export async function countWorkspaces(): Promise<number> {
+  if (hasPostgres()) {
+    const pool = getPool();
+    const { rows } = await pool.query<{ count: string }>("SELECT COUNT(*)::int AS count FROM workspace_records");
+    return Number(rows[0]?.count ?? 0);
+  }
+  const db = await readWorkspaceDbFromFile();
+  return db.workspaces.length;
+}
+
 export async function findWorkspaceByEmail(email: string) {
   const key = normalizeEmail(email);
   return workspaceByEmailCache.getOrLoad(key, async () => {
@@ -486,6 +530,32 @@ export async function updateWorkspaceByEmail(
   }
   if (updated) invalidateWorkspaceCache(updated);
   return updated;
+}
+
+// Permanently removes a workspace and all associated data from storage.
+// Called from the self-service deletion endpoint. Irreversible.
+export async function deleteWorkspace(email: string): Promise<boolean> {
+  const normalized = normalizeEmail(email);
+  invalidateWorkspaceCache({ email });
+  if (hasPostgres()) {
+    try {
+      await ensurePostgres();
+      const res = await getPool().query(
+        `DELETE FROM workspace_records WHERE email = $1`,
+        [normalized],
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch {
+      return false;
+    }
+  }
+  // File mode: remove from the JSON file.
+  const db = await readWorkspaceDbFromFile();
+  const before = db.workspaces.length;
+  db.workspaces = db.workspaces.filter((w) => normalizeEmail(w.email) !== normalized);
+  if (db.workspaces.length === before) return false;
+  await writeWorkspaceDbToFile(db);
+  return true;
 }
 
 export async function findWorkspaceByWorkspaceId(workspaceId: string) {
@@ -702,6 +772,84 @@ export async function markInterruptedCampaigns(): Promise<number> {
      WHERE status = 'running'`,
   );
   return res.rowCount ?? 0;
+}
+
+// ── WhatsApp opt-out ledger ───────────────────────────────────────────────────
+// Contacts who sent STOP (or equivalent) must never receive another campaign
+// message from that workspace. We store workspaceId + E.164 phone as a key.
+// In Postgres: a dedicated table so lookups are O(1) without a full scan.
+// In file mode: an in-memory Map<workspaceId, Set<phone>> that lasts for the
+// life of the process — persists across requests, resets on restart. That is
+// acceptable for dev/single-instance deployments; production runs Postgres.
+
+const optOutMemory = new Map<string, Set<string>>();
+
+export async function markPhoneOptedOut(workspaceId: string, phone: string): Promise<void> {
+  const normalized = phone.replace(/\D/g, "");
+  if (!hasPostgres()) {
+    if (!optOutMemory.has(workspaceId)) optOutMemory.set(workspaceId, new Set());
+    optOutMemory.get(workspaceId)!.add(normalized);
+    return;
+  }
+  try {
+    await ensurePostgres();
+    await getPool().query(
+      `INSERT INTO whatsapp_optouts (workspace_id, phone, opted_out_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (workspace_id, phone) DO NOTHING`,
+      [workspaceId, normalized],
+    );
+  } catch {
+    // Best-effort. Never fail a STOP request — the message is still logged.
+  }
+}
+
+export async function removePhoneOptOut(workspaceId: string, phone: string): Promise<void> {
+  const normalized = phone.replace(/\D/g, "");
+  if (!hasPostgres()) {
+    optOutMemory.get(workspaceId)?.delete(normalized);
+    return;
+  }
+  try {
+    await ensurePostgres();
+    await getPool().query(
+      `DELETE FROM whatsapp_optouts WHERE workspace_id = $1 AND phone = $2`,
+      [workspaceId, normalized],
+    );
+  } catch { /* best-effort */ }
+}
+
+export async function isPhoneOptedOut(workspaceId: string, phone: string): Promise<boolean> {
+  const normalized = phone.replace(/\D/g, "");
+  if (!hasPostgres()) {
+    return optOutMemory.get(workspaceId)?.has(normalized) ?? false;
+  }
+  try {
+    await ensurePostgres();
+    const res = await getPool().query(
+      `SELECT 1 FROM whatsapp_optouts WHERE workspace_id = $1 AND phone = $2 LIMIT 1`,
+      [workspaceId, normalized],
+    );
+    return (res.rowCount ?? 0) > 0;
+  } catch {
+    return false; // fail open — don't silently block a message due to a DB error
+  }
+}
+
+export async function listOptedOutPhones(workspaceId: string): Promise<string[]> {
+  if (!hasPostgres()) {
+    return Array.from(optOutMemory.get(workspaceId) ?? []);
+  }
+  try {
+    await ensurePostgres();
+    const res = await getPool().query(
+      `SELECT phone FROM whatsapp_optouts WHERE workspace_id = $1 ORDER BY opted_out_at DESC`,
+      [workspaceId],
+    );
+    return res.rows.map((r: { phone: string }) => r.phone);
+  } catch {
+    return [];
+  }
 }
 
 // ── Mobile login tokens ──────────────────────────────────────────────────────

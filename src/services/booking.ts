@@ -175,6 +175,9 @@ export type BookingRecord = {
   invoiceDueDate: string;
   // ISO timestamp when client checked in / arrived for this appointment.
   arrivedAt: string;
+  // ISO timestamp of the most recent status change — anchors status-triggered
+  // automations (review request, post-status payment reminders).
+  statusChangedAt: string;
 };
 
 export type DashboardData = {
@@ -463,6 +466,14 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     throw new Error("Lead not found");
   }
 
+  // Idempotency: if this lead was already confirmed (e.g. a double-tap or a
+  // retried request), return the existing booking instead of creating a second
+  // one with a duplicate calendar hold.
+  if (lead.record.bookingId) {
+    const existing = await findBookingById(workspace, tokens, lead.record.bookingId);
+    if (existing) return { lead: lead.record, booking: existing.record };
+  }
+
   const bookingId = buildId("B");
   const advancePct = depositPercentForEvent(
     workspace.config.depositPercentByService,
@@ -516,6 +527,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     contractViewedAt: "",
     invoiceDueDate: "",
     arrivedAt: "",
+    statusChangedAt: new Date().toISOString(),
   };
 
   const updatedLead: LeadRecord = {
@@ -711,7 +723,7 @@ export async function completeBooking(email: string, tokens: Credentials, bookin
   if (booking.record.status === "Cancelled") throw new Error("This booking was cancelled.");
   if (booking.record.status === "Completed") return booking.record;
 
-  const updatedBooking: BookingRecord = { ...booking.record, status: "Completed" };
+  const updatedBooking: BookingRecord = { ...booking.record, status: "Completed", statusChangedAt: new Date().toISOString() };
   await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
 
   const lead = await findLeadById(workspace, tokens, booking.record.leadId);
@@ -737,6 +749,7 @@ export async function cancelBooking(email: string, tokens: Credentials, bookingI
     ...booking.record,
     status: "Cancelled",
     confirmedCalendarEventId: "",
+    statusChangedAt: new Date().toISOString(),
   };
   await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
 
@@ -1172,6 +1185,14 @@ export async function listActiveBookings(email: string, tokens: Credentials): Pr
   return bookings.filter((b) => !["Completed", "Cancelled"].includes(b.status));
 }
 
+// Every booking row, including Completed and Cancelled. Status-triggered
+// automations (review request, post-status payment reminders) need these —
+// "Completed" is the default trigger status, which listActiveBookings filters out.
+export async function listAllBookings(email: string, tokens: Credentials): Promise<BookingRecord[]> {
+  const workspace = await getRequiredWorkspace(email);
+  return listBookingRows(workspace, tokens);
+}
+
 export async function markBookingReminderSent(
   email: string,
   tokens: Credentials,
@@ -1254,6 +1275,11 @@ export async function updateBookingRecord(
     }
 
     const updated = updater(booking.record);
+    // Stamp the moment a booking changes status so status-triggered automations
+    // (review request, post-status payment reminders) have a reliable anchor.
+    if (updated.status !== booking.record.status) {
+      updated.statusChangedAt = new Date().toISOString();
+    }
     await updateBookingRow(workspace, tokens, booking.rowNumber, updated);
     return updated;
   });
@@ -1564,7 +1590,10 @@ async function updateBookingPaymentStatus(
     if (!found) return;
     const booking = found.record;
     booking.paymentStatus = paymentStatus;
-    booking.status = paymentStatus === "Paid in Full" ? "Paid" : booking.status;
+    if (paymentStatus === "Paid in Full" && booking.status !== "Paid") {
+      booking.status = "Paid";
+      booking.statusChangedAt = new Date().toISOString();
+    }
     await updateBookingRow(workspace, tokens, found.rowNumber, booking);
   });
 }
@@ -1685,13 +1714,13 @@ function buildCalendarEventBody(input: {
 // Fallback durations when the artist hasn't configured her own — a bridal
 // look genuinely takes ~4 hours; a party look doesn't.
 const DEFAULT_DURATIONS: Record<string, number> = {
-  Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2,
+  Bridal: 3, Engagement: 1, Reception: 1, Party: 1, Shoot: 1, Other: 1,
 };
 
 // Parses "Bridal=4, Party=2.5" (the service_durations config) and returns the
 // hours this occasion blocks on the calendar.
 export function durationHoursForEvent(raw: string | undefined, eventType: string): number {
-  const fallback = DEFAULT_DURATIONS[eventType] ?? 3;
+  const fallback = DEFAULT_DURATIONS[eventType] ?? 1;
   for (const pair of String(raw || "").split(",")) {
     const [key, value] = pair.split("=").map((s) => s.trim());
     if (key && key.toLowerCase() === String(eventType).toLowerCase()) {
@@ -1889,7 +1918,7 @@ function rowToLead(row: string[]): LeadRecord {
   };
 }
 
-function bookingToRow(booking: BookingRecord) {
+export function bookingToRow(booking: BookingRecord) {
   return [
     booking.bookingId,
     booking.leadId,
@@ -1928,10 +1957,11 @@ function bookingToRow(booking: BookingRecord) {
     booking.contractViewedAt,
     booking.invoiceDueDate,
     booking.arrivedAt,
+    booking.statusChangedAt,
   ];
 }
 
-function rowToBooking(row: string[]): BookingRecord {
+export function rowToBooking(row: string[]): BookingRecord {
   return {
     bookingId: row[0] ?? "",
     leadId: row[1] ?? "",
@@ -1970,6 +2000,7 @@ function rowToBooking(row: string[]): BookingRecord {
     contractViewedAt: row[34] ?? "",
     invoiceDueDate: row[35] ?? "",
     arrivedAt: row[36] ?? "",
+    statusChangedAt: row[37] ?? "",
   };
 }
 
