@@ -59,7 +59,7 @@ import {
   verifyWebhookSignature,
 } from "./services/razorpay.js";
 import { CREDIT_PACKS, USAGE_COSTS, USAGE_LABELS, findPack, getWallet, creditWallet, meterUsage, isLowBalance, canAfford, type UsageKind } from "./services/wallet.js";
-import { createGoogleClients, exchangeCodeForTokens, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
+import { createGoogleClients, exchangeCodeForTokens, exchangeNativeAuthCode, fetchGoogleProfile, getAuthUrl } from "./services/google.js";
 import {
   buildImageMarker,
   extractInboundMediaFromMetaWebhook,
@@ -381,7 +381,7 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // /api/session is intentionally public: it reports authenticated:false for
 // logged-out visitors so the landing page can render without bouncing them (and
 // Google's OAuth-verification crawler) to a login screen.
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token", "/api/config/phone-codes"]);
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token", "/api/auth/google/native-code", "/api/config/phone-codes", "/api/push/config"]);
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
@@ -1008,6 +1008,64 @@ app.post("/api/auth/google/id-token", publicWriteLimiter, async (req, res, next)
     } catch {
       // Restored lazily on next Google API call.
     }
+    await new Promise<void>((resolve, reject) =>
+      req.session.save((err) => (err ? reject(err) : resolve())),
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Native mobile sign-in for FIRST-TIME users without a browser tab. The native
+// Google SDK returns a one-time server auth code (with offline access + our
+// scopes); we exchange it, provision the workspace, and open a session — all
+// server-side. Strictly fail-safe: if the code doesn't yield offline tokens with
+// the Sheets/Calendar/Drive scopes we need (or the signup cap is hit), we return
+// requiresFullAuth so the app falls back to the existing Custom Tab flow. So this
+// can only ever REMOVE the tab, never break sign-in.
+app.post("/api/auth/google/native-code", publicWriteLimiter, async (req, res, next) => {
+  try {
+    const code = String(req.body?.code ?? "");
+    if (!code) return res.status(400).json({ error: "code required" });
+    if (!appConfig.googleClientId || !appConfig.googleClientSecret) {
+      return res.status(503).json({ error: "Google Sign-In not configured" });
+    }
+
+    let tokens;
+    try {
+      tokens = await exchangeNativeAuthCode(code);
+    } catch {
+      // Bad/expired code or a plugin that didn't request offline access → tab.
+      return res.json({ ok: false, requiresFullAuth: true });
+    }
+
+    // Must have offline tokens AND the sensitive scopes, or provisioning (which
+    // creates a Google Sheet/Calendar) would fail. Otherwise → Custom Tab.
+    const granted = String(tokens.scope || "");
+    const hasScopes = ["spreadsheets", "calendar", "drive.file"].every((s) => granted.includes(s));
+    if (!tokens.access_token || !tokens.refresh_token || !hasScopes) {
+      return res.json({ ok: false, requiresFullAuth: true });
+    }
+
+    const profile = await fetchGoogleProfile(tokens);
+
+    // Respect the signup cap; a capped new user falls back to the tab, which
+    // routes them to the waitlist page — no cap bypass here.
+    if (appConfig.maxWorkspaces > 0) {
+      const already = await getWorkspaceByEmail(profile.email);
+      if (!already && (await countWorkspaces()) >= appConfig.maxWorkspaces) {
+        return res.json({ ok: false, requiresFullAuth: true });
+      }
+    }
+
+    await new Promise<void>((resolve, reject) =>
+      req.session.regenerate((err) => (err ? reject(err) : resolve())),
+    );
+    req.session.googleTokens = tokens;
+    req.session.profile = profile;
+    await provisionWorkspace(profile, tokens);
+    await persistWorkspaceTokens(profile.email, tokens);
     await new Promise<void>((resolve, reject) =>
       req.session.save((err) => (err ? reject(err) : resolve())),
     );
@@ -2796,9 +2854,12 @@ function esc(v: string) {
 }
 
 // ---- Push notifications (web push for PWA, FCM for the native app) ----
-app.get("/api/push/config", (req, res) => {
-  if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
-  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured(), googleClientId: appConfig.googleClientId || null });
+// Public on purpose: the native app reads googleClientId here BEFORE sign-in to
+// drive the native Google account picker (no browser tab). Every field is
+// non-secret — a VAPID *public* key, feature booleans, and the OAuth client ID
+// that already appears in every consent URL.
+app.get("/api/push/config", (_req, res) => {
+  res.json({ ok: true, enabled: pushConfigured(), publicKey: appConfig.vapidPublicKey, fcmEnabled: fcmConfigured(), googleClientId: appConfig.googleClientId || null, googleScopes: appConfig.googleScopes });
 });
 
 app.post("/api/push/subscribe", async (req, res, next) => {
