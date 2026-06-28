@@ -8,6 +8,10 @@ const envSchema = z.object({
   NODE_ENV: z.string().optional(),
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
   SESSION_SECRET: z.string().min(8),
+  // Soft cap on NEW signups (0 = unlimited). Existing users always get in. Use
+  // this to stay under Google's ~100-user cap for unverified sensitive scopes,
+  // or to throttle a launch so provisioning doesn't stampede.
+  MAX_WORKSPACES: z.coerce.number().int().min(0).optional().default(0),
   DATABASE_URL: z.string().optional().default(""),
   TOKEN_ENCRYPTION_KEY: z.string().optional().default(""),
   SENTRY_DSN: z.string().optional().default(""),
@@ -88,6 +92,7 @@ export const appConfig = {
   port: parsed.PORT,
   baseUrl: parsed.APP_BASE_URL,
   sessionSecret: parsed.SESSION_SECRET,
+  maxWorkspaces: parsed.MAX_WORKSPACES,
   databaseUrl: parsed.DATABASE_URL,
   tokenEncryptionKey: parsed.TOKEN_ENCRYPTION_KEY,
   sentryDsn: parsed.SENTRY_DSN,

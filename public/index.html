@@ -1299,6 +1299,13 @@
 
       <!-- Landing -->
       <section id="landing" class="landing-hero">
+        <!-- Waitlist: shown when signups are capped and this is a brand-new user.
+             They're redirected here with ?waitlist=1 instead of a broken consent
+             screen, so the experience stays warm while we let people in steadily. -->
+        <div id="waitlist-banner" style="display:none;max-width:560px;margin:0 auto 18px;background:#EEF2EE;border:1px solid #C9D8CC;border-radius:14px;padding:18px 20px;text-align:left;color:#2f4733;">
+          <div style="font-weight:700;font-size:16px;margin-bottom:6px;">💚 You're on the list!</div>
+          <p style="margin:0;font-size:13.5px;line-height:1.6;">We're welcoming our first artists in small batches to give everyone a smooth start. Your spot is saved with this Google account — we'll email you the moment it's your turn, usually within a day or two. Thank you for your patience! ✨</p>
+        </div>
         <!-- In-app browser warning: Google blocks OAuth inside Instagram/WhatsApp/
              Facebook webviews ("disallowed_useragent"), which is the #1 reason
              sign-in "doesn't work on my phone". Shown only inside those webviews. -->
@@ -11233,6 +11240,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             catch { copyBtn.textContent = link; }
           });
         }
+      })();
+
+      // Capped signup → warm "you're on the list" message instead of a dead end.
+      (function () {
+        if (new URLSearchParams(location.search).get("waitlist") !== "1") return;
+        const banner = document.getElementById("waitlist-banner");
+        if (banner) { banner.style.display = "block"; banner.scrollIntoView({ behavior: "smooth", block: "center" }); }
       })();
 
       refreshSession()

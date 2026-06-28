@@ -45,7 +45,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { cleanupOldWebhookEvents, closePool, deleteWorkspace, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, isPhoneOptedOut, listOptedOutPhones, listWorkspaces, markPhoneOptedOut, markWebhookEventProcessed, pingDatabase, removePhoneOptOut, saveWorkspace } from "./services/database.js";
+import { cleanupOldWebhookEvents, closePool, countWorkspaces, deleteWorkspace, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, isPhoneOptedOut, listOptedOutPhones, listWorkspaces, markPhoneOptedOut, markWebhookEventProcessed, pingDatabase, removePhoneOptOut, saveWorkspace } from "./services/database.js";
 import {
   createOrderWithKeys,
   createRazorpayOrder,
@@ -895,6 +895,21 @@ app.get("/auth/google/callback", async (req, res, next) => {
 
     const tokens = await exchangeCodeForTokens(code);
     const profile = await fetchGoogleProfile(tokens);
+
+    // Signup cap: keep existing users flowing, but queue brand-new signups once
+    // we hit the configured limit (protects the ~100-user Google sensitive-scope
+    // cap and stops a launch stampede of Sheet/Calendar provisioning). Checked
+    // before we create a session so a queued user lands cleanly on the waitlist.
+    if (appConfig.maxWorkspaces > 0) {
+      const alreadyHasWorkspace = await getWorkspaceByEmail(profile.email);
+      if (!alreadyHasWorkspace) {
+        const count = await countWorkspaces();
+        if (count >= appConfig.maxWorkspaces) {
+          logger.info("signup_capped", { email: profile.email, count, cap: appConfig.maxWorkspaces });
+          return res.redirect("/?waitlist=1");
+        }
+      }
+    }
 
     await new Promise<void>((resolve, reject) =>
       req.session.regenerate((err) => (err ? reject(err) : resolve())),

@@ -467,6 +467,18 @@ export async function listWorkspaces() {
   return db.workspaces;
 }
 
+// Cheap workspace count for the signup cap. Uses a SQL COUNT in Postgres so we
+// never load every record just to gate a new signup; file mode reads the array.
+export async function countWorkspaces(): Promise<number> {
+  if (hasPostgres()) {
+    const pool = getPool();
+    const { rows } = await pool.query<{ count: string }>("SELECT COUNT(*)::int AS count FROM workspace_records");
+    return Number(rows[0]?.count ?? 0);
+  }
+  const db = await readWorkspaceDbFromFile();
+  return db.workspaces.length;
+}
+
 export async function findWorkspaceByEmail(email: string) {
   const key = normalizeEmail(email);
   return workspaceByEmailCache.getOrLoad(key, async () => {
