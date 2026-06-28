@@ -2208,6 +2208,13 @@
           <div id="wallet-packs" class="mini-grid"></div>
         </div>
 
+        <div class="panel section" style="margin-bottom:20px;" id="wallet-usage-panel">
+          <div class="kicker">This month</div>
+          <h3 style="margin:4px 0 4px;font-size:16px;">What you've used this month</h3>
+          <p class="muted" style="margin:0 0 12px;font-size:13px;">Every WhatsApp, email, AI reply and e-signed document, itemised — so you always know what the service is costing you. About 1 credit ≈ ₹1.</p>
+          <div id="wallet-usage-month"></div>
+        </div>
+
         <div class="panel section" style="margin-bottom:20px;" id="wallet-costs-panel">
           <div class="kicker">What credits are spent on</div>
           <h3 style="margin:4px 0 4px;font-size:16px;">Where your credits go</h3>
@@ -4238,7 +4245,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // The six per-occasion duration inputs read from / write to the single
       // serviceDurations config string ("Bridal=4, Party=2").
       function fillDurationGrid(raw) {
-        const defaults = { Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2 };
+        const defaults = { Bridal: 3, Engagement: 1, Reception: 1, Party: 1, Shoot: 1, Other: 1 };
         document.querySelectorAll("[data-duration-for]").forEach((input) => {
           const type = input.getAttribute("data-duration-for");
           let hours = defaults[type] ?? 3;
@@ -7113,6 +7120,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const lowBanner = document.getElementById("wallet-low-banner");
           if (lowBanner) lowBanner.style.display = data.lowBalance ? "" : "none";
           renderWalletPacks(data.packs || [], data.configured);
+          renderWalletUsage(data.usageThisMonth || [], data.creditsUsedThisMonth || 0);
           renderWalletCosts(data.costs || [], data.enforced, data.balanceCredits);
           renderWalletLedger(data.ledger || []);
         } catch (error) {
@@ -7129,6 +7137,29 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${p.bonus ? `<div class="pill success" style="margin-bottom:8px;">${escapeHtml(p.bonus)}</div>` : ""}
             <button class="button ${configured ? "" : "secondary"}" type="button" data-buy-pack="${escapeHtml(p.id)}" ${configured ? "" : "disabled"} style="width:100%;margin-top:6px;">₹${p.amountInr.toLocaleString("en-IN")}</button>
           </div>`).join("");
+      }
+
+      // Itemised "what you used this month": one row per action type with a
+      // count and the credits it consumed, plus a total — so the artist can see
+      // exactly what the service is costing them.
+      function renderWalletUsage(usage, totalCredits) {
+        const box = document.getElementById("wallet-usage-month");
+        const panel = document.getElementById("wallet-usage-panel");
+        if (!box || !panel) return;
+        if (!usage.length) {
+          box.innerHTML = `<p class="muted" style="margin:0;font-size:13.5px;">Nothing used yet this month — your messages, emails and documents will show up here with their cost.</p>`;
+          return;
+        }
+        box.innerHTML =
+          usage.map((u) =>
+            `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px;">
+              <span>${escapeHtml(u.label)} <span class="muted">× ${u.count.toLocaleString("en-IN")}</span></span>
+              <span style="font-weight:600;">${u.credits.toLocaleString("en-IN")} credit${u.credits === 1 ? "" : "s"}</span>
+            </div>`).join("") +
+          `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:15px;font-weight:700;">
+            <span>Total this month</span>
+            <span style="color:var(--accent);">${totalCredits.toLocaleString("en-IN")} credits ≈ ₹${totalCredits.toLocaleString("en-IN")}</span>
+          </div>`;
       }
 
       // Shows what each automated action costs, and — when billing is enforced —
@@ -9455,7 +9486,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // How long each occasion blocks the calendar — mirrors the server's
       // durationHoursForEvent (Settings → serviceDurations, "Bridal=4, Party=2").
       function durationHoursFor(eventType) {
-        const fallback = { Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2 }[eventType] ?? 3;
+        const fallback = { Bridal: 3, Engagement: 1, Reception: 1, Party: 1, Shoot: 1, Other: 1 }[eventType] ?? 1;
         const raw = sessionState?.workspace?.config?.serviceDurations || "";
         for (const pair of raw.split(",")) {
           const [key, value] = pair.split("=").map((s) => s.trim());

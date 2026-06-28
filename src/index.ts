@@ -1934,11 +1934,28 @@ app.get("/api/wallet", async (req, res, next) => {
     const workspace = await getWorkspaceByEmail(req.session.profile.email);
     if (!workspace) return res.status(404).json({ error: "Workspace not found" });
     const wallet = getWallet(workspace);
+    // Itemized usage for the current calendar month: count + credits per action,
+    // so the artist can see exactly what the service is costing them (how many
+    // WhatsApps, emails, e-sign documents, AI calls, etc.).
+    const monthPrefix = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    const usageMap: Record<string, { label: string; count: number; credits: number }> = {};
+    for (const entry of wallet.ledger) {
+      if (entry.type !== "debit") continue;
+      if (!String(entry.createdAt || "").startsWith(monthPrefix)) continue;
+      const label = entry.reason || "Other";
+      if (!usageMap[label]) usageMap[label] = { label, count: 0, credits: 0 };
+      usageMap[label].count += 1;
+      usageMap[label].credits += entry.credits;
+    }
+    const usageThisMonth = Object.values(usageMap).sort((a, b) => b.credits - a.credits);
+    const creditsUsedThisMonth = usageThisMonth.reduce((s, u) => s + u.credits, 0);
     res.json({
       ok: true,
       balanceCredits: wallet.balanceCredits,
       lowBalance: isLowBalance(wallet.balanceCredits),
       ledger: wallet.ledger.slice(0, 50),
+      usageThisMonth,
+      creditsUsedThisMonth,
       packs: CREDIT_PACKS,
       // What each automated action costs, so the artist can see where credits go
       // instead of running out without warning.
@@ -4072,7 +4089,9 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
           <p>Amount due: <strong>Rs. ${Math.round(currentBooking.balanceDue).toLocaleString("en-IN")}</strong></p>
           <p>Thank you — ${esc(workspace.config.businessName || workspace.config.ownerName)}</p>
         `),
-      }).catch(() => undefined);
+      })
+        .then((r) => { if (r?.ok) meterUsage(workspace.email, "email").catch(() => {}); })
+        .catch(() => undefined);
     }
 
     res.json({ ok: true, booking: currentBooking });
@@ -5019,6 +5038,7 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
         aiSummary: `Leegality create sent${contract.documentId ? ` (documentId ${contract.documentId})` : ""}`,
       });
 
+      await meterUsage(req.session.profile.email, "esignDocument").catch(() => {});
       return res.json({ ok: true, booking: updatedBooking, contract });
     }
 
@@ -5035,6 +5055,7 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
       }),
     );
 
+    await meterUsage(req.session.profile.email, "esignDocument").catch(() => {});
     res.json({ ok: true, booking: updatedBooking });
   } catch (error) {
     next(error);

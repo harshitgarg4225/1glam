@@ -34,6 +34,8 @@ export const USAGE_COSTS = {
   aiReviewReply: 1,
   aiAssistant: 2,
   documentGeneration: 1,
+  email: 1,
+  esignDocument: 2,
 } as const;
 
 export type UsageKind = keyof typeof USAGE_COSTS;
@@ -134,6 +136,8 @@ export const USAGE_LABELS: Record<UsageKind, string> = {
   aiReviewReply: "AI review reply",
   aiAssistant: "AI assistant answer",
   documentGeneration: "Document generated",
+  email: "Email sent",
+  esignDocument: "Document sent for e-signing",
 };
 
 export function creditCostFor(kind: UsageKind): number {

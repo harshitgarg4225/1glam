@@ -1714,13 +1714,13 @@ function buildCalendarEventBody(input: {
 // Fallback durations when the artist hasn't configured her own — a bridal
 // look genuinely takes ~4 hours; a party look doesn't.
 const DEFAULT_DURATIONS: Record<string, number> = {
-  Bridal: 4, Engagement: 3, Reception: 3, Party: 2, Shoot: 3, Other: 2,
+  Bridal: 3, Engagement: 1, Reception: 1, Party: 1, Shoot: 1, Other: 1,
 };
 
 // Parses "Bridal=4, Party=2.5" (the service_durations config) and returns the
 // hours this occasion blocks on the calendar.
 export function durationHoursForEvent(raw: string | undefined, eventType: string): number {
-  const fallback = DEFAULT_DURATIONS[eventType] ?? 3;
+  const fallback = DEFAULT_DURATIONS[eventType] ?? 1;
   for (const pair of String(raw || "").split(",")) {
     const [key, value] = pair.split("=").map((s) => s.trim());
     if (key && key.toLowerCase() === String(eventType).toLowerCase()) {
