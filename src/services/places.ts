@@ -109,6 +109,35 @@ export async function suggestPlaces(query: string): Promise<string[]> {
     .slice(0, 6);
 }
 
+// City suggestions for the "your city" / base-location field. Same Autocomplete
+// API as suggestPlaces but restricted to cities so results are clean place names
+// ("Patiala, Punjab, India") rather than venues. Returns [] without a key.
+export async function suggestCities(query: string): Promise<string[]> {
+  if (!appConfig.googleMapsApiKey) return [];
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  const url = new URL("https://maps.googleapis.com/maps/api/place/autocomplete/json");
+  url.searchParams.set("input", trimmed);
+  url.searchParams.set("types", "(cities)");
+  url.searchParams.set("components", "country:in");
+  url.searchParams.set("key", appConfig.googleMapsApiKey);
+
+  const response = await fetchWithTimeout(url.toString());
+  if (!response.ok) return [];
+
+  const payload = (await response.json()) as {
+    status: string;
+    predictions?: Array<{ description?: string; structured_formatting?: { main_text?: string } }>;
+  };
+  if (payload.status !== "OK") return [];
+  return (payload.predictions ?? [])
+    // Prefer the short city name ("Patiala") over the full description.
+    .map((p) => p.structured_formatting?.main_text || p.description || "")
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
 // Finds Google Business Profiles matching a free-text query (business name +
 // city) using the Places Text Search API. Reuses the existing Maps API key.
 export async function findBusinessCandidates(query: string): Promise<BusinessCandidate[]> {

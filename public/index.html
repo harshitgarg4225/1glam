@@ -1248,6 +1248,20 @@
       .demo-guide-btn.secondary { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); }
       .demo-guide-btn.secondary:hover { background: rgba(255,255,255,.18); }
       .demo-guide-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+      /* City autocomplete + phone country-code */
+      .ac-wrap { position: relative; }
+      .ac-menu {
+        position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 9600;
+        background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-sm);
+        box-shadow: var(--shadow); overflow: hidden; display: none;
+      }
+      .ac-menu.open { display: block; }
+      .ac-item { padding: 10px 13px; font-size: 14px; cursor: pointer; }
+      .ac-item:hover, .ac-item.active { background: var(--accent-soft); color: var(--accent); }
+      .cc-row { display: flex; gap: 6px; align-items: stretch; }
+      .cc-select { flex: 0 0 auto; width: auto; min-width: 96px; padding-right: 6px; }
+      .cc-row > input { flex: 1; min-width: 0; }
     </style>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
@@ -3928,6 +3942,100 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           if (e.target.id === "slot-clear") { setSlots([]); }
         });
       })();
+
+      // ─── City autocomplete (Google Places) ───
+      // Attaches a suggestion dropdown to a city input. Degrades to a plain text
+      // field if the Maps key isn't set (endpoint returns []).
+      function attachCityAutocomplete(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input || input.dataset.acDone) return;
+        input.dataset.acDone = "1";
+        const wrap = document.createElement("div");
+        wrap.className = "ac-wrap";
+        input.parentNode.insertBefore(wrap, input);
+        wrap.appendChild(input);
+        const menu = document.createElement("div");
+        menu.className = "ac-menu";
+        wrap.appendChild(menu);
+        let timer = null, items = [], active = -1;
+        const close = () => { menu.classList.remove("open"); menu.innerHTML = ""; items = []; active = -1; };
+        const render = () => {
+          menu.innerHTML = items.map((s, i) => `<div class="ac-item${i === active ? " active" : ""}" data-i="${i}">${escapeHtml(s)}</div>`).join("");
+          menu.classList.toggle("open", items.length > 0);
+        };
+        input.addEventListener("input", () => {
+          clearTimeout(timer);
+          const q = input.value.trim();
+          if (q.length < 2) { close(); return; }
+          timer = setTimeout(async () => {
+            try {
+              const r = await getJson(`/api/maps/cities?q=${encodeURIComponent(q)}`);
+              items = (r && r.suggestions) || []; active = -1; render();
+            } catch { close(); }
+          }, 250);
+        });
+        menu.addEventListener("mousedown", (e) => {
+          const it = e.target.closest(".ac-item");
+          if (!it) return;
+          e.preventDefault();
+          input.value = items[Number(it.dataset.i)] || input.value;
+          close();
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        input.addEventListener("keydown", (e) => {
+          if (!menu.classList.contains("open")) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, items.length - 1); render(); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
+          else if (e.key === "Enter" && active >= 0) { e.preventDefault(); input.value = items[active]; close(); }
+          else if (e.key === "Escape") close();
+        });
+        input.addEventListener("blur", () => setTimeout(close, 150));
+      }
+
+      // ─── Phone country code (default +91, list from backend) ───
+      let _phoneCodesCache = null;
+      async function fetchPhoneCodes() {
+        if (_phoneCodesCache) return _phoneCodesCache;
+        try { _phoneCodesCache = await getJson("/api/config/phone-codes"); }
+        catch { _phoneCodesCache = { default: "+91", codes: [{ code: "+91", label: "🇮🇳 India +91" }] }; }
+        return _phoneCodesCache;
+      }
+      async function attachPhoneCountryCode(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input || input.dataset.ccDone) return;
+        input.dataset.ccDone = "1";
+        const data = await fetchPhoneCodes();
+        const sel = document.createElement("select");
+        sel.className = "cc-select";
+        sel.setAttribute("aria-label", "Country code");
+        data.codes.forEach((c) => { const o = document.createElement("option"); o.value = c.code; o.textContent = c.label; sel.appendChild(o); });
+        sel.value = data.default;
+        const row = document.createElement("div");
+        row.className = "cc-row";
+        input.parentNode.insertBefore(row, input);
+        row.appendChild(sel); row.appendChild(input);
+        const stripCode = (v) => v.replace(/^\s*\+\d{1,4}\s*/, "").trim();
+        // Reflect an already-saved number's code into the selector.
+        const existing = (input.value || "").trim();
+        if (existing) {
+          const match = data.codes.map((c) => c.code).sort((a, b) => b.length - a.length).find((c) => existing.replace(/\s/g, "").startsWith(c));
+          if (match) sel.value = match;
+        } else {
+          input.value = data.default + " ";
+        }
+        sel.addEventListener("change", () => { input.value = sel.value + " " + stripCode(input.value); input.focus(); });
+        // Safety net: a bare number always gets the selected code prepended, so
+        // we never store a number without its country code.
+        input.addEventListener("blur", () => {
+          const v = input.value.trim();
+          if (v && !v.startsWith("+")) input.value = sel.value + " " + v;
+        });
+      }
+
+      attachCityAutocomplete("city");
+      attachCityAutocomplete("qs-city");
+      attachPhoneCountryCode("ownerWhatsApp");
+      attachPhoneCountryCode("qs-whatsapp");
 
       const leadForm = document.getElementById("lead-form");
       const loginState = document.getElementById("login-state");

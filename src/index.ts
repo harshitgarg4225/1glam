@@ -74,7 +74,7 @@ import {
 import { deactivateArtist, reactivateArtist, listArtists, upsertArtist } from "./services/team.js";
 import { buildAvailability, createPublicBookingRequest, getPublicBusinessProfile, getPublicPaymentDetails, getPublicSlotsForDate, submitPaymentScreenshot, checkPublicAvailability, getPublicArtists } from "./services/public-booking.js";
 import { buildServicesContext, computeInsights } from "./services/insights.js";
-import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestPlaces } from "./services/places.js";
+import { buildGoogleReviewLink, findBusinessCandidates, placesConfigured, estimateDistance, suggestCities, suggestPlaces } from "./services/places.js";
 import { resolveTravelIntelligence } from "./services/maps.js";
 import { BUSINESS_MANAGE_SCOPE, VERIFICATION_LABELS, createBusinessProfile, getGmbCreateStatus, getGmbStatus, draftReviewReplies, listGmbReviews, postGmbReply, listGmbPosts, createGmbPost, getReputationSummary } from "./services/gmb.js";
 import { replyIsSafeToAutoSend } from "./services/auto-reply.js";
@@ -381,7 +381,7 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // /api/session is intentionally public: it reports authenticated:false for
 // logged-out visitors so the landing page can render without bouncing them (and
 // Google's OAuth-verification crawler) to a login screen.
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token"]);
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token", "/api/config/phone-codes"]);
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
@@ -2046,6 +2046,44 @@ app.get("/api/maps/places", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// City autocomplete for the "your city" / base-location field. Cities only, so
+// the artist picks a clean place name instead of typing it. [] without a key.
+app.get("/api/maps/cities", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const suggestions = await suggestCities(q).catch(() => []);
+    res.json({ ok: true, suggestions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Country dialling codes for the phone-number fields. Public (the booking page
+// is unauthenticated) and tiny — India is the default since this is an India-first
+// product. A curated short list covers the common diaspora; the field still
+// accepts any typed number.
+app.get("/api/config/phone-codes", (_req, res) => {
+  res.json({
+    ok: true,
+    default: "+91",
+    codes: [
+      { code: "+91", label: "🇮🇳 India +91" },
+      { code: "+1", label: "🇺🇸 USA/Canada +1" },
+      { code: "+44", label: "🇬🇧 UK +44" },
+      { code: "+971", label: "🇦🇪 UAE +971" },
+      { code: "+61", label: "🇦🇺 Australia +61" },
+      { code: "+65", label: "🇸🇬 Singapore +65" },
+      { code: "+966", label: "🇸🇦 Saudi Arabia +966" },
+      { code: "+60", label: "🇲🇾 Malaysia +60" },
+      { code: "+64", label: "🇳🇿 New Zealand +64" },
+      { code: "+974", label: "🇶🇦 Qatar +974" },
+      { code: "+973", label: "🇧🇭 Bahrain +973" },
+      { code: "+968", label: "🇴🇲 Oman +968" },
+    ],
+  });
 });
 
 // Lists the available document design themes for the picker.
