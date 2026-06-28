@@ -3639,7 +3639,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="wizard-field" style="flex:1;"><label for="le-date">Event date</label><input id="le-date" type="date" required /></div>
             <div class="wizard-field" style="flex:1;"><label for="le-time">Time (optional)</label><input id="le-time" type="time" /></div>
           </div>
-          <div class="wizard-field"><label for="le-venue">Where?</label><input id="le-venue" required maxlength="200" placeholder="Venue or area, city" /></div>
+          <div class="wizard-field suggest-wrap"><label for="le-venue">Where?</label><input id="le-venue" required maxlength="200" autocomplete="off" placeholder="Venue or area, city" /></div>
           <div class="wizard-field"><label for="le-notes">Notes / tags</label><input id="le-notes" maxlength="500" placeholder="e.g. luxury bride, trial on 12th" /></div>
           <div id="le-conflict" style="margin-bottom:14px;"></div>
           <button class="button" type="submit" id="le-submit" style="width:100%;">Save changes</button>
@@ -3946,6 +3946,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       attachCityAutocomplete("qs-city");
       attachPhoneCountryCode("ownerWhatsApp");
       attachPhoneCountryCode("qs-whatsapp");
+      // Client phone fields across the artist-facing forms get the same picker.
+      attachPhoneCountryCode("clientWhatsApp");
+      attachPhoneCountryCode("qb-phone");
+      attachPhoneCountryCode("le-phone");
 
       const leadForm = document.getElementById("lead-form");
       const loginState = document.getElementById("login-state");
@@ -7968,8 +7972,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       });
 
       // Session expiry shouldn't feel like the app broke: tell her what
-      // happened, then take her back through sign-in.
+      // happened, then take her back through sign-in. CRITICAL: only do this for
+      // someone who was actually signed in. A 401 while logged out (e.g. an
+      // auth-gated call firing on the public landing page) must NOT auto-open
+      // the Google OAuth screen — that made busydays.co bounce visitors straight
+      // into sign-in before they ever saw the page.
       function handleSessionExpired() {
+        if (!document.body.classList.contains("authenticated")) return;
         toast("Your session expired — signing you back in…", "info");
         setTimeout(() => { window.location.href = "/auth/google"; }, 1200);
       }
@@ -9510,6 +9519,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       attachPlaceTypeahead(document.getElementById("qb-venue"));
       attachPlaceTypeahead(document.getElementById("locationText"));
       attachPlaceTypeahead(document.getElementById("rs-venue"));
+      attachPlaceTypeahead(document.getElementById("le-venue"));
 
       // Occasion + time → show exactly what the calendar will block.
       function updateQbDurationHint() {

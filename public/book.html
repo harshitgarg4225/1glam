@@ -951,6 +951,45 @@
         }, 600);
       });
 
+      // Venue autocomplete (Google Places via the workspace's key). Degrades to a
+      // plain field if no key / no matches. Same wa.me-style dropdown pattern.
+      (function attachVenueAutocomplete() {
+        const input = el("locationText");
+        if (!input) return;
+        const wrap = document.createElement("div");
+        wrap.style.cssText = "position:relative;";
+        input.parentNode.insertBefore(wrap, input);
+        wrap.appendChild(input);
+        const menu = document.createElement("div");
+        menu.style.cssText = "position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:#fff;border:1px solid #e5e0d8;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);overflow:hidden;display:none;";
+        wrap.appendChild(menu);
+        let items = [], timer = null;
+        const close = () => { menu.style.display = "none"; menu.innerHTML = ""; items = []; };
+        input.addEventListener("input", () => {
+          clearTimeout(timer);
+          const q = input.value.trim();
+          if (q.length < 2) { close(); return; }
+          timer = setTimeout(async () => {
+            try {
+              const r = await (await fetch("/api/public/" + encodeURIComponent(workspaceId) + "/places?q=" + encodeURIComponent(q))).json();
+              items = (r && r.suggestions) || [];
+              if (!items.length) { close(); return; }
+              menu.innerHTML = items.map((s, i) => '<div data-i="' + i + '" style="padding:10px 13px;font-size:14px;cursor:pointer;">' + String(s).replace(/</g, "&lt;") + '</div>').join("");
+              menu.style.display = "block";
+            } catch { close(); }
+          }, 250);
+        });
+        menu.addEventListener("mousedown", (e) => {
+          const it = e.target.closest("[data-i]");
+          if (!it) return;
+          e.preventDefault();
+          input.value = items[Number(it.dataset.i)] || input.value;
+          close();
+          input.dispatchEvent(new Event("input"));
+        });
+        input.addEventListener("blur", () => setTimeout(close, 150));
+      })();
+
       // Country-code selector for the client's WhatsApp number (default +91, list
       // from the backend). Keeps the number stored with its dialling code.
       (async function attachClientPhoneCode() {

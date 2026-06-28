@@ -525,6 +525,22 @@ app.get("/api/public/:workspaceId/travel", publicReadLimiter, async (req, res, n
   }
 });
 
+// Venue autocomplete for the public booking page. Public (the page is
+// unauthenticated) and rate-limited; returns [] without a Maps key so the field
+// stays a plain input. Only resolves for a real workspace so it can't be abused
+// as an open Places proxy.
+app.get("/api/public/:workspaceId/places", publicReadLimiter, async (req, res, next) => {
+  try {
+    const workspace = await findWorkspaceByWorkspaceId(String(req.params.workspaceId));
+    if (!workspace) return res.json({ ok: true, suggestions: [] });
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const suggestions = await suggestPlaces(q).catch(() => []);
+    res.json({ ok: true, suggestions });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Live time-slot availability for a date: each configured slot, marked taken
 // when an existing job (with its configured service duration) overlaps it.
 app.get("/api/public/:workspaceId/slots", publicReadLimiter, async (req, res, next) => {
