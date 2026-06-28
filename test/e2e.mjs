@@ -22,15 +22,15 @@ await page.goto(BASE, { waitUntil: "networkidle" });
 
 // 1. PAGE STRUCTURE
 const title = await page.title();
-log("Page title", title.includes("1Glam") ? "PASS" : "FAIL", title);
+log("Page title", title.includes("BusyDays") ? "PASS" : "FAIL", title);
 log("Sign-in link visible", await page.locator("#connect-link").isVisible() ? "PASS" : "FAIL");
 const navHtml = await page.locator("#tab-nav").innerHTML();
 log("Reviews in main tab bar", navHtml.includes('data-tab="reviews"') ? "PASS" : "FAIL");
 log("Settings gear icon", await page.locator("#settings-icon-btn").count() > 0 ? "PASS" : "FAIL");
-log("Settings NOT in More dropdown", !navHtml.includes('data-tab="setup"') ? "PASS" : "FAIL");
+log("Settings reachable via More dropdown", navHtml.includes('data-tab="setup"') ? "PASS" : "FAIL");
 const moreItems = await page.locator(".tab-more-item").allTextContents();
 log("Reviews NOT in More dropdown", !moreItems.some(t=>t.includes("Reviews")) ? "PASS" : "FAIL");
-log("More has Insights+Team+Channels", moreItems.some(t=>t.includes("Insights")) && moreItems.some(t=>t.includes("Team")) && moreItems.some(t=>t.includes("Channels")) ? "PASS" : "FAIL");
+log("More has Insights+Team+WhatsApp", moreItems.some(t=>t.includes("Insights")) && moreItems.some(t=>t.includes("Team")) && moreItems.some(t=>t.includes("WhatsApp")) ? "PASS" : "FAIL");
 log("Notify-team modal in DOM", await page.locator("#notify-team-modal").count() > 0 ? "PASS" : "FAIL");
 log("Toast shelf in DOM", await page.locator(".toast-shelf").count() > 0 ? "PASS" : "FAIL");
 const connectTag = await page.locator("#connect-link").evaluate(el => el.tagName.toLowerCase());
@@ -69,7 +69,9 @@ for (const [label, body, expected] of [
   ["slashes date",     {clientName:"A",clientWhatsApp:"+911234567890",eventType:"Bridal",eventDate:"01/08/2026",locationText:"Mumbai"}, 400],
   ["phone too short",  {clientName:"A",clientWhatsApp:"123",eventType:"Bridal",eventDate:"2026-08-01",locationText:"Mumbai"}, 400],
   ["missing name",     {clientWhatsApp:"+911234567890",eventType:"Bridal",eventDate:"2026-08-01",locationText:"Mumbai"}, 400],
-  ["missing location", {clientName:"A",clientWhatsApp:"+911234567890",eventType:"Bridal",eventDate:"2026-08-01"}, 400],
+  // Location is optional (the form says "add it later"), so a missing venue is
+  // valid input → it passes schema validation and reaches the workspace lookup.
+  ["missing location (optional)", {clientName:"A",clientWhatsApp:"+911234567890",eventType:"Bridal",eventDate:"2026-08-01"}, 404],
   ["unknown workspace",{clientName:"A",clientWhatsApp:"+911234567890",eventType:"Bridal",eventDate:"2026-08-01",locationText:"Mumbai"}, 404],
 ]) {
   const r = await page.request.post(`${BASE}/api/public/nonexistent-ws/book`, { data: body });
