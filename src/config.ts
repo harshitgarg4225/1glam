@@ -179,6 +179,18 @@ export function assertDeploymentConfig(): void {
     );
   }
 
+  // Non-fatal heads-up: the Google consent screen and all app links use the
+  // APP_BASE_URL host. If that's still the platform's auto-generated domain
+  // (e.g. *.up.railway.app), users see THAT on the OAuth screen instead of your
+  // brand domain. Point APP_BASE_URL at your custom domain and register its
+  // /auth/google/callback as an authorized redirect URI.
+  if (appConfig.isDeployed && /\.(up\.railway\.app|onrender\.com|herokuapp\.com|fly\.dev|vercel\.app)$/i.test(new URL(appConfig.baseUrl).hostname)) {
+    console.warn(
+      `[config] APP_BASE_URL is "${appConfig.baseUrl}" — the Google sign-in screen and your app links will show this host, not your brand domain. ` +
+        "Set APP_BASE_URL to your custom domain (e.g. https://busydays.co) and add <domain>/auth/google/callback as an authorized redirect URI in the OAuth client.",
+    );
+  }
+
   if (!errors.length) return;
 
   const summary =
