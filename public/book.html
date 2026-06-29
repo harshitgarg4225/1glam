@@ -355,6 +355,7 @@
       let ownerWhatsApp = "";
       let eventTypesData = [];
       let appliedPromoCode = "";
+      let promoDiscount = 0;
       const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
       const el = (id) => document.getElementById(id);
@@ -551,13 +552,20 @@
         if (profile.promoCodesEnabled) { el("promo-wrap").style.display = ""; }
         const container = el("services");
         container.innerHTML = "";
-        profile.eventTypes.forEach((type) => {
+        if (!eventTypesData.length) {
+          // No services listed → don't leave the client staring at an empty grid;
+          // point them to message the artist directly.
+          const wa = String(profile.ownerWhatsApp || "").replace(/\D/g, "");
+          container.innerHTML = `<p class="muted" style="font-size:14px;line-height:1.6;">This artist hasn't listed services for online booking yet.${wa ? ` <a href="https://wa.me/${wa}" target="_blank" rel="noreferrer" style="color:var(--accent);font-weight:600;">Message them on WhatsApp →</a>` : ""}</p>`;
+        }
+        eventTypesData.forEach((type) => {
           const card = document.createElement("button");
           card.type = "button";
           card.className = "service";
           card.dataset.key = type.key;
           const durationLabel = formatDuration(type.durationHours);
           card.setAttribute("aria-label", type.label);
+          card.setAttribute("aria-pressed", "false");
           const imgHtml = type.imageUrl
             ? '<img class="service-img" src="' + esc(type.imageUrl) + '" alt="" loading="lazy" />'
             : "";
@@ -571,8 +579,12 @@
             "</div>";
           card.addEventListener("click", () => {
             selectedEventType = type.key;
-            document.querySelectorAll(".service").forEach((s) => s.classList.remove("selected"));
+            document.querySelectorAll(".service").forEach((s) => { s.classList.remove("selected"); s.setAttribute("aria-pressed", "false"); });
             card.classList.add("selected");
+            card.setAttribute("aria-pressed", "true");
+            // A promo was validated against the previous service's price — clear
+            // it on switch so the total/feedback can't show a stale discount.
+            resetPromo();
             renderServiceDetail(type);
             updateReadyByNote(type);
             // Switch to event-specific slots (e.g. Bridal only at 09:00 and 11:00)
@@ -727,6 +739,9 @@
           // Trigger time slots if needed
           const changeEvt = new Event("change", { bubbles: true });
           el("eventDate").dispatchEvent(changeEvt);
+          // Picking a date via a quick chip must also re-check which slots are
+          // free that day (the calendar-click path does this; the chip didn't).
+          refreshSlotAvailability();
         }, { once: false });
       }
       function initCalendar(avail) {
@@ -929,6 +944,7 @@
       }
       function resetPromo() {
         appliedPromoCode = "";
+        promoDiscount = 0;
         const fb = el("promo-feedback");
         if (fb) { fb.textContent = ""; }
       }
@@ -963,9 +979,13 @@
         const menu = document.createElement("div");
         menu.style.cssText = "position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:#fff;border:1px solid #e5e0d8;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);overflow:hidden;display:none;";
         wrap.appendChild(menu);
-        let items = [], timer = null;
+        let items = [], timer = null, justPicked = false;
         const close = () => { menu.style.display = "none"; menu.innerHTML = ""; items = []; };
         input.addEventListener("input", () => {
+          // After picking a suggestion we re-fire "input" so the travel-fee
+          // estimator recalculates — but the autocomplete must NOT re-open its
+          // own dropdown on top of the just-filled value.
+          if (justPicked) { justPicked = false; return; }
           clearTimeout(timer);
           const q = input.value.trim();
           if (q.length < 2) { close(); return; }
@@ -985,6 +1005,7 @@
           e.preventDefault();
           input.value = items[Number(it.dataset.i)] || input.value;
           close();
+          justPicked = true;
           input.dispatchEvent(new Event("input"));
         });
         input.addEventListener("blur", () => setTimeout(close, 150));
@@ -1040,16 +1061,16 @@
           return;
         }
         const hasVariant = !!document.querySelector("#variants-list input[name='serviceVariant']:checked");
-        const hasTravelOrAddon = hasVariant || addonTotal > 0 || travelFeeEstimate > 0;
+        const hasTravelOrAddon = hasVariant || addonTotal > 0 || travelFeeEstimate > 0 || promoDiscount > 0;
         lbl.textContent = hasTravelOrAddon ? "Estimated total" : "Starting from";
-        amt.textContent = "₹" + Number(total + travelFeeEstimate).toLocaleString("en-IN");
+        const grand = Math.max(0, total + travelFeeEstimate - promoDiscount);
+        amt.textContent = "₹" + Number(grand).toLocaleString("en-IN");
         if (travelNote) {
-          if (travelFeeEstimate > 0) {
-            travelNote.textContent = `Incl. ₹${Number(travelFeeEstimate).toLocaleString("en-IN")} travel`;
-            travelNote.style.display = "";
-          } else {
-            travelNote.style.display = "none";
-          }
+          const bits = [];
+          if (travelFeeEstimate > 0) bits.push(`incl. ₹${Number(travelFeeEstimate).toLocaleString("en-IN")} travel`);
+          if (promoDiscount > 0) bits.push(`−₹${Number(promoDiscount).toLocaleString("en-IN")} promo`);
+          if (bits.length) { travelNote.textContent = bits.join(" · "); travelNote.style.display = ""; }
+          else travelNote.style.display = "none";
         }
       }
 
@@ -1074,8 +1095,10 @@
           const data = await res.json();
           if (!res.ok || !data.ok) throw new Error(data.error || "That code isn't valid.");
           appliedPromoCode = data.code;
+          promoDiscount = Number(data.discount) || 0;
           fb.style.color = "#15803d";
-          fb.textContent = "✓ " + data.label + " applied — you save ₹" + Number(data.discount).toLocaleString("en-IN") + ". Final: ₹" + Number(data.finalAmount).toLocaleString("en-IN") + ".";
+          fb.textContent = "✓ " + data.label + " applied — you save ₹" + Number(data.discount).toLocaleString("en-IN") + " on the service price.";
+          updateCta();
         } catch (err) {
           appliedPromoCode = "";
           fb.style.color = "#b91c1c";
@@ -1109,8 +1132,12 @@
           return;
         }
 
-        // Time — use slot value if slots are configured, otherwise free-text input
-        const hasSlots = (availability && (availability.timeSlots || []).length > 0);
+        // Time — read the slot grid when it's showing (covers both global AND
+        // per-event slots), otherwise the free-text time input. Keying off the
+        // visible grid (not just the global list) fixes per-event slots being
+        // silently dropped: a client picks a Bridal slot but the booking saved
+        // with no time because the global timeSlots list was empty.
+        const hasSlots = !el("time-slots-wrap").classList.contains("hidden");
         const eventTimeValue = hasSlots
           ? el("eventTime").value || undefined
           : el("eventTimeFree").value || undefined;
@@ -1129,11 +1156,12 @@
           scrollToEl("clientName"); el("clientName").focus();
           return;
         }
-        // Indian mobile numbers are 10 digits (12 with the +91 country code).
-        // Anything shorter can't receive the artist's WhatsApp confirmation, so
-        // the client would book and then silently never hear back.
-        if (el("clientWhatsApp").value.replace(/\D/g, "").length < 10) {
-          statusEl.textContent = "Please add a valid 10-digit WhatsApp number — it's how the artist confirms your date.";
+        // The value carries a country code (e.g. "+91 98…", "+971 5…"), so accept
+        // any plausible international length (8–15 digits incl. code) rather than
+        // a hard 10 — a valid UAE/Singapore number is shorter than 10 nationally.
+        const waDigits = el("clientWhatsApp").value.replace(/\D/g, "");
+        if (waDigits.length < 8 || waDigits.length > 15) {
+          statusEl.textContent = "Please add a valid WhatsApp number with country code — it's how the artist confirms your date.";
           scrollToEl("clientWhatsApp"); el("clientWhatsApp").focus();
           return;
         }
@@ -1230,10 +1258,11 @@
           window.scrollTo({ top: 0, behavior: "smooth" });
         } catch (error) {
           // Show the server's friendly validation message, but never surface a
-          // raw network error like "Failed to fetch" to a client.
+          // raw network error like "Failed to fetch" to a client, and strip any
+          // leaked Zod field prefix ("clientWhatsApp: Invalid phone number").
           statusEl.textContent = (error instanceof TypeError)
             ? "We couldn't reach the server. Please check your connection and try again."
-            : (error.message || "Something went wrong. Please try again.");
+            : ((error.message || "Something went wrong. Please try again.").replace(/^[a-zA-Z]+:\s+/, ""));
           submitBtn.disabled = false;
           submitBtn.textContent = "Request booking";
           ctaGo.disabled = false;

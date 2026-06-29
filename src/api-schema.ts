@@ -52,6 +52,9 @@ export const quickBookingSchema = z.object({
   advancePaid: z.coerce.boolean().optional().default(false),
   // How much was actually received — recorded as the first ledger entry.
   advanceAmount: z.coerce.number().min(0).max(100000000).optional().default(0),
+}).refine((d) => !(d.price > 0) || d.advanceAmount <= d.price, {
+  message: "The advance can't be more than the booking price.",
+  path: ["advanceAmount"],
 });
 
 // Day-to-day corrections: venue changed, typo in the number, new time. All
@@ -87,4 +90,7 @@ export const recordPaymentSchema = z.object({
   // "refund" records money returned to the client (subtracts from the total);
   // "tip" records a gratuity (recordBookingPayment already handles this kind).
   type: z.enum(["payment", "refund", "tip"]).optional().default("payment"),
+  // Client-generated idempotency key so a double-tap / retried request records
+  // the payment once, not twice (recordBookingPayment dedupes on ref).
+  ref: z.string().max(80).optional(),
 });

@@ -3816,6 +3816,9 @@ app.post("/api/leads/:leadId/quote", async (req, res, next) => {
     if (!workspace || !lead) {
       return res.status(404).json({ error: "Lead not found" });
     }
+    if (lead.quoteVoidedAt) {
+      return res.status(400).json({ error: "This quote is voided — clear the void before regenerating it." });
+    }
 
     lead = await ensureQuoteNumber(req.session.profile.email, req.session.googleTokens, lead);
     const quote = await generateQuoteDocument(workspace, req.session.googleTokens, lead);
@@ -3861,11 +3864,9 @@ app.post("/api/leads/:leadId/send-quote", async (req, res, next) => {
       return res.status(400).json({ error: "This quote is voided. Clear the void or regenerate before sending." });
     }
 
-    const channelContext = resolveLeadMessagingContext(workspace, lead);
-    if (!channelContext) {
-      return res.status(400).json({ error: "Lead does not have a connected messaging channel." });
-    }
-
+    // Generate the quote PDF first, regardless of how it's delivered — so the
+    // artist always has a shareable document even without a connected Meta
+    // channel (the common case).
     let currentLead = lead;
     if (!currentLead.quoteUrl) {
       currentLead = await ensureQuoteNumber(req.session.profile.email, req.session.googleTokens, currentLead);
@@ -3884,6 +3885,36 @@ app.post("/api/leads/:leadId/send-quote", async (req, res, next) => {
     }
 
     const message = buildQuoteShareMessage(workspace, currentLead);
+    const channelContext = resolveLeadMessagingContext(workspace, lead);
+
+    if (!channelContext) {
+      // No connected WhatsApp/Instagram → hand the artist a ready-to-send wa.me
+      // link with the quote message; the PDF is already generated above.
+      const waLink = buildWaMeReminderLink(currentLead.clientWhatsApp, message);
+      if (!waLink) {
+        return res.status(400).json({ error: "This client has no WhatsApp number on file — add one to share the quote." });
+      }
+      currentLead = await updateLeadRecord(
+        req.session.profile.email,
+        req.session.googleTokens,
+        req.params.leadId,
+        (existing) => ({
+          ...existing,
+          suggestedReply: message,
+          status: existing.status === "New" ? "Awaiting Client" : existing.status,
+          lastContactedAt: new Date().toISOString(),
+        }),
+      );
+      await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+        leadId: currentLead.leadId,
+        type: "Quote Shared",
+        channel: "WhatsApp",
+        messagePreview: message,
+        status: "Sent",
+      }).catch(() => {});
+      return res.json({ ok: true, lead: currentLead, waLink, manual: true });
+    }
+
     await sendBusinessMessage({
       workspace,
       connection: channelContext.connection,
@@ -3946,6 +3977,9 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
     );
     if (!workspace || !booking) {
       return res.status(404).json({ error: "Booking not found" });
+    }
+    if (booking.invoiceVoidedAt) {
+      return res.status(400).json({ error: "This invoice is voided — clear the void before regenerating it." });
     }
 
     booking = await ensureInvoiceNumber(req.session.profile.email, req.session.googleTokens, booking);
@@ -4024,11 +4058,7 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
       return res.status(404).json({ error: "Lead not found for booking" });
     }
 
-    const channelContext = resolveLeadMessagingContext(workspace, lead);
-    if (!channelContext) {
-      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
-    }
-
+    // Generate the invoice PDF first regardless of delivery channel.
     let currentBooking = booking;
     if (!currentBooking.invoiceUrl) {
       currentBooking = await ensureInvoiceNumber(req.session.profile.email, req.session.googleTokens, currentBooking);
@@ -4046,6 +4076,24 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
     }
 
     const message = buildInvoiceShareMessage(workspace, currentBooking);
+    const channelContext = resolveLeadMessagingContext(workspace, lead);
+
+    if (!channelContext) {
+      // No connected channel → wa.me fallback with the invoice already generated.
+      const waLink = buildWaMeReminderLink(currentBooking.clientWhatsApp, message);
+      if (!waLink) {
+        return res.status(400).json({ error: "This client has no WhatsApp number on file — add one to share the invoice." });
+      }
+      await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        type: "Invoice Shared",
+        channel: "WhatsApp",
+        messagePreview: message,
+        status: "Sent",
+      }).catch(() => {});
+      return res.json({ ok: true, booking: currentBooking, waLink, manual: true });
+    }
+
     await sendBusinessMessage({
       workspace,
       connection: channelContext.connection,
@@ -5012,6 +5060,9 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
     if (!lead) {
       return res.status(404).json({ error: "Lead not found for booking" });
     }
+    if (booking.contractVoidedAt) {
+      return res.status(400).json({ error: "This contract is voided — clear the void before regenerating it." });
+    }
 
     // Leegality is the premium e-sign path when configured; otherwise the
     // built-in signing page makes contracts work with zero external setup.
@@ -5091,11 +5142,7 @@ app.post("/api/bookings/:bookingId/send-contract", async (req, res, next) => {
       return res.status(404).json({ error: "Lead not found for booking" });
     }
 
-    const channelContext = resolveLeadMessagingContext(workspace, lead);
-    if (!channelContext) {
-      return res.status(400).json({ error: "Booking client does not have a connected messaging channel." });
-    }
-
+    // Prepare/generate the contract first, regardless of delivery channel.
     let currentBooking = booking;
     if (!currentBooking.contractUrl && currentBooking.contractStatus !== "Signed") {
       if (leegalityAvailable(workspace)) {
@@ -5128,6 +5175,24 @@ app.post("/api/bookings/:bookingId/send-contract", async (req, res, next) => {
     }
 
     const message = buildContractShareMessage(workspace, currentBooking);
+    const channelContext = resolveLeadMessagingContext(workspace, lead);
+
+    if (!channelContext) {
+      // No connected channel → wa.me fallback; the contract link is ready.
+      const waLink = buildWaMeReminderLink(currentBooking.clientWhatsApp, message);
+      if (!waLink) {
+        return res.status(400).json({ error: "This client has no WhatsApp number on file — add one to share the contract." });
+      }
+      await appendFollowUpLog(req.session.profile.email, req.session.googleTokens, {
+        leadId: lead.leadId,
+        type: "Contract Shared",
+        channel: "WhatsApp",
+        messagePreview: message,
+        status: "Sent",
+      }).catch(() => {});
+      return res.json({ ok: true, booking: currentBooking, waLink, manual: true });
+    }
+
     await sendBusinessMessage({
       workspace,
       connection: channelContext.connection,
@@ -7607,7 +7672,7 @@ function legalPage(title: string, bodyHtml: string): string {
   h1 { font-size: 28px; margin-bottom: 4px; }
   h2 { font-size: 18px; margin-top: 32px; }
   .muted { color: #6b6b80; font-size: 14px; }
-  a { color: #b3005e; }
+  a { color: #C26B45; }
   nav { margin: 24px 0 8px; font-size: 14px; }
   nav a { margin-right: 16px; }
   ul { padding-left: 20px; }

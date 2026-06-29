@@ -127,6 +127,7 @@
       <p class="note hidden" id="no-upi-note" style="background:#FEF3C7;border:1px solid #FDE68A;color:#92400E;padding:12px 14px;border-radius:8px;">Please contact the artist directly to arrange your advance payment, then upload your payment screenshot below to confirm.</p>
 
       <div class="upload-section">
+        <div id="upi-after-note" style="display:none;background:#FBF0EA;border:1px solid #F0D9CC;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:14px;color:#7a4a2f;font-weight:600;">📲 Paid in your UPI app? Now upload the payment screenshot below so the artist can confirm your booking 👇</div>
         <h2 style="font-size:15px;">Share your payment proof</h2>
         <p>After paying, upload a screenshot here. The artist will verify it and confirm your booking — you'll hear back shortly.</p>
         <div class="upload-drop" id="upload-drop">
@@ -155,6 +156,13 @@
 
     function inr(n) {
       return "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
+    }
+    function fmt12h(t) {
+      const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
+      if (!m) return String(t || "");
+      let h = Number(m[1]); const min = m[2];
+      const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+      return h + (min !== "00" ? ":" + min : "") + " " + ap;
     }
     function fmtDate(s) {
       if (!s) return "";
@@ -186,7 +194,7 @@
       document.getElementById("biz-name").textContent = d.businessName;
       const metaRows = [
         d.eventType ? `<div class="booking-meta-row">📋 <span class="meta-val">${esc(d.eventType)}</span></div>` : "",
-        `<div class="booking-meta-row">📅 <span class="meta-val">${esc(fmtDate(d.eventDate))}${d.eventTime ? " · " + esc(d.eventTime) : ""}</span></div>`,
+        `<div class="booking-meta-row">📅 <span class="meta-val">${esc(fmtDate(d.eventDate))}${d.eventTime ? " · " + esc(fmt12h(d.eventTime)) : ""}</span></div>`,
         d.venue ? `<div class="booking-meta-row">📍 <span class="meta-val">${esc(d.venue)}</span></div>` : "",
       ].filter(Boolean).join("");
       document.getElementById("booking-meta").innerHTML = metaRows;
@@ -239,6 +247,13 @@
           : d.upiDeepLink;
         document.getElementById("upi-amount").textContent = Math.round(stageAmount).toLocaleString("en-IN");
         btn.classList.remove("hidden");
+        // Paying via a UPI app doesn't notify us — so after they tap, point them
+        // to upload the payment screenshot so the artist can confirm.
+        btn.addEventListener("click", () => {
+          const note = document.getElementById("upi-after-note");
+          if (note) note.style.display = "block";
+          setTimeout(() => { document.querySelector(".upload-section")?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 400);
+        });
         const idRow = document.getElementById("upi-id-row");
         document.getElementById("upi-id-text").textContent = d.upiId;
         idRow.classList.remove("hidden");
@@ -280,7 +295,13 @@
           description: payStage === "balance" ? "Balance payment" : "Advance to lock your date",
           prefill: { name: data.clientName },
           theme: { color: "#C26B45" },
+          modal: {
+            // Client closed checkout without paying → re-enable so they can retry.
+            ondismiss: () => { btn.disabled = false; btn.innerHTML = original; },
+          },
           handler: async (response) => {
+            // Block re-tapping and show a clear state while we confirm.
+            btn.textContent = "Confirming your payment…";
             try {
               const vres = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/payment/${encodeURIComponent(leadId)}/verify`, {
                 method: "POST",
@@ -313,9 +334,12 @@
           },
         });
         rzp.open();
+        // Do NOT reset the button here — rzp.open() is non-blocking and the
+        // checkout modal is still open. The modal's ondismiss handler (cancel)
+        // and the verify handler (success/fail) own the button state from here,
+        // so a stray second tap can't kick off a duplicate charge.
       } catch (err) {
         showPayError(err.message || "Couldn't start the payment. Please try again.");
-      } finally {
         btn.disabled = false;
         btn.innerHTML = original;
       }
@@ -458,7 +482,10 @@
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed");
         uploadStatus.textContent = "";
+        doneBanner.innerHTML = "✓ Screenshot received — the artist will verify it and confirm your booking shortly." +
+          `<br><a href="${appointmentUrl}" style="display:inline-block;margin-top:10px;font-size:14px;font-weight:600;color:var(--accent);text-decoration:none;">View my appointment →</a>`;
         doneBanner.style.display = "block";
+        doneBanner.scrollIntoView({ behavior: "smooth", block: "center" });
         drop.style.display = "none";
         uploadBtn.style.display = "none";
         preview.style.display = "none";

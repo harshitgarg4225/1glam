@@ -377,7 +377,7 @@ export async function applyOwnerDecision(
     const updated: LeadRecord = {
       ...lead.record,
       ownerDecision: "NO",
-      ownerNotes: ownerNotes ?? "",
+      ownerNotes: ownerNotes ?? lead.record.ownerNotes,
       lostReason: lostReason ?? lead.record.lostReason,
       status: "Lost",
       lastContactedAt: new Date().toISOString(),
@@ -405,7 +405,7 @@ export async function applyOwnerDecision(
   const updated: LeadRecord = {
     ...lead.record,
     ownerDecision: decision,
-    ownerNotes: ownerNotes ?? "",
+    ownerNotes: ownerNotes ?? lead.record.ownerNotes,
     finalApprovedPrice,
     discountPercent,
     holdExpiresAt,
@@ -674,13 +674,15 @@ export async function rescheduleBooking(
   const booking = await findBookingById(workspace, tokens, bookingId);
   if (!booking) throw new Error("Booking not found");
   if (booking.record.status === "Cancelled") throw new Error("This booking is cancelled — create a new one instead.");
+  // Don't allow moving a booking into the past.
+  const todayIst = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  if (input.eventDate && input.eventDate < todayIst) {
+    throw new Error("Pick a new date that's today or later.");
+  }
   const lead = await findLeadById(workspace, tokens, booking.record.leadId);
 
   const eventTime = input.eventTime ?? booking.record.eventTime;
   const venue = input.venue ?? booking.record.venue;
-  if (booking.record.confirmedCalendarEventId) {
-    await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, booking.record.confirmedCalendarEventId);
-  }
   const leadForEvent: LeadRecord & { bookingId: string } = {
     ...(lead?.record ?? leadFromBooking(booking.record)),
     eventDate: input.eventDate,
@@ -688,7 +690,13 @@ export async function rescheduleBooking(
     locationText: venue,
     bookingId,
   };
+  // Create the NEW calendar event first; only remove the old hold once the new
+  // one exists, so a calendar failure can't leave the booking pointing at a
+  // deleted event (booking/calendar desync).
   const newEventId = await createConfirmedCalendarEvent(workspace, tokens, leadForEvent);
+  if (booking.record.confirmedCalendarEventId) {
+    await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, booking.record.confirmedCalendarEventId).catch(() => {});
+  }
 
   const updatedBooking: BookingRecord = {
     ...booking.record,
@@ -807,7 +815,28 @@ export async function updatePaymentStatus(
   };
 
   await updateLeadRow(workspace, tokens, lead.rowNumber, nextLead);
-  await updateBookingPaymentStatus(workspace, tokens, lead.record.bookingId, paymentStatus);
+
+  // Record a ledger entry so the booking's payment status is backed by real
+  // money in the log — otherwise "Mark advance/paid-in-full" set only a status
+  // string, and the next ledger recompute (recording or deleting a payment)
+  // silently reverted it. We top up to the target amount; an idempotency ref
+  // stops a double-tap recording twice.
+  if (lead.record.bookingId) {
+    const bk = await findBookingById(workspace, tokens, lead.record.bookingId, { fresh: true });
+    if (bk) {
+      const target = paymentStatus === "Paid in Full" ? bk.record.finalPrice : bk.record.advanceAmount;
+      // topUpToTarget recomputes the delta INSIDE the booking lock, so a payment
+      // landing concurrently can't make this over-credit the ledger.
+      await recordBookingPayment(email, tokens, lead.record.bookingId, {
+        amount: 0,
+        topUpToTarget: target,
+        method: "Other",
+        note: paymentStatus === "Paid in Full" ? "Marked paid in full" : "Marked advance received",
+        type: "payment",
+        ref: `markstatus:${paymentStatus}:${target}`,
+      });
+    }
+  }
   return { lead: nextLead };
 }
 
@@ -892,7 +921,7 @@ export async function recordBookingPayment(
   email: string,
   tokens: Credentials,
   bookingId: string,
-  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" | "tip"; ref?: string },
+  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" | "tip"; ref?: string; topUpToTarget?: number },
 ) {
   let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
   const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
@@ -904,9 +933,15 @@ export async function recordBookingPayment(
     // log we already have. Manual entries have no ref and are never deduped,
     // so two legitimate cash instalments still both count.
     const isDuplicate = Boolean(input.ref) && log.some((e) => e.ref === String(input.ref).slice(0, 60) && e.kind === kind);
-    if (!isDuplicate) {
+    // "Top up to target" (used by Mark advance/paid-in-full): compute the delta
+    // from the freshly-LOCKED log so a concurrent payment landing between an
+    // earlier read and this write can never over-credit the ledger.
+    const amountToAdd = typeof input.topUpToTarget === "number"
+      ? Math.max(0, Math.round(input.topUpToTarget - paymentsTotal(log)))
+      : Math.round(input.amount);
+    if (!isDuplicate && amountToAdd > 0) {
       log.push({
-        amount: Math.round(input.amount),
+        amount: amountToAdd,
         method: String(input.method ?? "UPI").slice(0, 30),
         note: String(input.note ?? "").slice(0, 120),
         at: new Date().toISOString(),
@@ -1575,27 +1610,6 @@ async function updateBookingRow(
     },
   });
   invalidateBookingSheet(workspace.spreadsheetId);
-}
-
-async function updateBookingPaymentStatus(
-  workspace: WorkspaceRecord,
-  tokens: Credentials,
-  bookingId: string,
-  paymentStatus: string,
-) {
-  if (!bookingId) return;
-
-  await withSerializedLock(lockKeyFromString(`booking:${bookingId}`), async () => {
-    const found = await findBookingById(workspace, tokens, bookingId, { fresh: true });
-    if (!found) return;
-    const booking = found.record;
-    booking.paymentStatus = paymentStatus;
-    if (paymentStatus === "Paid in Full" && booking.status !== "Paid") {
-      booking.status = "Paid";
-      booking.statusChangedAt = new Date().toISOString();
-    }
-    await updateBookingRow(workspace, tokens, found.rowNumber, booking);
-  });
 }
 
 async function upsertTentativeCalendarEvent(

@@ -3401,7 +3401,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
     <!-- Credits explainer: shown the first time she taps the credits pill -->
     <div class="modal-overlay" id="credits-explainer-modal">
-      <div class="modal" style="max-width:420px;">
+      <div class="modal" style="max-width:420px;" role="dialog" aria-modal="true" aria-label="About credits">
         <div class="modal-head">
           <h3 style="margin:0;">✨ What are credits?</h3>
           <button class="modal-close" type="button" id="credits-explainer-close" aria-label="Close">×</button>
@@ -3693,7 +3693,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <!-- Quick setup wizard: the 5 essentials without opening full Settings -->
     <div class="modal-overlay" id="quick-setup-modal">
-      <div class="modal">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Quick setup">
         <div class="modal-head">
           <h3 style="margin:0;">Quick setup — 2 minutes</h3>
           <button class="modal-close" type="button" id="quick-setup-close" aria-label="Close">×</button>
@@ -3732,7 +3732,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <!-- Notify-team modal: one-tap WhatsApp briefs to freelance specialists -->
     <div class="modal-overlay" id="notify-team-modal">
-      <div class="modal">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Notify your team">
         <div class="modal-head">
           <h3 style="margin:0;">Notify your team</h3>
           <button class="modal-close" type="button" id="notify-team-close" aria-label="Close">×</button>
@@ -3757,7 +3757,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <!-- Document edit modal: override amount, add line items, attach a note -->
     <div class="modal-overlay" id="doc-edit-modal">
-      <div class="modal">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Edit document">
         <div class="modal-head">
           <h3 style="margin:0;" id="doc-edit-title">Edit document</h3>
           <button class="modal-close" type="button" id="doc-edit-close" aria-label="Close">×</button>
@@ -3957,6 +3957,25 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       attachPhoneCountryCode("clientWhatsApp");
       attachPhoneCountryCode("qb-phone");
       attachPhoneCountryCode("le-phone");
+
+      // Non-blocking format nudges for UPI / GST. The server no longer rejects
+      // these (a bad value must not block the whole settings save), so we warn
+      // here so an honest typo doesn't quietly print a dead QR or wrong tax id.
+      (function () {
+        const upiRe = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/;
+        const gstRe = /^[0-9A-Z]{15}$/;
+        function warnOnBlur(id, ok, msg) {
+          const elx = document.getElementById(id);
+          if (!elx) return;
+          elx.addEventListener("blur", () => {
+            const v = (elx.value || "").trim();
+            if (v && !ok(v)) toast(msg, "info");
+          });
+        }
+        warnOnBlur("upiId", (v) => upiRe.test(v), "That UPI ID looks off — double-check it (e.g. name@okhdfcbank). You can still save.");
+        warnOnBlur("qs-upi", (v) => upiRe.test(v), "That UPI ID looks off — double-check it (e.g. name@okhdfcbank).");
+        warnOnBlur("gstNumber", (v) => gstRe.test(v.toUpperCase().replace(/\s+/g, "")), "That GSTIN isn't 15 characters — double-check it before it prints on invoices.");
+      })();
 
       const leadForm = document.getElementById("lead-form");
       const loginState = document.getElementById("login-state");
@@ -5757,7 +5776,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
                     <button class="button small" data-booking-record-payment="${booking.bookingId}" style="background:var(--sage);">💰 Record payment</button>
                   </div>`}
-              ${!["Cancelled", "Completed"].includes(booking.status) && booking.eventDate && parseDay(booking.eventDate) < new Date(new Date().toDateString())
+              ${!["Cancelled", "Completed"].includes(booking.status) && booking.eventDate && parseDay(booking.eventDate) <= new Date(new Date().toDateString())
                 ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
                     <button class="button small secondary" data-booking-action="complete" data-booking-id="${booking.bookingId}">🎉 Mark completed</button>
                   </div>`
@@ -7071,6 +7090,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.getElementById("email-test-btn")?.addEventListener("click", async () => {
         const btn = document.getElementById("email-test-btn");
         const status = document.getElementById("email-test-status");
+        // The test sends against SAVED SMTP details, so unsaved edits would test
+        // the wrong (old/empty) config and read as a confusing failure.
+        if (_configDirty) {
+          showStatus(status, "Save your settings first — the test uses your saved email details.", "error");
+          return;
+        }
         setLoading(btn, "Sending…");
         try {
           const data = await postJson("/api/email/test", {});
@@ -7419,7 +7444,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const textEl = document.getElementById("preview-tone-text");
         const btn = document.getElementById("preview-tone-btn");
         const msg = (inputEl?.value || "").trim();
-        if (!msg) { statusEl.textContent = "Type a test customer message first."; return; }
+        if (!msg) { statusEl.textContent = "Type a test client message first."; return; }
         btn.disabled = true;
         statusEl.textContent = "Generating reply…";
         resultBox.style.display = "none";
@@ -8264,8 +8289,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             // one tap approves the price (holds the date) and sends the quote,
             // instead of approve → read toast → send.
             await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
-            await postJson(`/api/leads/${leadId}/send-quote`, {});
-            toast(`Quote sent to ${who} 🎉 — their date is on hold until they pay the advance.`, "success");
+            let quoteRes;
+            try {
+              quoteRes = await postJson(`/api/leads/${leadId}/send-quote`, {});
+            } catch (sendErr) {
+              // The price WAS approved (date held) — don't let a send failure read
+              // as if nothing happened. Tell her exactly what to do next.
+              toast(`Price approved — ${who}'s date is on hold. The quote couldn't be sent automatically; open the request and tap "Send quote".`, "info");
+              await refreshSession();
+              if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
+              return;
+            }
+            openReminderWa(quoteRes, `Quote sent to ${who} 🎉 — their date is on hold until they pay the advance.`);
           }
           else if (action === "no") {
             if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
@@ -8318,7 +8353,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             toast(`Message sent to ${who}.`, "success");
           }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
-          else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast(`Quote sent to ${who}.`, "success"); }
+          else if (action === "send-quote") { const r = await postJson(`/api/leads/${leadId}/send-quote`, {}); openReminderWa(r, `Quote sent to ${who}.`); }
           else toast("Lead updated.", "success");
           await refreshSession();
           // Re-render the drawer with updated lead data if it's open for this lead.
@@ -8767,6 +8802,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const lead = leads.find((l) => l.leadId === dragLeadId);
         const id = dragLeadId; dragLeadId = null;
         if (!lead || lead.status === target) return;
+        // Dragging to "Completed" finishes the underlying booking.
+        if (target === "Completed") {
+          if (!lead.bookingId) { toast("Only a confirmed booking can be completed.", "error"); renderLeads(); return; }
+          try {
+            await postJson(`/api/bookings/${lead.bookingId}/complete`, {});
+            toast("Marked completed — lovely work! 🎉", "success");
+            await refreshSession();
+          } catch (err) { toast(err.message, "error"); renderLeads(); }
+          return;
+        }
         const map = {
           "Awaiting Client": "yes",
           "Lost": "no",
@@ -8774,7 +8819,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           "Payment Received": "full",
         };
         const action = map[target];
-        if (!action) { toast(`Can't move directly to "${target}".`, "error"); renderLeads(); return; }
+        if (!action) { toast(`Cards move forward through your pipeline — open the request to undo or change details.`, "info"); renderLeads(); return; }
         // Mis-drops to "Lost" — ask for a reason via the inline modal.
         if (action === "no") {
           const reason = await pickLostReason(lead.clientName);
@@ -8871,16 +8916,26 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         documentStatus.textContent = "";
         try {
           if (action === "invoice") { await postJson(`/api/bookings/${bookingId}/invoice`, {}); toast("Invoice generated.", "success"); }
-          else if (action === "send-invoice") { await postJson(`/api/bookings/${bookingId}/send-invoice`, {}); toast("Invoice sent to client.", "success"); }
+          else if (action === "send-invoice") { const r = await postJson(`/api/bookings/${bookingId}/send-invoice`, {}); openReminderWa(r, "Invoice sent to client."); }
           else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); toast("Contract sent for e-signing — the client will get an email to sign it.", "success"); }
-          else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); toast("Contract sent to client.", "success"); }
+          else if (action === "send-contract") { const r = await postJson(`/api/bookings/${bookingId}/send-contract`, {}); openReminderWa(r, "Contract sent to client."); }
           else if (action === "sync-contract") { const r = await postJson(`/api/bookings/${bookingId}/contract/sync`, {}); toast(`Contract: ${r.booking?.contractStatus || "Updated"}.`, "success"); }
           else if (action === "review") { const r = await postJson(`/api/bookings/${bookingId}/send-review`, {}); openReminderWa(r, "Review request sent."); }
           else if (action === "advance-reminder") { const r = await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); openReminderWa(r, "Advance reminder sent."); }
           else if (action === "balance-reminder") { const r = await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); openReminderWa(r, "Balance reminder sent."); }
           else if (action === "advance") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Advance Paid" }); toast("Marked as advance paid.", "success"); }
           else if (action === "full") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Paid in Full" }); toast("Marked as paid in full.", "success"); }
-          else if (action === "complete") { await postJson(`/api/bookings/${bookingId}/complete`, {}); toast("Marked completed — lovely work! 🎉", "success"); }
+          else if (action === "complete") {
+            const bk = (sessionState?.dashboard?.bookings || []).find((x) => x.bookingId === bookingId);
+            if (bk && Number(bk.balanceDue) > 0) {
+              clearLoading(b);
+              const ok = await showConfirm("Complete with balance unpaid?", `${formatMoney(bk.balanceDue)} is still unpaid on this booking. Completing it moves it out of your "still to collect" list. Complete anyway?`, "Complete anyway");
+              if (!ok) return;
+              setLoading(b, "…");
+            }
+            await postJson(`/api/bookings/${bookingId}/complete`, {});
+            toast("Marked completed — lovely work! 🎉", "success");
+          }
           await refreshSession();
         } catch (error) {
           toast(error.message, "error");
@@ -9942,6 +9997,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 { label: "Offer them the slot →", onClick: () => { activateTab("bookings"); loadWaitlist(); } },
               );
             }
+            // Cancelling never auto-refunds money already captured — if any was
+            // received, prompt her to record/issue a refund so the client isn't
+            // silently left out of pocket.
+            const paidOnCancel = parseLedger(b?.paymentsLog || "[]").reduce(
+              (s, en) => s + (en.kind === "refund" ? -Number(en.amount || 0) : en.kind === "tip" ? 0 : Number(en.amount || 0)), 0);
+            if (paidOnCancel > 0) {
+              toast(`${formatMoney(paidOnCancel)} was already received — cancelling doesn't refund it automatically.`, "info",
+                { label: "Record a refund →", onClick: () => openPaymentModal(bookingId) });
+            }
             // Check if within late-cancellation window to prompt for fee
             if (b?.eventDate) {
               const cfg = sessionState?.workspace?.config || {};
@@ -10736,11 +10800,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         setLoading(btn, "Saving…");
         try {
           const type = document.getElementById("pay-type").value;
+          // One idempotency key per submit, so a retried/replayed request records
+          // the payment once — two real instalments are two submits (two keys).
+          const ref = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `rec-${Date.now()}-${Math.random().toString(36).slice(2)}`;
           const res = await postJson(`/api/bookings/${paymentModalBookingId}/payments`, {
             amount,
             method: document.getElementById("pay-method").value,
             note: document.getElementById("pay-note").value,
             type,
+            ref,
           });
           closePaymentModal();
           const nowPaid = res?.booking?.paymentStatus === "Paid in Full";
