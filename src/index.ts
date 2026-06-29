@@ -7663,7 +7663,7 @@ function legalPage(title: string, bodyHtml: string): string {
   h1 { font-size: 28px; margin-bottom: 4px; }
   h2 { font-size: 18px; margin-top: 32px; }
   .muted { color: #6b6b80; font-size: 14px; }
-  a { color: #b3005e; }
+  a { color: #C26B45; }
   nav { margin: 24px 0 8px; font-size: 14px; }
   nav a { margin-right: 16px; }
   ul { padding-left: 20px; }

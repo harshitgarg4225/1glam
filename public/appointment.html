@@ -146,6 +146,8 @@
       "Completed": ["confirmed", "✅ Completed — thank you!"],
       "Awaiting Client": ["pending", "⏳ Awaiting your payment"],
       "Payment Pending": ["pending", "⏳ Payment under review"],
+      "Cancelled": ["cancelled", "✕ Cancelled"],
+      "Lost": ["cancelled", "✕ Cancelled"],
     };
     // Never leak a raw internal status (e.g. "New", "Sent", "Lost") to the client.
     const [cls, label] = statusMap[d.leadStatus] || ["pending", "⏳ In progress"];
