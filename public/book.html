@@ -963,9 +963,13 @@
         const menu = document.createElement("div");
         menu.style.cssText = "position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:#fff;border:1px solid #e5e0d8;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);overflow:hidden;display:none;";
         wrap.appendChild(menu);
-        let items = [], timer = null;
+        let items = [], timer = null, justPicked = false;
         const close = () => { menu.style.display = "none"; menu.innerHTML = ""; items = []; };
         input.addEventListener("input", () => {
+          // After picking a suggestion we re-fire "input" so the travel-fee
+          // estimator recalculates — but the autocomplete must NOT re-open its
+          // own dropdown on top of the just-filled value.
+          if (justPicked) { justPicked = false; return; }
           clearTimeout(timer);
           const q = input.value.trim();
           if (q.length < 2) { close(); return; }
@@ -985,6 +989,7 @@
           e.preventDefault();
           input.value = items[Number(it.dataset.i)] || input.value;
           close();
+          justPicked = true;
           input.dispatchEvent(new Event("input"));
         });
         input.addEventListener("blur", () => setTimeout(close, 150));
@@ -1109,8 +1114,12 @@
           return;
         }
 
-        // Time — use slot value if slots are configured, otherwise free-text input
-        const hasSlots = (availability && (availability.timeSlots || []).length > 0);
+        // Time — read the slot grid when it's showing (covers both global AND
+        // per-event slots), otherwise the free-text time input. Keying off the
+        // visible grid (not just the global list) fixes per-event slots being
+        // silently dropped: a client picks a Bridal slot but the booking saved
+        // with no time because the global timeSlots list was empty.
+        const hasSlots = !el("time-slots-wrap").classList.contains("hidden");
         const eventTimeValue = hasSlots
           ? el("eventTime").value || undefined
           : el("eventTimeFree").value || undefined;
@@ -1129,11 +1138,12 @@
           scrollToEl("clientName"); el("clientName").focus();
           return;
         }
-        // Indian mobile numbers are 10 digits (12 with the +91 country code).
-        // Anything shorter can't receive the artist's WhatsApp confirmation, so
-        // the client would book and then silently never hear back.
-        if (el("clientWhatsApp").value.replace(/\D/g, "").length < 10) {
-          statusEl.textContent = "Please add a valid 10-digit WhatsApp number — it's how the artist confirms your date.";
+        // The value carries a country code (e.g. "+91 98…", "+971 5…"), so accept
+        // any plausible international length (8–15 digits incl. code) rather than
+        // a hard 10 — a valid UAE/Singapore number is shorter than 10 nationally.
+        const waDigits = el("clientWhatsApp").value.replace(/\D/g, "");
+        if (waDigits.length < 8 || waDigits.length > 15) {
+          statusEl.textContent = "Please add a valid WhatsApp number with country code — it's how the artist confirms your date.";
           scrollToEl("clientWhatsApp"); el("clientWhatsApp").focus();
           return;
         }

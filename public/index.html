@@ -5757,7 +5757,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
                     <button class="button small" data-booking-record-payment="${booking.bookingId}" style="background:var(--sage);">💰 Record payment</button>
                   </div>`}
-              ${!["Cancelled", "Completed"].includes(booking.status) && booking.eventDate && parseDay(booking.eventDate) < new Date(new Date().toDateString())
+              ${!["Cancelled", "Completed"].includes(booking.status) && booking.eventDate && parseDay(booking.eventDate) <= new Date(new Date().toDateString())
                 ? `<div class="action-row" style="margin-bottom:8px;align-items:center;flex-wrap:wrap;gap:6px;">
                     <button class="button small secondary" data-booking-action="complete" data-booking-id="${booking.bookingId}">🎉 Mark completed</button>
                   </div>`
@@ -8264,8 +8264,18 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             // one tap approves the price (holds the date) and sends the quote,
             // instead of approve → read toast → send.
             await postJson(`/api/leads/${leadId}/decision`, { decision: "YES" });
-            await postJson(`/api/leads/${leadId}/send-quote`, {});
-            toast(`Quote sent to ${who} 🎉 — their date is on hold until they pay the advance.`, "success");
+            let quoteRes;
+            try {
+              quoteRes = await postJson(`/api/leads/${leadId}/send-quote`, {});
+            } catch (sendErr) {
+              // The price WAS approved (date held) — don't let a send failure read
+              // as if nothing happened. Tell her exactly what to do next.
+              toast(`Price approved — ${who}'s date is on hold. The quote couldn't be sent automatically; open the request and tap "Send quote".`, "info");
+              await refreshSession();
+              if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
+              return;
+            }
+            openReminderWa(quoteRes, `Quote sent to ${who} 🎉 — their date is on hold until they pay the advance.`);
           }
           else if (action === "no") {
             if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
@@ -8318,7 +8328,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             toast(`Message sent to ${who}.`, "success");
           }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
-          else if (action === "send-quote") { await postJson(`/api/leads/${leadId}/send-quote`, {}); toast(`Quote sent to ${who}.`, "success"); }
+          else if (action === "send-quote") { const r = await postJson(`/api/leads/${leadId}/send-quote`, {}); openReminderWa(r, `Quote sent to ${who}.`); }
           else toast("Lead updated.", "success");
           await refreshSession();
           // Re-render the drawer with updated lead data if it's open for this lead.
@@ -8871,16 +8881,26 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         documentStatus.textContent = "";
         try {
           if (action === "invoice") { await postJson(`/api/bookings/${bookingId}/invoice`, {}); toast("Invoice generated.", "success"); }
-          else if (action === "send-invoice") { await postJson(`/api/bookings/${bookingId}/send-invoice`, {}); toast("Invoice sent to client.", "success"); }
+          else if (action === "send-invoice") { const r = await postJson(`/api/bookings/${bookingId}/send-invoice`, {}); openReminderWa(r, "Invoice sent to client."); }
           else if (action === "contract") { await postJson(`/api/bookings/${bookingId}/contract`, {}); toast("Contract sent for e-signing — the client will get an email to sign it.", "success"); }
-          else if (action === "send-contract") { await postJson(`/api/bookings/${bookingId}/send-contract`, {}); toast("Contract sent to client.", "success"); }
+          else if (action === "send-contract") { const r = await postJson(`/api/bookings/${bookingId}/send-contract`, {}); openReminderWa(r, "Contract sent to client."); }
           else if (action === "sync-contract") { const r = await postJson(`/api/bookings/${bookingId}/contract/sync`, {}); toast(`Contract: ${r.booking?.contractStatus || "Updated"}.`, "success"); }
           else if (action === "review") { const r = await postJson(`/api/bookings/${bookingId}/send-review`, {}); openReminderWa(r, "Review request sent."); }
           else if (action === "advance-reminder") { const r = await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "advance" }); openReminderWa(r, "Advance reminder sent."); }
           else if (action === "balance-reminder") { const r = await postJson(`/api/bookings/${bookingId}/send-collection`, { kind: "balance" }); openReminderWa(r, "Balance reminder sent."); }
           else if (action === "advance") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Advance Paid" }); toast("Marked as advance paid.", "success"); }
           else if (action === "full") { await postJson(`/api/bookings/${bookingId}/payment`, { paymentStatus: "Paid in Full" }); toast("Marked as paid in full.", "success"); }
-          else if (action === "complete") { await postJson(`/api/bookings/${bookingId}/complete`, {}); toast("Marked completed — lovely work! 🎉", "success"); }
+          else if (action === "complete") {
+            const bk = (sessionState?.dashboard?.bookings || []).find((x) => x.bookingId === bookingId);
+            if (bk && Number(bk.balanceDue) > 0) {
+              clearLoading(b);
+              const ok = await showConfirm("Complete with balance unpaid?", `${formatMoney(bk.balanceDue)} is still unpaid on this booking. Completing it moves it out of your "still to collect" list. Complete anyway?`, "Complete anyway");
+              if (!ok) return;
+              setLoading(b, "…");
+            }
+            await postJson(`/api/bookings/${bookingId}/complete`, {});
+            toast("Marked completed — lovely work! 🎉", "success");
+          }
           await refreshSession();
         } catch (error) {
           toast(error.message, "error");
