@@ -3401,7 +3401,7 @@ Thank you so much love, that date is open! I'll keep it tentatively held for you
 
     <!-- Credits explainer: shown the first time she taps the credits pill -->
     <div class="modal-overlay" id="credits-explainer-modal">
-      <div class="modal" style="max-width:420px;">
+      <div class="modal" style="max-width:420px;" role="dialog" aria-modal="true" aria-label="About credits">
         <div class="modal-head">
           <h3 style="margin:0;">✨ What are credits?</h3>
           <button class="modal-close" type="button" id="credits-explainer-close" aria-label="Close">×</button>
@@ -3693,7 +3693,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <!-- Quick setup wizard: the 5 essentials without opening full Settings -->
     <div class="modal-overlay" id="quick-setup-modal">
-      <div class="modal">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Quick setup">
         <div class="modal-head">
           <h3 style="margin:0;">Quick setup — 2 minutes</h3>
           <button class="modal-close" type="button" id="quick-setup-close" aria-label="Close">×</button>
@@ -3732,7 +3732,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <!-- Notify-team modal: one-tap WhatsApp briefs to freelance specialists -->
     <div class="modal-overlay" id="notify-team-modal">
-      <div class="modal">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Notify your team">
         <div class="modal-head">
           <h3 style="margin:0;">Notify your team</h3>
           <button class="modal-close" type="button" id="notify-team-close" aria-label="Close">×</button>
@@ -3757,7 +3757,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
 
     <!-- Document edit modal: override amount, add line items, attach a note -->
     <div class="modal-overlay" id="doc-edit-modal">
-      <div class="modal">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Edit document">
         <div class="modal-head">
           <h3 style="margin:0;" id="doc-edit-title">Edit document</h3>
           <button class="modal-close" type="button" id="doc-edit-close" aria-label="Close">×</button>
@@ -7071,6 +7071,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       document.getElementById("email-test-btn")?.addEventListener("click", async () => {
         const btn = document.getElementById("email-test-btn");
         const status = document.getElementById("email-test-status");
+        // The test sends against SAVED SMTP details, so unsaved edits would test
+        // the wrong (old/empty) config and read as a confusing failure.
+        if (_configDirty) {
+          showStatus(status, "Save your settings first — the test uses your saved email details.", "error");
+          return;
+        }
         setLoading(btn, "Sending…");
         try {
           const data = await postJson("/api/email/test", {});
@@ -8777,6 +8783,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const lead = leads.find((l) => l.leadId === dragLeadId);
         const id = dragLeadId; dragLeadId = null;
         if (!lead || lead.status === target) return;
+        // Dragging to "Completed" finishes the underlying booking.
+        if (target === "Completed") {
+          if (!lead.bookingId) { toast("Only a confirmed booking can be completed.", "error"); renderLeads(); return; }
+          try {
+            await postJson(`/api/bookings/${lead.bookingId}/complete`, {});
+            toast("Marked completed — lovely work! 🎉", "success");
+            await refreshSession();
+          } catch (err) { toast(err.message, "error"); renderLeads(); }
+          return;
+        }
         const map = {
           "Awaiting Client": "yes",
           "Lost": "no",
@@ -8784,7 +8800,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           "Payment Received": "full",
         };
         const action = map[target];
-        if (!action) { toast(`Can't move directly to "${target}".`, "error"); renderLeads(); return; }
+        if (!action) { toast(`Cards move forward through your pipeline — open the request to undo or change details.`, "info"); renderLeads(); return; }
         // Mis-drops to "Lost" — ask for a reason via the inline modal.
         if (action === "no") {
           const reason = await pickLostReason(lead.clientName);

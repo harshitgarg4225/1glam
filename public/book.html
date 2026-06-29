@@ -565,6 +565,7 @@
           card.dataset.key = type.key;
           const durationLabel = formatDuration(type.durationHours);
           card.setAttribute("aria-label", type.label);
+          card.setAttribute("aria-pressed", "false");
           const imgHtml = type.imageUrl
             ? '<img class="service-img" src="' + esc(type.imageUrl) + '" alt="" loading="lazy" />'
             : "";
@@ -578,8 +579,9 @@
             "</div>";
           card.addEventListener("click", () => {
             selectedEventType = type.key;
-            document.querySelectorAll(".service").forEach((s) => s.classList.remove("selected"));
+            document.querySelectorAll(".service").forEach((s) => { s.classList.remove("selected"); s.setAttribute("aria-pressed", "false"); });
             card.classList.add("selected");
+            card.setAttribute("aria-pressed", "true");
             renderServiceDetail(type);
             updateReadyByNote(type);
             // Switch to event-specific slots (e.g. Bridal only at 09:00 and 11:00)

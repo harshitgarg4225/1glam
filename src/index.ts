@@ -3816,6 +3816,9 @@ app.post("/api/leads/:leadId/quote", async (req, res, next) => {
     if (!workspace || !lead) {
       return res.status(404).json({ error: "Lead not found" });
     }
+    if (lead.quoteVoidedAt) {
+      return res.status(400).json({ error: "This quote is voided — clear the void before regenerating it." });
+    }
 
     lead = await ensureQuoteNumber(req.session.profile.email, req.session.googleTokens, lead);
     const quote = await generateQuoteDocument(workspace, req.session.googleTokens, lead);
@@ -3974,6 +3977,9 @@ app.post("/api/bookings/:bookingId/invoice", async (req, res, next) => {
     );
     if (!workspace || !booking) {
       return res.status(404).json({ error: "Booking not found" });
+    }
+    if (booking.invoiceVoidedAt) {
+      return res.status(400).json({ error: "This invoice is voided — clear the void before regenerating it." });
     }
 
     booking = await ensureInvoiceNumber(req.session.profile.email, req.session.googleTokens, booking);
@@ -5053,6 +5059,9 @@ app.post("/api/bookings/:bookingId/contract", async (req, res, next) => {
     );
     if (!lead) {
       return res.status(404).json({ error: "Lead not found for booking" });
+    }
+    if (booking.contractVoidedAt) {
+      return res.status(400).json({ error: "This contract is voided — clear the void before regenerating it." });
     }
 
     // Leegality is the premium e-sign path when configured; otherwise the
