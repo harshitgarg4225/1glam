@@ -2,27 +2,23 @@ import { z } from "zod";
 
 const numberFromForm = z.coerce.number();
 
-// A UPI handle (VPA) like "name@okhdfcbank". Empty is allowed (optional); a
-// non-empty value must look like a real VPA, or it produces a dead upi://pay QR
-// on every quote/invoice that the artist never notices.
-const upiField = z
-  .string()
-  .optional()
-  .default("")
-  .refine((v) => !v.trim() || /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(v.trim()), {
-    message: "Enter a valid UPI ID, e.g. yourname@okhdfcbank",
-  });
+// A UPI handle (VPA) like "name@okhdfcbank". We only NORMALISE (trim) here and
+// never hard-reject — a bad value must not 400 the artist's entire settings save
+// (the form re-submits every field on any change). The Settings UI warns inline
+// when it doesn't look like a valid VPA; isValidUpi/isValidGstin below back that.
+const upiField = z.string().optional().default("").transform((v) => v.trim());
 
-// GSTIN — 15 chars. Empty allowed; non-empty must be 15 alphanumerics (catches
-// typos before they print on tax paperwork) without over-rejecting valid ones.
-const gstField = z
-  .string()
-  .optional()
-  .default("")
-  .transform((v) => v.trim().toUpperCase())
-  .refine((v) => !v || /^[0-9A-Z]{15}$/.test(v), {
-    message: "GSTIN must be 15 characters (e.g. 22AAAAA0000A1Z5)",
-  });
+// GSTIN — normalise (trim, uppercase, strip inner spaces). Non-blocking for the
+// same reason; the UI warns when it isn't a well-formed 15-char GSTIN.
+const gstField = z.string().optional().default("").transform((v) => v.trim().toUpperCase().replace(/\s+/g, ""));
+
+// Format checks used by the UI (and exported for tests) to WARN — not to block.
+export function isValidUpi(v: string): boolean {
+  return /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-]{1,63}$/.test(String(v || "").trim());
+}
+export function isValidGstin(v: string): boolean {
+  return /^[0-9A-Z]{15}$/.test(String(v || "").trim().toUpperCase().replace(/\s+/g, ""));
+}
 
 // Normalises a comma-separated time-slot string to clean "HH:MM" tokens, dropping
 // anything that isn't a valid 24h time. Prevents free-text like "9am, noon" from

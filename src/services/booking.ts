@@ -824,18 +824,17 @@ export async function updatePaymentStatus(
   if (lead.record.bookingId) {
     const bk = await findBookingById(workspace, tokens, lead.record.bookingId, { fresh: true });
     if (bk) {
-      const paidSoFar = paymentsTotal(parsePaymentsLog(bk.record.paymentsLog));
       const target = paymentStatus === "Paid in Full" ? bk.record.finalPrice : bk.record.advanceAmount;
-      const delta = Math.max(0, Math.round(target - paidSoFar));
-      if (delta > 0) {
-        await recordBookingPayment(email, tokens, lead.record.bookingId, {
-          amount: delta,
-          method: "Other",
-          note: paymentStatus === "Paid in Full" ? "Marked paid in full" : "Marked advance received",
-          type: "payment",
-          ref: `markstatus:${paymentStatus}:${target}`,
-        });
-      }
+      // topUpToTarget recomputes the delta INSIDE the booking lock, so a payment
+      // landing concurrently can't make this over-credit the ledger.
+      await recordBookingPayment(email, tokens, lead.record.bookingId, {
+        amount: 0,
+        topUpToTarget: target,
+        method: "Other",
+        note: paymentStatus === "Paid in Full" ? "Marked paid in full" : "Marked advance received",
+        type: "payment",
+        ref: `markstatus:${paymentStatus}:${target}`,
+      });
     }
   }
   return { lead: nextLead };
@@ -922,7 +921,7 @@ export async function recordBookingPayment(
   email: string,
   tokens: Credentials,
   bookingId: string,
-  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" | "tip"; ref?: string },
+  input: { amount: number; method?: string; note?: string; type?: "payment" | "refund" | "tip"; ref?: string; topUpToTarget?: number },
 ) {
   let derived: "Advance Due" | "Advance Paid" | "Paid in Full" = "Advance Due";
   const booking = await updateBookingRecord(email, tokens, bookingId, (current) => {
@@ -934,9 +933,15 @@ export async function recordBookingPayment(
     // log we already have. Manual entries have no ref and are never deduped,
     // so two legitimate cash instalments still both count.
     const isDuplicate = Boolean(input.ref) && log.some((e) => e.ref === String(input.ref).slice(0, 60) && e.kind === kind);
-    if (!isDuplicate) {
+    // "Top up to target" (used by Mark advance/paid-in-full): compute the delta
+    // from the freshly-LOCKED log so a concurrent payment landing between an
+    // earlier read and this write can never over-credit the ledger.
+    const amountToAdd = typeof input.topUpToTarget === "number"
+      ? Math.max(0, Math.round(input.topUpToTarget - paymentsTotal(log)))
+      : Math.round(input.amount);
+    if (!isDuplicate && amountToAdd > 0) {
       log.push({
-        amount: Math.round(input.amount),
+        amount: amountToAdd,
         method: String(input.method ?? "UPI").slice(0, 30),
         note: String(input.note ?? "").slice(0, 120),
         at: new Date().toISOString(),

@@ -3958,6 +3958,25 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       attachPhoneCountryCode("qb-phone");
       attachPhoneCountryCode("le-phone");
 
+      // Non-blocking format nudges for UPI / GST. The server no longer rejects
+      // these (a bad value must not block the whole settings save), so we warn
+      // here so an honest typo doesn't quietly print a dead QR or wrong tax id.
+      (function () {
+        const upiRe = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-]{1,63}$/;
+        const gstRe = /^[0-9A-Z]{15}$/;
+        function warnOnBlur(id, ok, msg) {
+          const elx = document.getElementById(id);
+          if (!elx) return;
+          elx.addEventListener("blur", () => {
+            const v = (elx.value || "").trim();
+            if (v && !ok(v)) toast(msg, "info");
+          });
+        }
+        warnOnBlur("upiId", (v) => upiRe.test(v), "That UPI ID looks off — double-check it (e.g. name@okhdfcbank). You can still save.");
+        warnOnBlur("qs-upi", (v) => upiRe.test(v), "That UPI ID looks off — double-check it (e.g. name@okhdfcbank).");
+        warnOnBlur("gstNumber", (v) => gstRe.test(v.toUpperCase().replace(/\s+/g, "")), "That GSTIN isn't 15 characters — double-check it before it prints on invoices.");
+      })();
+
       const leadForm = document.getElementById("lead-form");
       const loginState = document.getElementById("login-state");
       const connectLink = document.getElementById("connect-link");
