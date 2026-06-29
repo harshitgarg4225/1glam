@@ -14,7 +14,7 @@ const gstField = z.string().optional().default("").transform((v) => v.trim().toU
 
 // Format checks used by the UI (and exported for tests) to WARN — not to block.
 export function isValidUpi(v: string): boolean {
-  return /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-]{1,63}$/.test(String(v || "").trim());
+  return /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/.test(String(v || "").trim());
 }
 export function isValidGstin(v: string): boolean {
   return /^[0-9A-Z]{15}$/.test(String(v || "").trim().toUpperCase().replace(/\s+/g, ""));

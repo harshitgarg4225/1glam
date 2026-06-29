@@ -1612,27 +1612,6 @@ async function updateBookingRow(
   invalidateBookingSheet(workspace.spreadsheetId);
 }
 
-async function updateBookingPaymentStatus(
-  workspace: WorkspaceRecord,
-  tokens: Credentials,
-  bookingId: string,
-  paymentStatus: string,
-) {
-  if (!bookingId) return;
-
-  await withSerializedLock(lockKeyFromString(`booking:${bookingId}`), async () => {
-    const found = await findBookingById(workspace, tokens, bookingId, { fresh: true });
-    if (!found) return;
-    const booking = found.record;
-    booking.paymentStatus = paymentStatus;
-    if (paymentStatus === "Paid in Full" && booking.status !== "Paid") {
-      booking.status = "Paid";
-      booking.statusChangedAt = new Date().toISOString();
-    }
-    await updateBookingRow(workspace, tokens, found.rowNumber, booking);
-  });
-}
-
 async function upsertTentativeCalendarEvent(
   workspace: WorkspaceRecord,
   tokens: Credentials,
