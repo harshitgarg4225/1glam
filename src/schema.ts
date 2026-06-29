@@ -2,6 +2,49 @@ import { z } from "zod";
 
 const numberFromForm = z.coerce.number();
 
+// A UPI handle (VPA) like "name@okhdfcbank". Empty is allowed (optional); a
+// non-empty value must look like a real VPA, or it produces a dead upi://pay QR
+// on every quote/invoice that the artist never notices.
+const upiField = z
+  .string()
+  .optional()
+  .default("")
+  .refine((v) => !v.trim() || /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(v.trim()), {
+    message: "Enter a valid UPI ID, e.g. yourname@okhdfcbank",
+  });
+
+// GSTIN — 15 chars. Empty allowed; non-empty must be 15 alphanumerics (catches
+// typos before they print on tax paperwork) without over-rejecting valid ones.
+const gstField = z
+  .string()
+  .optional()
+  .default("")
+  .transform((v) => v.trim().toUpperCase())
+  .refine((v) => !v || /^[0-9A-Z]{15}$/.test(v), {
+    message: "GSTIN must be 15 characters (e.g. 22AAAAA0000A1Z5)",
+  });
+
+// Normalises a comma-separated time-slot string to clean "HH:MM" tokens, dropping
+// anything that isn't a valid 24h time. Prevents free-text like "9am, noon" from
+// silently breaking slot generation on the public booking page.
+function normalizeTimeSlots(raw: string): string {
+  return String(raw || "")
+    .split(",")
+    .map((s) => s.trim())
+    .map((s) => {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+      if (!m) return "";
+      const h = Number(m[1]);
+      const min = Number(m[2]);
+      if (h > 23 || min > 59) return "";
+      return `${String(h).padStart(2, "0")}:${m[2]}`;
+    })
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .join(",");
+}
+const slotsField = z.string().optional().default("").transform(normalizeTimeSlots);
+
 export const workspaceConfigSchema = z.object({
   businessName: z.string().min(1),
   ownerName: z.string().min(1),
@@ -46,7 +89,7 @@ export const workspaceConfigSchema = z.object({
   profileHighMinFollowers: numberFromForm,
   advancePercentage: numberFromForm,
   depositPercentByService: z.string().optional().default(""),
-  upiId: z.string().optional().default(""),
+  upiId: upiField,
   qrImageUrl: z.string().optional().default(""),
   paymentTerms: z.string().min(1),
   googleReviewLink: z.string().optional().default(""),
@@ -100,7 +143,7 @@ export const workspaceConfigSchema = z.object({
   servicePartyAddons: z.string().optional().default(""),
   serviceShootAddons: z.string().optional().default(""),
   serviceOtherAddons: z.string().optional().default(""),
-  bookingTimeSlots: z.string().optional().default(""),
+  bookingTimeSlots: slotsField,
   bookingWaitlistEnabled: z.string().optional().default("No"),
   portfolioImages: z.string().optional().default(""),
   aboutText: z.string().optional().default(""),
@@ -136,7 +179,7 @@ export const workspaceConfigSchema = z.object({
   headline: z.string().optional().default(""),
   tagline: z.string().optional().default(""),
   logoUrl: z.string().optional().default(""),
-  gstNumber: z.string().optional().default(""),
+  gstNumber: gstField,
   gstPercentage: z.coerce.number().min(0).max(28).optional().default(0),
   cancellationWindowDays: z.coerce.number().min(0).max(365).optional().default(7),
   cancellationFeePercent: z.coerce.number().min(0).max(100).optional().default(50),
@@ -186,12 +229,12 @@ export const workspaceConfigSchema = z.object({
   serviceShootImageUrl: z.string().optional().default(""),
   serviceOtherImageUrl: z.string().optional().default(""),
   // Per-event time slots (comma-separated HH:MM overrides for the booking page)
-  timeSlotsBridal: z.string().optional().default(""),
-  timeSlotsEngagement: z.string().optional().default(""),
-  timeSlotsReception: z.string().optional().default(""),
-  timeSlotsParty: z.string().optional().default(""),
-  timeSlotsShoot: z.string().optional().default(""),
-  timeSlotsOther: z.string().optional().default(""),
+  timeSlotsBridal: slotsField,
+  timeSlotsEngagement: slotsField,
+  timeSlotsReception: slotsField,
+  timeSlotsParty: slotsField,
+  timeSlotsShoot: slotsField,
+  timeSlotsOther: slotsField,
 });
 
 export type WorkspaceConfigInput = z.infer<typeof workspaceConfigSchema>;

@@ -9962,6 +9962,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 { label: "Offer them the slot →", onClick: () => { activateTab("bookings"); loadWaitlist(); } },
               );
             }
+            // Cancelling never auto-refunds money already captured — if any was
+            // received, prompt her to record/issue a refund so the client isn't
+            // silently left out of pocket.
+            const paidOnCancel = parseLedger(b?.paymentsLog || "[]").reduce(
+              (s, en) => s + (en.kind === "refund" ? -Number(en.amount || 0) : en.kind === "tip" ? 0 : Number(en.amount || 0)), 0);
+            if (paidOnCancel > 0) {
+              toast(`${formatMoney(paidOnCancel)} was already received — cancelling doesn't refund it automatically.`, "info",
+                { label: "Record a refund →", onClick: () => openPaymentModal(bookingId) });
+            }
             // Check if within late-cancellation window to prompt for fee
             if (b?.eventDate) {
               const cfg = sessionState?.workspace?.config || {};
@@ -10756,11 +10765,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         setLoading(btn, "Saving…");
         try {
           const type = document.getElementById("pay-type").value;
+          // One idempotency key per submit, so a retried/replayed request records
+          // the payment once — two real instalments are two submits (two keys).
+          const ref = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `rec-${Date.now()}-${Math.random().toString(36).slice(2)}`;
           const res = await postJson(`/api/bookings/${paymentModalBookingId}/payments`, {
             amount,
             method: document.getElementById("pay-method").value,
             note: document.getElementById("pay-note").value,
             type,
+            ref,
           });
           closePaymentModal();
           const nowPaid = res?.booking?.paymentStatus === "Paid in Full";

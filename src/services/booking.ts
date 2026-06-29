@@ -377,7 +377,7 @@ export async function applyOwnerDecision(
     const updated: LeadRecord = {
       ...lead.record,
       ownerDecision: "NO",
-      ownerNotes: ownerNotes ?? "",
+      ownerNotes: ownerNotes ?? lead.record.ownerNotes,
       lostReason: lostReason ?? lead.record.lostReason,
       status: "Lost",
       lastContactedAt: new Date().toISOString(),
@@ -405,7 +405,7 @@ export async function applyOwnerDecision(
   const updated: LeadRecord = {
     ...lead.record,
     ownerDecision: decision,
-    ownerNotes: ownerNotes ?? "",
+    ownerNotes: ownerNotes ?? lead.record.ownerNotes,
     finalApprovedPrice,
     discountPercent,
     holdExpiresAt,
@@ -674,13 +674,15 @@ export async function rescheduleBooking(
   const booking = await findBookingById(workspace, tokens, bookingId);
   if (!booking) throw new Error("Booking not found");
   if (booking.record.status === "Cancelled") throw new Error("This booking is cancelled — create a new one instead.");
+  // Don't allow moving a booking into the past.
+  const todayIst = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  if (input.eventDate && input.eventDate < todayIst) {
+    throw new Error("Pick a new date that's today or later.");
+  }
   const lead = await findLeadById(workspace, tokens, booking.record.leadId);
 
   const eventTime = input.eventTime ?? booking.record.eventTime;
   const venue = input.venue ?? booking.record.venue;
-  if (booking.record.confirmedCalendarEventId) {
-    await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, booking.record.confirmedCalendarEventId);
-  }
   const leadForEvent: LeadRecord & { bookingId: string } = {
     ...(lead?.record ?? leadFromBooking(booking.record)),
     eventDate: input.eventDate,
@@ -688,7 +690,13 @@ export async function rescheduleBooking(
     locationText: venue,
     bookingId,
   };
+  // Create the NEW calendar event first; only remove the old hold once the new
+  // one exists, so a calendar failure can't leave the booking pointing at a
+  // deleted event (booking/calendar desync).
   const newEventId = await createConfirmedCalendarEvent(workspace, tokens, leadForEvent);
+  if (booking.record.confirmedCalendarEventId) {
+    await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, booking.record.confirmedCalendarEventId).catch(() => {});
+  }
 
   const updatedBooking: BookingRecord = {
     ...booking.record,
@@ -807,7 +815,29 @@ export async function updatePaymentStatus(
   };
 
   await updateLeadRow(workspace, tokens, lead.rowNumber, nextLead);
-  await updateBookingPaymentStatus(workspace, tokens, lead.record.bookingId, paymentStatus);
+
+  // Record a ledger entry so the booking's payment status is backed by real
+  // money in the log — otherwise "Mark advance/paid-in-full" set only a status
+  // string, and the next ledger recompute (recording or deleting a payment)
+  // silently reverted it. We top up to the target amount; an idempotency ref
+  // stops a double-tap recording twice.
+  if (lead.record.bookingId) {
+    const bk = await findBookingById(workspace, tokens, lead.record.bookingId, { fresh: true });
+    if (bk) {
+      const paidSoFar = paymentsTotal(parsePaymentsLog(bk.record.paymentsLog));
+      const target = paymentStatus === "Paid in Full" ? bk.record.finalPrice : bk.record.advanceAmount;
+      const delta = Math.max(0, Math.round(target - paidSoFar));
+      if (delta > 0) {
+        await recordBookingPayment(email, tokens, lead.record.bookingId, {
+          amount: delta,
+          method: "Other",
+          note: paymentStatus === "Paid in Full" ? "Marked paid in full" : "Marked advance received",
+          type: "payment",
+          ref: `markstatus:${paymentStatus}:${target}`,
+        });
+      }
+    }
+  }
   return { lead: nextLead };
 }
 

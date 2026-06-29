@@ -17,6 +17,28 @@ test("new WhatsApp-template fields default to empty (free-text fallback)", () =>
   assert.equal(shape.teamNotifyTemplate.parse(undefined), "");
 });
 
+test("UPI id: empty ok, valid VPA ok, junk rejected", () => {
+  const f = workspaceConfigSchema.shape.upiId;
+  assert.equal(f.parse(""), "");
+  assert.equal(f.parse("aisha@okhdfcbank"), "aisha@okhdfcbank");
+  assert.throws(() => f.parse("aisha")); // no @ → dead QR
+  assert.throws(() => f.parse("aisha bank"));
+});
+
+test("GSTIN: empty ok, 15-char ok (uppercased), wrong length rejected", () => {
+  const f = workspaceConfigSchema.shape.gstNumber;
+  assert.equal(f.parse(""), "");
+  assert.equal(f.parse("22aaaaa0000a1z5"), "22AAAAA0000A1Z5"); // normalised
+  assert.throws(() => f.parse("22AAAAA")); // too short
+});
+
+test("time slots: free text is normalised to clean HH:MM, junk dropped", () => {
+  const f = workspaceConfigSchema.shape.bookingTimeSlots;
+  assert.equal(f.parse("9:00, 11:00 , 14:00"), "09:00,11:00,14:00");
+  assert.equal(f.parse("9am, noon, 25:00, 14:00"), "14:00"); // only the valid one survives
+  assert.equal(f.parse("09:00,09:00"), "09:00"); // de-duped
+});
+
 test("sensible non-empty defaults are preserved", () => {
   const shape = workspaceConfigSchema.shape;
   assert.equal(shape.notifyTeamOnBooking.parse(undefined), "Yes");
