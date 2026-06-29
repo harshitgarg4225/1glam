@@ -8407,6 +8407,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const items = parseLeadOrderItems(lead);
         const rows = (items.length ? items : [{}]).map(orderRowHtml).join("");
         const packages = parseQuotePackages();
+        const travel = Number(lead.travelCost) || 0;
+        const travelKm = Number(lead.distanceKm) > 0 ? ` (~${Math.round(Number(lead.distanceKm))} km)` : "";
         const packagePicker = packages.length
           ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
               <select data-order-package style="flex:1;font-size:13px;">
@@ -8415,17 +8417,39 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
               </select>
             </div>`
           : "";
+        // The line-item grid covers the SERVICE only; on save the server adds
+        // travel on top of the booking value. When the lead has a travel fee we
+        // show it as an explicit "Service subtotal → + Travel → Booking value"
+        // breakdown so the saved headline never jumps without explanation. With
+        // no travel, the footer stays a single "Order total" line as before.
+        let footer;
+        if (travel > 0) {
+          footer = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
+            <span class="muted" style="font-size:13px;">Service subtotal</span><strong data-order-subtotal style="font-size:14px;">₹0</strong>
+          </div>
+          <div data-order-travel-line style="display:none;justify-content:space-between;align-items:center;margin-top:4px;font-size:13px;color:var(--muted);">
+            <span>Travel &amp; Conveyance${travelKm}</span><span>+ ${formatMoney(travel)}</span>
+          </div>
+          <div data-order-bookingvalue-row style="display:none;justify-content:space-between;align-items:center;margin-top:6px;padding-top:8px;border-top:1px solid var(--line);">
+            <strong>Booking value</strong><strong data-order-total style="font-size:17px;color:var(--accent);">₹0</strong>
+          </div>`;
+        } else {
+          footer = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
+            <strong>Order total</strong><strong data-order-subtotal style="font-size:17px;color:var(--accent);">₹0</strong>
+          </div>
+          <span data-order-total hidden>₹0</span>`;
+        }
         return `<div class="drawer-section">
           <div class="drawer-section-title">Order details</div>
           ${packagePicker}
           <div style="display:flex;gap:6px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
             <span style="flex:2;">Line item</span><span style="flex:0 0 52px;text-align:center;">Qty</span><span style="flex:1;">Price</span><span style="flex:0 0 72px;text-align:right;">Total</span><span style="flex:0 0 26px;"></span>
           </div>
-          <div data-order-grid>${rows}</div>
+          <div data-order-grid data-travel="${travel}">${rows}</div>
           <button type="button" class="button tiny secondary" data-oi-add>+ Add line item</button>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
-            <strong>Order total</strong><strong data-order-total style="font-size:17px;color:var(--accent);">₹0</strong>
-          </div>
+          ${footer}
           <button class="button small" type="button" data-order-save style="width:100%;margin-top:10px;">Save order &amp; price</button>
           <p class="muted" style="font-size:12px;margin:8px 0 0;">This sets the quoted price and flows into the quote, invoice and contract.</p>
         </div>`;
@@ -8463,16 +8487,32 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       });
 
       function computeOrderTotals() {
-        let grand = 0;
+        let subtotal = 0;
         leadDrawerBody.querySelectorAll(".order-row").forEach((row) => {
           const qty = Number(row.querySelector("[data-oi-qty]").value) || 0;
           const price = Number(row.querySelector("[data-oi-price]").value) || 0;
           const total = qty * price;
-          grand += total;
+          subtotal += total;
           row.querySelector("[data-oi-total]").textContent = formatMoney(total);
         });
+        const grid = leadDrawerBody.querySelector("[data-order-grid]");
+        const travel = grid ? (Number(grid.dataset.travel) || 0) : 0;
+        // Server adds travel only when there are line items (otherwise it leaves
+        // the existing price untouched), so mirror that: booking value = subtotal
+        // + travel only when subtotal > 0.
+        const bookingValue = subtotal > 0 ? subtotal + travel : subtotal;
+        const sub = leadDrawerBody.querySelector("[data-order-subtotal]");
+        if (sub) sub.textContent = formatMoney(subtotal);
         const g = leadDrawerBody.querySelector("[data-order-total]");
-        if (g) g.textContent = formatMoney(grand);
+        if (g) g.textContent = formatMoney(bookingValue);
+        // The travel + booking-value rows only make sense once there's a service
+        // line to add travel onto — hide them at zero so it doesn't read as
+        // "+₹X travel" on an empty order.
+        const showTravel = travel > 0 && subtotal > 0;
+        const travelLine = leadDrawerBody.querySelector("[data-order-travel-line]");
+        if (travelLine) travelLine.style.display = showTravel ? "flex" : "none";
+        const bvRow = leadDrawerBody.querySelector("[data-order-bookingvalue-row]");
+        if (bvRow) bvRow.style.display = showTravel ? "flex" : "none";
       }
       async function saveOrder() {
         const leadId = leadDrawer.dataset.leadId;
@@ -8486,7 +8526,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         setLoading(saveBtn, "Saving…");
         try {
           const resp = await postJson(`/api/leads/${encodeURIComponent(leadId)}/order`, { items });
-          toast("Order saved.", "success");
+          const bookingValue = resp && resp.lead ? Number(resp.lead.finalApprovedPrice) || 0 : 0;
+          const travel = resp && resp.lead ? Number(resp.lead.travelCost) || 0 : 0;
+          // Make the booking value explicit on save — and call out travel when it
+          // was added on top of the line items — so the headline isn't a surprise.
+          toast(
+            bookingValue > 0
+              ? `Order saved — booking value ${formatMoney(bookingValue)}${travel > 0 && items.length ? ` (incl. ${formatMoney(travel)} travel)` : ""}.`
+              : "Order saved.",
+            "success",
+          );
           if (resp && resp.lead) renderLeadDrawer(resp.lead);
           refreshSession();
         } catch (err) {
