@@ -130,6 +130,9 @@ export type LeadRecord = {
   urgencyFlag: string;
   // Optional message the client leaves when accepting the quote.
   clientNote: string;
+  // Travel fee computed for this lead's venue (₹), persisted so it can be shown
+  // as a line item and survives later config changes / the order editor.
+  travelCost: number;
 };
 
 export type BookingRecord = {
@@ -178,6 +181,9 @@ export type BookingRecord = {
   // ISO timestamp of the most recent status change — anchors status-triggered
   // automations (review request, post-status payment reminders).
   statusChangedAt: string;
+  // Travel fee for this booking's venue (₹), carried from the lead so it can be
+  // shown as a line item independent of later config changes.
+  travelCost: number;
 };
 
 export type DashboardData = {
@@ -295,6 +301,7 @@ export async function createLeadForWorkspace(
     lostReason: "",
     urgencyFlag: "",
     clientNote: "",
+    travelCost: pricing.travelCost,
   };
 
   await sheets.spreadsheets.values.append({
@@ -528,6 +535,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     invoiceDueDate: "",
     arrivedAt: "",
     statusChangedAt: new Date().toISOString(),
+    travelCost: lead.record.travelCost || 0,
   };
 
   const updatedLead: LeadRecord = {
@@ -791,7 +799,7 @@ function leadFromBooking(booking: BookingRecord): LeadRecord {
     bookingId: booking.bookingId, paymentStatus: booking.paymentStatus, quoteUrl: "",
     quoteGeneratedAt: "", quoteVoidedAt: "", quoteAdjustments: "", orderItems: booking.orderItems,
     quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "", referredBy: "",
-    lostReason: "", urgencyFlag: "", clientNote: "",
+    lostReason: "", urgencyFlag: "", clientNote: "", travelCost: booking.travelCost,
   };
 }
 
@@ -1102,6 +1110,7 @@ export async function importClients(
       lostReason: "",
       urgencyFlag: "",
       clientNote: "",
+      travelCost: 0,
     });
   }
 
@@ -1879,6 +1888,7 @@ function leadToRow(lead: LeadRecord) {
     lead.lostReason,
     lead.urgencyFlag,
     lead.clientNote,
+    lead.travelCost,
   ];
 }
 
@@ -1929,6 +1939,7 @@ function rowToLead(row: string[]): LeadRecord {
     lostReason: row[42] ?? "",
     urgencyFlag: row[43] ?? "",
     clientNote: row[44] ?? "",
+    travelCost: Number(row[45] ?? 0),
   };
 }
 
@@ -1972,6 +1983,7 @@ export function bookingToRow(booking: BookingRecord) {
     booking.invoiceDueDate,
     booking.arrivedAt,
     booking.statusChangedAt,
+    booking.travelCost,
   ];
 }
 
@@ -2015,6 +2027,7 @@ export function rowToBooking(row: string[]): BookingRecord {
     invoiceDueDate: row[35] ?? "",
     arrivedAt: row[36] ?? "",
     statusChangedAt: row[37] ?? "",
+    travelCost: Number(row[38] ?? 0),
   };
 }
 

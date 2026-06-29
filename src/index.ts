@@ -4351,7 +4351,10 @@ app.post("/api/leads/:leadId/order", async (req, res, next) => {
     const updated = await updateLeadRecord(ctx.email, ctx.tokens, req.params.leadId, (current) => ({
       ...current,
       orderItems,
-      finalApprovedPrice: clean.length ? total : current.finalApprovedPrice,
+      // The order editor itemises the SERVICE only — keep the travel fee on top
+      // of the booking value so it isn't silently dropped (it's itemised as its
+      // own "Travel" line on the quote/invoice).
+      finalApprovedPrice: clean.length ? total + (Number(current.travelCost) || 0) : current.finalApprovedPrice,
     }));
     if (!updated) return res.status(404).json({ error: "Lead not found" });
     res.json({ ok: true, lead: updated, total });
@@ -4423,19 +4426,25 @@ app.get("/api/documents/sample/:type", async (req, res, next) => {
     if (!workspace) return res.status(404).json({ error: "Workspace not found" });
 
     const eventDate = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
-    const price = Number(workspace.config.basePriceBridal) || 25000;
+    const serviceBase = Number(workspace.config.basePriceBridal) || 25000;
+    // A small sample travel fee so the preview demonstrates the itemised "Travel
+    // & Conveyance" line. The price is travel-inclusive (as a real lead would be),
+    // so the breakdown reconciles to the quoted amount.
+    const sampleTravel = 1500;
+    const sampleDistanceKm = 18;
+    const price = serviceBase + sampleTravel;
     const advance = Math.round((price * (Number(workspace.config.advancePercentage) || 30)) / 100);
     const sampleLead = {
       leadId: "SAMPLE", createdAt: new Date().toISOString(), source: "Instagram",
       clientName: "Priya Sharma (Sample)", clientWhatsApp: "+91 98765 43210", clientInstagram: "priya.sample",
       eventType: "Bridal", eventDate, eventTime: "10:00", locationText: `${workspace.config.city || "Your city"}`,
-      distanceKm: 0, travelTimeMin: 0, outstationFlag: "No", profileTier: "Mid", followers: 0,
+      distanceKm: sampleDistanceKm, travelTimeMin: 35, outstationFlag: "No", profileTier: "Mid", followers: 0,
       clientTags: "", aiInsight: "", suggestedReply: "", demandCount: 0, scarcityTag: "",
       holdExpiresAt: "", initialAiPrice: price, finalApprovedPrice: price, discountPercent: 0,
       ownerDecision: "YES", ownerNotes: "", status: "Confirmed", assignedArtist: workspace.config.ownerName,
       lastContactedAt: "", tentativeCalendarEventId: "", confirmedCalendarEventId: "", bookingId: "SAMPLE-B",
       paymentStatus: "Advance Due", quoteUrl: "sample", quoteGeneratedAt: new Date().toISOString(),
-      quoteVoidedAt: "", quoteAdjustments: "", orderItems: "",
+      quoteVoidedAt: "", quoteAdjustments: "", orderItems: "", travelCost: sampleTravel,
     } as LeadRecord;
     const sampleBooking = {
       bookingId: "SAMPLE-B", leadId: "SAMPLE", bookedAt: new Date().toISOString(),
@@ -4446,7 +4455,7 @@ app.get("/api/documents/sample/:type", async (req, res, next) => {
       contractUrl: "sample", invoiceUrl: "sample", paymentStatus: "Advance Due", status: "Confirmed",
       contractStatus: "Draft", contractSentAt: "", invoiceGeneratedAt: new Date().toISOString(),
       remindersSent: "", invoiceVoidedAt: "", contractVoidedAt: "", invoiceAdjustments: "",
-      contractAdjustments: "", orderItems: "", contractSignedAt: "", contractSignerName: "",
+      contractAdjustments: "", orderItems: "", contractSignedAt: "", contractSignerName: "", travelCost: sampleTravel,
     } as BookingRecord;
 
     const bytes =

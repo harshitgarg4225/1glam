@@ -7,7 +7,7 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-
 
 const { isPublicHttpUrl } = await import("../src/services/http.ts");
 const { roundToPremiumNumber } = await import("../src/services/booking.ts");
-const { parseDocumentAdjustments, parseOrderItems } = await import("../src/services/documents.ts");
+const { parseDocumentAdjustments, parseOrderItems, travelLineItem } = await import("../src/services/documents.ts");
 const { buildAssistantSnapshot } = await import("../src/services/assistant.ts");
 const { quickBookingSchema } = await import("../src/api-schema.ts");
 
@@ -121,6 +121,28 @@ test("parseOrderItems drops rows with no label or zero quantity, and tolerates j
   );
   assert.equal(parsed.items.length, 1);
   assert.equal(parsed.total, 200);
+});
+
+// --- Travel itemisation (travelLineItem) -------------------------------------
+
+test("travelLineItem renders a labelled line with the km when known", () => {
+  const lines = travelLineItem(1500, 18);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0][0], "Travel & Conveyance (~18 km)");
+  assert.match(lines[0][1], /1,500/);
+});
+
+test("travelLineItem omits the km when distance is unknown (bookings)", () => {
+  const lines = travelLineItem(1500);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0][0], "Travel & Conveyance");
+});
+
+test("travelLineItem returns nothing for zero/negative/NaN travel (no phantom line)", () => {
+  assert.deepEqual(travelLineItem(0, 10), []);
+  assert.deepEqual(travelLineItem(-5), []);
+  assert.deepEqual(travelLineItem(NaN), []);
+  assert.deepEqual(travelLineItem(undefined as unknown as number), []);
 });
 
 // --- AI assistant snapshot (buildAssistantSnapshot) ----------------------------

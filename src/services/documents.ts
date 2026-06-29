@@ -194,6 +194,18 @@ function applyAdjustments(base: number, adj: DocumentAdjustments | undefined) {
   return { total, extraLines, note: adj?.note?.trim() || "" };
 }
 
+// The travel/conveyance line for a document. Travel is a real, separate cost the
+// client is paying for, so it's always itemised explicitly rather than folded
+// silently into the headline. Returns [] when there's no travel fee. The km is
+// shown when known (leads carry distanceKm; bookings don't) so the client can see
+// the basis for the charge.
+export function travelLineItem(travelCost: number, distanceKm?: number): [string, string][] {
+  const cost = Math.max(0, Math.round(Number(travelCost) || 0));
+  if (cost <= 0) return [];
+  const km = Number(distanceKm) > 0 ? ` (~${Math.round(Number(distanceKm))} km)` : "";
+  return [[`Travel & Conveyance${km}`, inr(cost)]];
+}
+
 // Builds the quote PDF bytes in memory (no Drive upload). Used for both the
 // in-app preview and the Drive-backed shareable document.
 export async function buildQuotePdfBytes(
@@ -203,7 +215,13 @@ export async function buildQuotePdfBytes(
 ): Promise<Uint8Array> {
   const quoteNumber = lead.quoteNumber || `Q-${lead.leadId}`;
   const order = parseOrderItems(lead.orderItems);
-  const autoQuoted = order.total > 0 ? order.total : lead.finalApprovedPrice || lead.initialAiPrice;
+  const travelCost = Math.max(0, Math.round(Number(lead.travelCost) || 0));
+  // The folded price (finalApprovedPrice) already includes travel; the itemised
+  // order total does NOT (the order editor covers the service only), so we add
+  // travel back on top in order mode. Either way travel ends up inside the
+  // quoted amount AND shown as its own line below — no double counting, nothing
+  // dropped.
+  const autoQuoted = order.total > 0 ? order.total + travelCost : lead.finalApprovedPrice || lead.initialAiPrice;
   const { total: quotedAmount, extraLines, note } = applyAdjustments(autoQuoted, options.adjustments);
   // Range mode: the quote presents an estimate band instead of one number, and
   // the advance is computed on the low end so the client can still confirm.
@@ -214,6 +232,30 @@ export async function buildQuotePdfBytes(
   const advanceAmount = premiumRound(
     ((range ? range.low : quotedAmount) * workspace.config.advancePercentage) / 100,
   );
+
+  // Lead-level discount the owner approved (folded mode only): surface the
+  // standard price and the saving so the client sees the value of the deal. The
+  // discount amount is travel-independent (travel is equal in both initial and
+  // final), so the breakdown still reconciles to the quoted amount. Skipped when
+  // a document-level override/discount drives its own lines, or when itemised
+  // order lines already define the breakdown.
+  const leadDiscountLines: [string, string][] = [];
+  if (
+    !range &&
+    order.total === 0 &&
+    !options.adjustments?.amountOverride &&
+    !options.adjustments?.discountPercent &&
+    lead.discountPercent > 0 &&
+    lead.initialAiPrice > lead.finalApprovedPrice &&
+    lead.finalApprovedPrice > 0
+  ) {
+    const discountAmount = Math.round(lead.initialAiPrice - lead.finalApprovedPrice);
+    const standardService = Math.round(lead.initialAiPrice) - travelCost;
+    if (discountAmount > 0 && standardService > 0) {
+      leadDiscountLines.push(["Standard Price", inr(standardService)]);
+      leadDiscountLines.push([`Discount (${lead.discountPercent}%)`, `- ${inr(discountAmount)}`]);
+    }
+  }
 
   const theme = getDocumentTheme(workspace.config.documentTemplate, workspace.config.brandColor);
   const pdf = await PDFDocument.create();
@@ -251,6 +293,8 @@ export async function buildQuotePdfBytes(
     heading: "Quote Summary",
     lines: [
       ...order.lines,
+      ...leadDiscountLines,
+      ...(range ? [] : travelLineItem(travelCost, lead.distanceKm)),
       ...(range ? [] : gstLines(quotedAmount, workspace.config.gstPercentage)),
       ...extraLines,
       range
@@ -359,6 +403,7 @@ export async function buildInvoicePdfBytes(
     heading: `${stage.label} Invoice`,
     lines: [
       ...order.lines,
+      ...travelLineItem(booking.travelCost),
       ...gstLines(stage.amount, workspace.config.gstPercentage),
       ...extraLines,
       ["Invoice Amount", inr(stage.amount)],
@@ -432,7 +477,10 @@ export async function generateContractPdfBytes(
 ) {
   const contractNumber = `CTR-${booking.bookingId}`;
   const order = parseOrderItems(booking.orderItems);
-  const adjusted = applyAdjustments(order.total > 0 ? order.total : booking.finalPrice, options.adjustments);
+  const travelCost = Math.max(0, Math.round(Number(booking.travelCost) || 0));
+  // Order lines cover the service only — add travel so the booking value matches
+  // finalPrice (which includes it) instead of silently dropping travel.
+  const adjusted = applyAdjustments(order.total > 0 ? order.total + travelCost : booking.finalPrice, options.adjustments);
   const theme = getDocumentTheme(workspace.config.documentTemplate, workspace.config.brandColor);
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
@@ -469,6 +517,7 @@ export async function generateContractPdfBytes(
     heading: "Commercial Terms",
     lines: [
       ...order.lines,
+      ...travelLineItem(travelCost),
       ["Booking Value", inr(adjusted.total)],
       ...adjusted.extraLines,
       ["Advance", inr(booking.advanceAmount)],
