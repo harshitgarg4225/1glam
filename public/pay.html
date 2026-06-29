@@ -157,6 +157,13 @@
     function inr(n) {
       return "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
     }
+    function fmt12h(t) {
+      const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
+      if (!m) return String(t || "");
+      let h = Number(m[1]); const min = m[2];
+      const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+      return h + (min !== "00" ? ":" + min : "") + " " + ap;
+    }
     function fmtDate(s) {
       if (!s) return "";
       const d = new Date(s + "T00:00:00");
@@ -187,7 +194,7 @@
       document.getElementById("biz-name").textContent = d.businessName;
       const metaRows = [
         d.eventType ? `<div class="booking-meta-row">📋 <span class="meta-val">${esc(d.eventType)}</span></div>` : "",
-        `<div class="booking-meta-row">📅 <span class="meta-val">${esc(fmtDate(d.eventDate))}${d.eventTime ? " · " + esc(d.eventTime) : ""}</span></div>`,
+        `<div class="booking-meta-row">📅 <span class="meta-val">${esc(fmtDate(d.eventDate))}${d.eventTime ? " · " + esc(fmt12h(d.eventTime)) : ""}</span></div>`,
         d.venue ? `<div class="booking-meta-row">📍 <span class="meta-val">${esc(d.venue)}</span></div>` : "",
       ].filter(Boolean).join("");
       document.getElementById("booking-meta").innerHTML = metaRows;

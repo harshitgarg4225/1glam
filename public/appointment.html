@@ -107,6 +107,13 @@
   // Server-sourced URLs go straight into href — neutralise any non-http(s)/relative
   // scheme (e.g. a "javascript:" payload) before it can execute on click.
   const safeUrl = (u) => (/^(https?:\/\/|\/)/i.test(String(u || "")) ? String(u) : "#");
+  const fmt12h = (t) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
+    if (!m) return String(t || "");
+    let h = Number(m[1]); const min = m[2];
+    const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+    return h + (min !== "00" ? ":" + min : "") + " " + ap;
+  };
   const fmtDate = (s) => {
     if (!s) return "";
     const d = new Date(s + "T00:00:00");
@@ -161,7 +168,7 @@
     // Details rows
     const rows = [
       ["📅", "Date", fmtDate(d.eventDate)],
-      d.eventTime ? ["🕒", "Time", d.eventTime] : null,
+      d.eventTime ? ["🕒", "Time", fmt12h(d.eventTime)] : null,
       d.venue ? ["📍", "Location", d.venue] : null,
     ].filter(Boolean);
     document.getElementById("details-list").innerHTML = rows.map(([icon, label, value]) =>

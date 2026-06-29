@@ -112,6 +112,13 @@
     let leadIdForHub = "";
 
     function fmtMoney(v) { return "₹" + Number(v || 0).toLocaleString("en-IN"); }
+    function fmt12h(t) {
+      const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
+      if (!m) return String(t || "");
+      let h = Number(m[1]); const min = m[2];
+      const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+      return h + (min !== "00" ? ":" + min : "") + " " + ap;
+    }
     function fmtDay(v) {
       if (!v) return "To be confirmed";
       // Parse date-only strings at local midnight so the day never shifts back
@@ -153,7 +160,7 @@
         // one-tap confirm, not a "type your full legal name" chore (still editable).
         if (data.clientName) document.getElementById("signer").value = data.clientName;
         document.getElementById("event").textContent = data.eventType;
-        document.getElementById("date").textContent = fmtDay(data.eventDate) + (data.eventTime ? " · " + data.eventTime : "");
+        document.getElementById("date").textContent = fmtDay(data.eventDate) + (data.eventTime ? " · " + fmt12h(data.eventTime) : "");
         if (data.venue) document.getElementById("venue").textContent = data.venue;
         else document.getElementById("venue-row").style.display = "none";
         document.getElementById("price").textContent = fmtMoney(data.finalPrice);

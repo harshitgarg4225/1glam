@@ -74,6 +74,13 @@
     const qs = `?sig=${encodeURIComponent(sig || "")}&exp=${encodeURIComponent(exp || "")}`;
 
     function inr(n) { return "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN"); }
+    function fmt12h(t) {
+      const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
+      if (!m) return String(t || "");
+      let h = Number(m[1]); const min = m[2];
+      const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+      return h + (min !== "00" ? ":" + min : "") + " " + ap;
+    }
     function formatDate(d) {
       if (!d) return "—";
       try { return new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "long", year: "numeric" }); }
@@ -111,7 +118,7 @@
         <p class="sub">Hi ${escHtml(b.clientName)}, we're sorry you can't make it. Please review the details before confirming.</p>
         <div class="info-box">
           <div class="info-row"><span class="info-label">Service</span><span class="info-value">${escHtml(b.eventType)}</span></div>
-          <div class="info-row"><span class="info-label">Date</span><span class="info-value">${formatDate(b.eventDate)}${b.eventTime ? " · " + escHtml(b.eventTime) : ""}</span></div>
+          <div class="info-row"><span class="info-label">Date</span><span class="info-value">${formatDate(b.eventDate)}${b.eventTime ? " · " + escHtml(fmt12h(b.eventTime)) : ""}</span></div>
           ${b.venue ? `<div class="info-row"><span class="info-label">Venue</span><span class="info-value">${escHtml(b.venue)}</span></div>` : ""}
           ${b.finalPrice ? `<div class="info-row"><span class="info-label">Booking value</span><span class="info-value">${inr(b.finalPrice)}</span></div>` : ""}
         </div>
