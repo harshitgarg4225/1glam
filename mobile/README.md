@@ -55,11 +55,11 @@ Capabilities*:
 
 ### App URL
 
-`capacitor.config.ts` points the webview at `https://busydays.in`. Override per
-build with `CAP_SERVER_URL`:
+`capacitor.config.ts` points the webview at `https://www.busydays.co`. Override
+per build with `CAP_SERVER_URL`:
 
 ```bash
-CAP_SERVER_URL=https://staging.busydays.in npx cap sync
+CAP_SERVER_URL=https://staging.busydays.co npx cap sync
 ```
 
 ### Icons & splash screens
