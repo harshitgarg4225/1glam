@@ -15,7 +15,7 @@ on:
       server_url:
         description: "Web app URL the shell loads"
         required: false
-        default: "https://1glam-production.up.railway.app"
+        default: "https://www.busydays.co"
   push:
     branches: [main]
     paths: ["mobile/**"]
@@ -48,7 +48,7 @@ jobs:
         working-directory: mobile
         run: npx cap sync android
         env:
-          CAP_SERVER_URL: ${{ github.event.inputs.server_url || 'https://1glam-production.up.railway.app' }}
+          CAP_SERVER_URL: ${{ github.event.inputs.server_url || 'https://www.busydays.co' }}
 
       # Optional push support: when the FCM Android config is stored as a
       # secret, bake it in so the debug build can receive notifications.

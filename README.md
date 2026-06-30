@@ -208,7 +208,7 @@ Each webhook response now also includes an `outboundTemplate` object you can han
   - `META_INSTAGRAM_CONFIG_ID`
   - `META_WHATSAPP_CONFIG_ID`
 - Use the same redirect URI:
-  - `https://1glam-production.up.railway.app/auth/meta/callback`
+  - `https://www.busydays.co/auth/meta/callback`
 
 ## Important note
 
