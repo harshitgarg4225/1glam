@@ -33,8 +33,35 @@ function enabled(level: Level): boolean {
   return LEVELS[level] >= LEVELS[appConfig.logLevel as Level];
 }
 
-function emit(level: Level, message: string, fields?: Record<string, unknown>) {
+// Privacy: structured logs are retained by aggregators, so client PII and any
+// secret that slips into a context field must not land there in the clear.
+// We mask emails (a***@domain), keep only the last 4 digits of phone-like
+// numbers, and fully redact anything whose key looks like a credential.
+const SECRET_KEY = /(token|secret|key|password|authorization|cookie|otp)/i;
+function scrubValue(key: string, value: unknown): unknown {
+  if (value == null) return value;
+  if (SECRET_KEY.test(key)) return "[redacted]";
+  if (typeof value === "string") {
+    let out = value.replace(/([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+)/g, "$1***$2");
+    out = out.replace(/(\+?\d[\d\s-]{6,}\d)/g, (m) => {
+      const digits = m.replace(/\D/g, "");
+      return digits.length >= 7 ? `***${digits.slice(-4)}` : m;
+    });
+    return out;
+  }
+  if (Array.isArray(value)) return value.map((v) => scrubValue(key, v));
+  if (typeof value === "object") return scrubFields(value as Record<string, unknown>);
+  return value;
+}
+export function scrubFields(fields: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) out[k] = scrubValue(k, v);
+  return out;
+}
+
+function emit(level: Level, message: string, rawFields?: Record<string, unknown>) {
   if (!enabled(level)) return;
+  const fields = rawFields ? scrubFields(rawFields) : rawFields;
   const record = {
     ts: new Date().toISOString(),
     level,

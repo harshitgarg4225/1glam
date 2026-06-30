@@ -199,6 +199,16 @@ export function assertDeploymentConfig(): void {
     );
   }
 
+  // Non-fatal heads-up (not fatal — we won't brick a running deploy whose key is
+  // already short): TOKEN_ENCRYPTION_KEY is stretched with bare SHA-256, so its
+  // own entropy is the encryption floor. A short/guessable key is brute-forceable
+  // against a DB leak. Use 32+ random bytes (openssl rand -base64 32).
+  if (appConfig.isDeployed && appConfig.tokenEncryptionKey && appConfig.tokenEncryptionKey.length < 32) {
+    console.warn(
+      "[config] TOKEN_ENCRYPTION_KEY is shorter than 32 characters — it's the encryption floor for OAuth tokens at rest. Rotate to 32+ random bytes (openssl rand -base64 32).",
+    );
+  }
+
   if (!errors.length) return;
 
   const summary =

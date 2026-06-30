@@ -69,10 +69,14 @@ export function buildQuoteViewUrl(workspaceId: string, leadId: string): string {
 }
 
 // Invoice links go to a branded page (with payment summary + Pay Now button)
-// that embeds the PDF, rather than the bare PDF stream. The page is public
-// (no sig required on the page itself; the embedded PDF URL is sig-protected).
+// that embeds the PDF, rather than the bare PDF stream. The page carries the
+// same HMAC sig as the document, so it can't be opened by guessing the booking
+// id — it exposes the client's name and full payment ledger.
 export function buildInvoicePageUrl(workspaceId: string, bookingId: string): string {
-  return new URL(`/i/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}`, appConfig.baseUrl).toString();
+  const sig = signDocumentToken("invoice", workspaceId, bookingId);
+  const url = new URL(`/i/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}`, appConfig.baseUrl);
+  url.searchParams.set("sig", sig);
+  return url.toString();
 }
 
 // Reschedule links are time-limited (72 hours) and signed over (workspaceId, bookingId, expiry).
