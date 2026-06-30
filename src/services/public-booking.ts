@@ -856,6 +856,12 @@ export async function checkPublicAvailability(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const workspace = await findWorkspaceByWorkspaceId(workspaceId);
   if (!workspace) return { ok: false, error: "Not found" };
+  // Guard the date format before any Date math — a non-ISO value like "2026-6-5"
+  // yields a NaN weekday that wrongly passes as available and then persists a
+  // malformed date that breaks slot/reminder logic downstream.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+    return { ok: false, error: "Please pick a valid date." };
+  }
   const availability = buildAvailability(workspace.config);
   if (availability.minDate && eventDate < availability.minDate) {
     return { ok: false, error: "That date is too soon — please pick a later one." };

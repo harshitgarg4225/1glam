@@ -641,9 +641,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     Number(workspace.config.advancePercentage) || 30,
     lead.record.eventType,
   );
-  const advanceAmount = roundToPremiumNumber(
-    (lead.record.finalApprovedPrice * advancePct) / 100,
-  );
+  const advanceAmount = computeAdvanceAmount(lead.record.finalApprovedPrice, advancePct);
   const balanceDue = Math.max(0, lead.record.finalApprovedPrice - advanceAmount);
   const confirmedEventId = await createConfirmedCalendarEvent(workspace, tokens, {
     ...lead.record,
@@ -1099,9 +1097,15 @@ export async function recordBookingPayment(
     // "Top up to target" (used by Mark advance/paid-in-full): compute the delta
     // from the freshly-LOCKED log so a concurrent payment landing between an
     // earlier read and this write can never over-credit the ledger.
-    const amountToAdd = typeof input.topUpToTarget === "number"
+    let amountToAdd = typeof input.topUpToTarget === "number"
       ? Math.max(0, Math.round(input.topUpToTarget - paymentsTotal(log)))
       : Math.round(input.amount);
+    // A refund can never exceed what's actually been collected — otherwise the
+    // net paid goes negative and balanceDue (max(0, price - paid)) inflates past
+    // the booking value. Clamp it to the collected total computed under the lock.
+    if (kind === "refund") {
+      amountToAdd = Math.min(amountToAdd, Math.max(0, paymentsTotal(log)));
+    }
     if (!isDuplicate && amountToAdd > 0) {
       log.push({
         amount: amountToAdd,
@@ -1625,7 +1629,9 @@ export function travelCostForDistance(
   const nearbyFrom = Number(config.travelNearbyThresholdKm) > 0 ? Number(config.travelNearbyThresholdKm) : 25;
   const outstationFrom = Number(config.travelOutstationThresholdKm) > 0 ? Number(config.travelOutstationThresholdKm) : 100;
   if (distanceKm >= outstationFrom) return Number(config.travelOutstation) || 0;
-  if (distanceKm > nearbyFrom) return Number(config.travelNearbyCity) || 0;
+  // Both tier boundaries are inclusive of the threshold (a venue exactly at the
+  // nearby-city threshold is charged the nearby fee, not within-city).
+  if (distanceKm >= nearbyFrom) return Number(config.travelNearbyCity) || 0;
   return Number(config.travelWithinCity) || 0;
 }
 
@@ -1634,6 +1640,18 @@ export function roundToPremiumNumber(value: number) {
   const rounded = Math.round(value / 500) * 500;
   const premium = rounded - 200;
   return premium > 0 ? premium : rounded;
+}
+
+// The advance/deposit to collect up front. Plain rounding clamped to [0, total].
+// We deliberately do NOT apply the premium "-200" rounding to the advance — for a
+// small booking that trick rounds the advance to ₹0 (or above the total). Used
+// for BOTH the booking advance and the quote's "advance to confirm" so the two
+// documents never disagree (the earlier divergence: quote used a flat % over the
+// quoted amount, the booking used the per-service deposit %).
+export function computeAdvanceAmount(total: number, percent: number): number {
+  const safeTotal = Number.isFinite(total) && total > 0 ? total : 0;
+  const safePercent = Number.isFinite(percent) && percent > 0 ? percent : 0;
+  return Math.min(safeTotal, Math.max(0, Math.round((safeTotal * safePercent) / 100)));
 }
 
 export type MonthlyRecap = {
@@ -2229,7 +2247,11 @@ export function rowToBooking(row: string[]): BookingRecord {
 }
 
 function buildId(prefix: "L" | "B") {
-  return `${prefix}${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}${nanoid(4)}`;
+  // 12 random chars (not 4): the timestamp prefix is largely inferable, so the
+  // random part is the real entropy — it both prevents bulk-import collisions
+  // (many leads created in the same second) and makes these IDs infeasible to
+  // brute-force on the public token routes that key off them.
+  return `${prefix}${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}${nanoid(12)}`;
 }
 
 function toColumn(columnNumber: number) {

@@ -193,8 +193,11 @@ export function verifyLeegalityWebhookRequest(
   body: unknown,
   providedValues: Array<string | undefined>,
 ) {
+  // Fail CLOSED: with no configured secret we cannot authenticate the caller, so
+  // reject rather than accept forged contract events (mark-signed, overwrite
+  // contractUrl). If Leegality e-sign is in use, LEEGALITY_WEBHOOK_SECRET must be set.
   if (!appConfig.leegalityWebhookSecret) {
-    return true;
+    return false;
   }
 
   const documentId = pickDeepString(body, [

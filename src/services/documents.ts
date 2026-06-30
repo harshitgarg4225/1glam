@@ -5,7 +5,7 @@ import type { Credentials } from "google-auth-library";
 import { buildPublicDocumentUrl, buildInvoicePageUrl, buildQuoteViewUrl } from "./document-links.js";
 import { getDocumentTheme, type DocumentTheme } from "./document-themes.js";
 import type { WorkspaceRecord } from "../types.js";
-import { parsePaymentsLog, paymentsTotal, type BookingRecord, type LeadRecord } from "./booking.js";
+import { computeAdvanceAmount, depositPercentForEvent, parsePaymentsLog, paymentsTotal, type BookingRecord, type LeadRecord } from "./booking.js";
 
 // Sequential, human-friendly document numbers (Q-2026-0007, INV-2026-0012).
 // Scans the numbers already issued this year and returns the next in sequence —
@@ -229,9 +229,16 @@ export async function buildQuotePdfBytes(
     options.adjustments?.priceRangeLow && options.adjustments.priceRangeHigh
       ? { low: options.adjustments.priceRangeLow, high: options.adjustments.priceRangeHigh }
       : null;
-  const advanceAmount = premiumRound(
-    ((range ? range.low : quotedAmount) * workspace.config.advancePercentage) / 100,
+  // Resolve the advance the SAME way the booking does — per-service deposit % if
+  // configured, else the flat advance % — so the quote's "advance to confirm"
+  // matches what's actually charged on the invoice/booking. (Previously the quote
+  // used a flat % over the quoted amount and could disagree with the booking.)
+  const advancePct = depositPercentForEvent(
+    workspace.config.depositPercentByService,
+    Number(workspace.config.advancePercentage) || 30,
+    lead.eventType,
   );
+  const advanceAmount = computeAdvanceAmount(range ? range.low : quotedAmount, advancePct);
 
   // Lead-level discount the owner approved (folded mode only): surface the
   // standard price and the saving so the client sees the value of the deal. The
@@ -906,12 +913,6 @@ function formatDateOnly(value: string) {
 
 function safeName(value: string) {
   return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "busydays";
-}
-
-function premiumRound(value: number) {
-  const rounded = Math.round(value / 500) * 500;
-  const premium = rounded - 200;
-  return premium > 0 ? premium : rounded;
 }
 
 function formatDateTime(value: string) {

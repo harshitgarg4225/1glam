@@ -225,7 +225,15 @@ export async function broadcastCampaign(
   const allContacts = await listCampaignContacts(workspace, tokens, input.segment);
 
   // Filter out contacts who have opted out of receiving campaign messages.
-  const optedOutPhones = new Set(await listOptedOutPhones(workspace.workspaceId));
+  // Fail CLOSED: if the opt-out list can't be loaded, abort the whole broadcast
+  // rather than risk messaging someone who sent STOP (WhatsApp Business Policy).
+  let optedOutList: string[];
+  try {
+    optedOutList = await listOptedOutPhones(workspace.workspaceId);
+  } catch {
+    throw new Error("Couldn't load the opt-out list — broadcast cancelled so no opted-out contact is messaged. Please try again.");
+  }
+  const optedOutPhones = new Set(optedOutList);
   const eligible = allContacts.filter((c) => !optedOutPhones.has(c.phone.replace(/\D/g, "")));
   const capped = eligible.slice(0, 200);
   const totalSkipped = allContacts.length - eligible.length + Math.max(0, eligible.length - 200);
