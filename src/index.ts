@@ -623,9 +623,13 @@ app.post("/api/public/:workspaceId/payment/:leadId/order", publicWriteLimiter, a
     // Optional tip the client added on the pay page. Charge it on top of what's
     // due and stamp it in the order notes so /verify can record it as a tip
     // (separate from the service payment, so it never skews the balance).
+    // Cap the tip to something sane: at most the amount due (you don't tip many
+    // multiples of the bill) and never more than ₹50,000, so a hostile/buggy
+    // client can't push a ₹10-lakh charge through the artist's Razorpay account.
     const tipRaw = Number(req.body?.tipAmount);
+    const tipCeiling = Math.min(50000, Math.max(2000, amountInr));
     const tipInr = details.tipsEnabled && Number.isFinite(tipRaw)
-      ? Math.max(0, Math.min(1000000, Math.round(tipRaw)))
+      ? Math.max(0, Math.min(tipCeiling, Math.round(tipRaw)))
       : 0;
 
     const order = await createOrderWithKeys(
@@ -3216,7 +3220,8 @@ app.get("/api/export/my-data", async (req, res, next) => {
     // Scrub secrets before export — tokens and API keys are not personal data,
     // and sending them in a download would be a credential leak.
     const safe = scrubWorkspaceTokens(workspace);
-    const optedOutPhones = await listOptedOutPhones(workspace.workspaceId);
+    // Display/export: a missing opt-out list shouldn't fail the whole export.
+    const optedOutPhones = await listOptedOutPhones(workspace.workspaceId).catch(() => []);
 
     const exportBundle = {
       exportedAt: new Date().toISOString(),
@@ -3269,7 +3274,7 @@ app.get("/api/optouts/whatsapp", async (req, res, next) => {
     if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
     const workspace = await getWorkspaceByEmail(req.session.profile.email);
     if (!workspace) return res.status(404).json({ error: "Workspace not found" });
-    const phones = await listOptedOutPhones(workspace.workspaceId);
+    const phones = await listOptedOutPhones(workspace.workspaceId).catch(() => []);
     res.json({ ok: true, optedOut: phones });
   } catch (error) {
     next(error);

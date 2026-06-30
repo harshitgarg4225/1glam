@@ -866,7 +866,9 @@ export async function isPhoneOptedOut(workspaceId: string, phone: string): Promi
     );
     return (res.rowCount ?? 0) > 0;
   } catch {
-    return false; // fail open — don't silently block a message due to a DB error
+    // Fail CLOSED: if we can't confirm opt-out status, treat as opted-out so a
+    // STOP'd contact is never messaged on a transient DB error (WhatsApp policy).
+    return true;
   }
 }
 
@@ -874,16 +876,15 @@ export async function listOptedOutPhones(workspaceId: string): Promise<string[]>
   if (!hasPostgres()) {
     return Array.from(optOutMemory.get(workspaceId) ?? []);
   }
-  try {
-    await ensurePostgres();
-    const res = await getPool().query(
-      `SELECT phone FROM whatsapp_optouts WHERE workspace_id = $1 ORDER BY opted_out_at DESC`,
-      [workspaceId],
-    );
-    return res.rows.map((r: { phone: string }) => r.phone);
-  } catch {
-    return [];
-  }
+  // Deliberately does NOT swallow errors: a marketing broadcast must fail CLOSED
+  // (abort) when the opt-out list can't be confirmed, rather than message someone
+  // who sent STOP. Display/export callers wrap this and fall back to an empty list.
+  await ensurePostgres();
+  const res = await getPool().query(
+    `SELECT phone FROM whatsapp_optouts WHERE workspace_id = $1 ORDER BY opted_out_at DESC`,
+    [workspaceId],
+  );
+  return res.rows.map((r: { phone: string }) => r.phone);
 }
 
 // ── Mobile login tokens ──────────────────────────────────────────────────────

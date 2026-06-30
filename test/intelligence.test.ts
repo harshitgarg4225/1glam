@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // modules that transitively pull it in.
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
-const { computeSlotAvailability, travelCostForDistance, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
+const { computeSlotAvailability, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
 const { parseQuotePackages, parseDocumentAdjustments } = await import("../src/services/documents.ts");
 const { computeInsights, buildDigestSummary, buildServicesContext } = await import("../src/services/insights.ts");
 const { matchSelectedAddons } = await import("../src/services/public-booking.ts");
@@ -156,6 +156,30 @@ test("per-km mode replaces flat tiers and rounds to Rs 50", () => {
   };
   assert.equal(travelCostForDistance(config, 38), 700); // 684 → 700
   assert.equal(travelCostForDistance(config, 0), 0);
+});
+
+test("travel tier boundary is inclusive at the nearby threshold (no off-by-one)", () => {
+  const config = {
+    travelWithinCity: 0,
+    travelNearbyCity: 2000,
+    travelOutstation: 5000,
+    travelOutstationThresholdKm: 100,
+    travelNearbyThresholdKm: 25,
+    travelPerKmRate: 0,
+  };
+  assert.equal(travelCostForDistance(config, 24), 0);    // just inside city
+  assert.equal(travelCostForDistance(config, 25), 2000); // exactly at threshold → nearby fee
+  assert.equal(travelCostForDistance(config, 100), 5000); // exactly at outstation threshold
+});
+
+test("computeAdvanceAmount never rounds a small advance to zero and clamps to [0, total]", () => {
+  assert.equal(computeAdvanceAmount(1000, 30), 300);
+  assert.ok(computeAdvanceAmount(500, 30) > 0);      // premium rounding used to yield 0 here
+  assert.equal(computeAdvanceAmount(300, 100), 300); // never exceeds the total
+  assert.equal(computeAdvanceAmount(0, 30), 0);
+  assert.equal(computeAdvanceAmount(10000, 0), 0);
+  // The advance scales with the percentage (premium rounding flattened 30% vs 50%).
+  assert.ok(computeAdvanceAmount(10000, 50) > computeAdvanceAmount(10000, 30));
 });
 
 // --- Quote packages -------------------------------------------------------------
