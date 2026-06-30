@@ -11,6 +11,7 @@ import { sendPushToWorkspace } from "./push.js";
 import { listArtists } from "./team.js";
 import { getWorkspaceByEmail } from "./workspace.js";
 import { lockKeyFromString, withSerializedLock } from "./database.js";
+import * as opStore from "./operational-store.js";
 import { TtlCache } from "./cache.js";
 import { bookingHeaders, leadHeaders, sheetNames } from "./sheet-definitions.js";
 
@@ -66,6 +67,158 @@ function invalidateBookingSheet(spreadsheetId: string) {
   bookingSheetCache.delete(spreadsheetId);
 }
 import type { WorkspaceRecord } from "../types.js";
+
+// ── Postgres migration + Sheets mirror ───────────────────────────────────────
+// Active only when OPERATIONAL_STORE is "dual"/"postgres" (and a DB is set). The
+// first read for a workspace lazily backfills its sheet rows into Postgres, once,
+// under an advisory lock. Writes then go to Postgres (authoritative) and, in
+// "dual" mode, are mirrored best-effort to the sheet so the artist's familiar
+// view stays current and rollback to "sheets" stays lossless.
+
+const migratedMem = new Set<string>();
+
+async function ensureMigrated(workspace: WorkspaceRecord, tokens: Credentials) {
+  if (!opStore.pgActive()) return;
+  await ensureMigratedEntity(workspace, tokens, "leads");
+  await ensureMigratedEntity(workspace, tokens, "bookings");
+}
+
+async function ensureMigratedEntity(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  entity: "leads" | "bookings",
+) {
+  const memKey = `${workspace.workspaceId}:${entity}`;
+  if (migratedMem.has(memKey)) return;
+  if (await opStore.hasMigrationMarker(workspace.workspaceId, entity)) {
+    migratedMem.add(memKey);
+    return;
+  }
+  await withSerializedLock(lockKeyFromString(`migrate:${workspace.workspaceId}:${entity}`), async () => {
+    // Double-check inside the lock — another instance may have just migrated.
+    if (await opStore.hasMigrationMarker(workspace.workspaceId, entity)) {
+      migratedMem.add(memKey);
+      return;
+    }
+    if (entity === "leads") {
+      const rows = await readLeadSheetRows(workspace, tokens, { fresh: true });
+      const records = rows.filter((row) => row[0]).map((row) => rowToLead(row));
+      await opStore.bulkInsertLeadsIfAbsent(workspace.workspaceId, records);
+    } else {
+      const rows = await readBookingSheetRows(workspace, tokens, { fresh: true });
+      const records = rows.filter((row) => row[0]).map((row) => rowToBooking(row));
+      await opStore.bulkInsertBookingsIfAbsent(workspace.workspaceId, records);
+    }
+    await opStore.writeMigrationMarker(workspace.workspaceId, entity);
+    migratedMem.add(memKey);
+  });
+}
+
+// Best-effort, fire-and-forget mirror of a lead into the Google Sheet (upsert by
+// id: update the existing row, else append). Never throws — a bad Google token
+// just means the mirror lags; Postgres already holds the authoritative copy.
+function mirrorLeadToSheet(workspace: WorkspaceRecord, tokens: Credentials, lead: LeadRecord) {
+  void (async () => {
+    try {
+      const rows = await readLeadSheetRows(workspace, tokens, { fresh: true });
+      const { sheets } = createGoogleClients(tokens);
+      let rowNumber = 0;
+      for (let i = 0; i < rows.length; i += 1) {
+        if (rows[i][0] === lead.leadId) {
+          rowNumber = i + 2;
+          break;
+        }
+      }
+      if (rowNumber > 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: workspace.spreadsheetId,
+          range: `${sheetNames.leads}!A${rowNumber}:${toColumn(leadHeaders.length)}${rowNumber}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [leadToRow(lead)] },
+        });
+      } else {
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: workspace.spreadsheetId,
+          range: `${sheetNames.leads}!A:${toColumn(leadHeaders.length)}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [leadToRow(lead)] },
+        });
+      }
+      invalidateLeadSheet(workspace.spreadsheetId);
+    } catch {
+      // best-effort mirror — Postgres is the source of truth
+    }
+  })();
+}
+
+function mirrorBookingToSheet(workspace: WorkspaceRecord, tokens: Credentials, booking: BookingRecord) {
+  void (async () => {
+    try {
+      const rows = await readBookingSheetRows(workspace, tokens, { fresh: true });
+      const { sheets } = createGoogleClients(tokens);
+      let rowNumber = 0;
+      for (let i = 0; i < rows.length; i += 1) {
+        if (rows[i][0] === booking.bookingId) {
+          rowNumber = i + 2;
+          break;
+        }
+      }
+      if (rowNumber > 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: workspace.spreadsheetId,
+          range: `${sheetNames.bookings}!A${rowNumber}:${toColumn(bookingHeaders.length)}${rowNumber}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [bookingToRow(booking)] },
+        });
+      } else {
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: workspace.spreadsheetId,
+          range: `${sheetNames.bookings}!A:${toColumn(bookingHeaders.length)}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [bookingToRow(booking)] },
+        });
+      }
+      invalidateBookingSheet(workspace.spreadsheetId);
+    } catch {
+      // best-effort mirror
+    }
+  })();
+}
+
+// Authoritative lead write through the active store: Postgres upsert (+ best-
+// effort Sheets mirror in dual mode) when Postgres is active, otherwise the
+// caller's Sheets write (append for new rows, update-by-row for existing).
+async function persistLead(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  lead: LeadRecord,
+  sheetWrite: () => Promise<void>,
+) {
+  if (opStore.pgActive()) {
+    await opStore.upsertLead(workspace.workspaceId, lead);
+    if (opStore.mirrorToSheets()) mirrorLeadToSheet(workspace, tokens, lead);
+    invalidateLeadSheet(workspace.spreadsheetId);
+    return;
+  }
+  await sheetWrite();
+  invalidateLeadSheet(workspace.spreadsheetId);
+}
+
+async function persistBooking(
+  workspace: WorkspaceRecord,
+  tokens: Credentials,
+  booking: BookingRecord,
+  sheetWrite: () => Promise<void>,
+) {
+  if (opStore.pgActive()) {
+    await opStore.upsertBooking(workspace.workspaceId, booking);
+    if (opStore.mirrorToSheets()) mirrorBookingToSheet(workspace, tokens, booking);
+    invalidateBookingSheet(workspace.spreadsheetId);
+    return;
+  }
+  await sheetWrite();
+  invalidateBookingSheet(workspace.spreadsheetId);
+}
 
 export type LeadStatus =
   | "New"
@@ -304,15 +457,16 @@ export async function createLeadForWorkspace(
     travelCost: pricing.travelCost,
   };
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.leads}!A:${toColumn(leadHeaders.length)}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [leadToRow(lead)],
-    },
+  await persistLead(workspace, tokens, lead, async () => {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.leads}!A:${toColumn(leadHeaders.length)}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [leadToRow(lead)],
+      },
+    });
   });
-  invalidateLeadSheet(workspace.spreadsheetId);
 
   // Ping the owner about client-initiated requests (booking page, DMs,
   // webhooks) so nothing sits unseen until she opens the app. Her own manual
@@ -554,15 +708,16 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
   // tentative hold is still intact because we haven't touched it yet.
   const { sheets } = createGoogleClients(tokens);
   try {
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: workspace.spreadsheetId,
-      range: `${sheetNames.bookings}!A:${toColumn(bookingHeaders.length)}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [bookingToRow(booking)],
-      },
+    await persistBooking(workspace, tokens, booking, async () => {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: workspace.spreadsheetId,
+        range: `${sheetNames.bookings}!A:${toColumn(bookingHeaders.length)}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [bookingToRow(booking)],
+        },
+      });
     });
-    invalidateBookingSheet(workspace.spreadsheetId);
   } catch (error) {
     await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, confirmedEventId).catch(() => {});
     throw error;
@@ -1115,14 +1270,35 @@ export async function importClients(
   }
 
   if (records.length) {
-    const { sheets } = createGoogleClients(tokens);
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: workspace.spreadsheetId,
-      range: `${sheetNames.leads}!A:${toColumn(leadHeaders.length)}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: records.map((record) => leadToRow(record).map(String)) },
-    });
-    invalidateLeadSheet(workspace.spreadsheetId);
+    if (opStore.pgActive()) {
+      await opStore.bulkInsertLeadsIfAbsent(workspace.workspaceId, records);
+      if (opStore.mirrorToSheets()) {
+        void (async () => {
+          try {
+            const { sheets } = createGoogleClients(tokens);
+            await sheets.spreadsheets.values.append({
+              spreadsheetId: workspace.spreadsheetId,
+              range: `${sheetNames.leads}!A:${toColumn(leadHeaders.length)}`,
+              valueInputOption: "USER_ENTERED",
+              requestBody: { values: records.map((record) => leadToRow(record).map(String)) },
+            });
+            invalidateLeadSheet(workspace.spreadsheetId);
+          } catch {
+            // best-effort mirror
+          }
+        })();
+      }
+      invalidateLeadSheet(workspace.spreadsheetId);
+    } else {
+      const { sheets } = createGoogleClients(tokens);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: workspace.spreadsheetId,
+        range: `${sheetNames.leads}!A:${toColumn(leadHeaders.length)}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: records.map((record) => leadToRow(record).map(String)) },
+      });
+      invalidateLeadSheet(workspace.spreadsheetId);
+    }
   }
 
   return { imported: records.length, skipped };
@@ -1534,6 +1710,10 @@ export async function getMonthlyRecap(
 }
 
 async function listLeadRows(workspace: WorkspaceRecord, tokens: Credentials) {
+  if (opStore.pgActive()) {
+    await ensureMigrated(workspace, tokens);
+    return opStore.listLeads(workspace.workspaceId);
+  }
   const rows = await readLeadSheetRows(workspace, tokens);
   return rows
     .filter((row) => row[0])
@@ -1546,6 +1726,12 @@ async function findLeadById(
   leadId: string,
   opts?: { fresh?: boolean },
 ) {
+  if (opStore.pgActive()) {
+    await ensureMigrated(workspace, tokens);
+    const record = await opStore.findLead(workspace.workspaceId, leadId);
+    // rowNumber is a Sheets-only concept; in Postgres mode writes address by id.
+    return record ? { rowNumber: 0, record } : null;
+  }
   const rows = await readLeadSheetRows(workspace, tokens, opts);
   for (let index = 0; index < rows.length; index += 1) {
     if (rows[index][0] === leadId) {
@@ -1560,6 +1746,10 @@ async function findLeadById(
 }
 
 async function listBookingRows(workspace: WorkspaceRecord, tokens: Credentials) {
+  if (opStore.pgActive()) {
+    await ensureMigrated(workspace, tokens);
+    return opStore.listBookings(workspace.workspaceId);
+  }
   const rows = await readBookingSheetRows(workspace, tokens);
   return rows
     .filter((row) => row[0])
@@ -1572,6 +1762,11 @@ async function findBookingById(
   bookingId: string,
   opts?: { fresh?: boolean },
 ) {
+  if (opStore.pgActive()) {
+    await ensureMigrated(workspace, tokens);
+    const record = await opStore.findBooking(workspace.workspaceId, bookingId);
+    return record ? { rowNumber: 0, record } : null;
+  }
   const rows = await readBookingSheetRows(workspace, tokens, opts);
   for (let index = 0; index < rows.length; index += 1) {
     if (rows[index][0] === bookingId) {
@@ -1591,16 +1786,17 @@ async function updateLeadRow(
   rowNumber: number,
   lead: LeadRecord,
 ) {
-  const { sheets } = createGoogleClients(tokens);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.leads}!A${rowNumber}:${toColumn(leadHeaders.length)}${rowNumber}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [leadToRow(lead)],
-    },
+  await persistLead(workspace, tokens, lead, async () => {
+    const { sheets } = createGoogleClients(tokens);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.leads}!A${rowNumber}:${toColumn(leadHeaders.length)}${rowNumber}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [leadToRow(lead)],
+      },
+    });
   });
-  invalidateLeadSheet(workspace.spreadsheetId);
 }
 
 async function updateBookingRow(
@@ -1609,16 +1805,17 @@ async function updateBookingRow(
   rowNumber: number,
   booking: BookingRecord,
 ) {
-  const { sheets } = createGoogleClients(tokens);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: workspace.spreadsheetId,
-    range: `${sheetNames.bookings}!A${rowNumber}:${toColumn(bookingHeaders.length)}${rowNumber}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [bookingToRow(booking)],
-    },
+  await persistBooking(workspace, tokens, booking, async () => {
+    const { sheets } = createGoogleClients(tokens);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: workspace.spreadsheetId,
+      range: `${sheetNames.bookings}!A${rowNumber}:${toColumn(bookingHeaders.length)}${rowNumber}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [bookingToRow(booking)],
+      },
+    });
   });
-  invalidateBookingSheet(workspace.spreadsheetId);
 }
 
 async function upsertTentativeCalendarEvent(

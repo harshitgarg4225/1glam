@@ -41,11 +41,11 @@ type WorkspaceDb = {
 let pool: Pool | null = null;
 let postgresReady: Promise<void> | null = null;
 
-function hasPostgres() {
+export function hasPostgres() {
   return Boolean(appConfig.databaseUrl);
 }
 
-function getPool() {
+export function getPool() {
   if (!appConfig.databaseUrl) {
     throw new Error("DATABASE_URL is not configured");
   }
@@ -185,7 +185,7 @@ export async function closePool(): Promise<void> {
   }
 }
 
-async function ensurePostgres() {
+export async function ensurePostgres() {
   if (!hasPostgres()) return;
   if (postgresReady) return postgresReady;
 
@@ -257,6 +257,40 @@ async function ensurePostgres() {
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_whatsapp_optouts_workspace
         ON whatsapp_optouts (workspace_id)
+      `);
+      // Operational data (leads, bookings) — the system of record once
+      // OPERATIONAL_STORE is "dual"/"postgres". The full record is stored as a
+      // JSONB blob keyed by (workspace_id, id): the row↔record mapping is the
+      // identity function, which sidesteps the positional-column fragility of the
+      // Sheets schema. The composite PK provides the workspace_id prefix index.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS op_leads (
+          workspace_id TEXT NOT NULL,
+          lead_id TEXT NOT NULL,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (workspace_id, lead_id)
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS op_bookings (
+          workspace_id TEXT NOT NULL,
+          booking_id TEXT NOT NULL,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (workspace_id, booking_id)
+        )
+      `);
+      // One marker row per (workspace, entity) once that workspace's sheet has
+      // been backfilled into Postgres, so the lazy per-workspace migration runs
+      // exactly once.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS op_migrated (
+          workspace_id TEXT NOT NULL,
+          entity TEXT NOT NULL,
+          migrated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (workspace_id, entity)
+        )
       `);
     } finally {
       client.release();

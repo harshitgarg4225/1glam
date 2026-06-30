@@ -13,6 +13,11 @@ const envSchema = z.object({
   // or to throttle a launch so provisioning doesn't stampede.
   MAX_WORKSPACES: z.coerce.number().int().min(0).optional().default(0),
   DATABASE_URL: z.string().optional().default(""),
+  // Where operational data (leads, bookings, payments) lives. "sheets" keeps the
+  // legacy Google-Sheets-as-datastore behavior; "dual" makes Postgres the source
+  // of truth while best-effort mirroring to the artist's sheet (the safe cutover
+  // mode); "postgres" is Postgres-only. "dual"/"postgres" require DATABASE_URL.
+  OPERATIONAL_STORE: z.enum(["sheets", "dual", "postgres"]).optional().default("sheets"),
   TOKEN_ENCRYPTION_KEY: z.string().optional().default(""),
   SENTRY_DSN: z.string().optional().default(""),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -94,6 +99,9 @@ export const appConfig = {
   sessionSecret: parsed.SESSION_SECRET,
   maxWorkspaces: parsed.MAX_WORKSPACES,
   databaseUrl: parsed.DATABASE_URL,
+  // "dual"/"postgres" only take effect when a database is configured; otherwise
+  // we transparently stay on the Sheets path (see operational-store.ts).
+  operationalStore: parsed.OPERATIONAL_STORE,
   tokenEncryptionKey: parsed.TOKEN_ENCRYPTION_KEY,
   sentryDsn: parsed.SENTRY_DSN,
   logLevel: parsed.LOG_LEVEL,
