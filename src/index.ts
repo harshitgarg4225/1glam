@@ -2081,14 +2081,20 @@ app.post("/webhooks/razorpay", async (req, res, next) => {
       const payment = req.body?.payload?.payment?.entity;
       const notes = payment?.notes || {};
       const email = String(notes.email || "");
-      const credits = Number(notes.credits);
       const paymentId = String(payment?.id || "");
-      if (email && Number.isFinite(credits) && credits > 0 && paymentId) {
+      // SECURITY: never trust notes.credits. Resolve the pack WE set at order
+      // creation and require the captured amount to match its price exactly —
+      // same anti-tamper as /api/wallet/verify, so a crafted-notes payment can't
+      // claim more credits than were actually paid for. creditWallet is
+      // idempotent by paymentId (`ref`), so a redelivered capture won't double-credit.
+      const pack = findPack(String(notes.packId || ""));
+      const amountPaise = Number(payment?.amount);
+      if (email && paymentId && pack && amountPaise === Math.round(pack.amountInr * 100)) {
         await creditWallet(email, {
-          credits,
-          reason: `${notes.packId || "Credit"} pack top-up`,
+          credits: pack.credits,
+          reason: `${pack.label} pack top-up`,
           ref: paymentId,
-          amountInr: payment?.amount ? payment.amount / 100 : undefined,
+          amountInr: pack.amountInr,
         });
       }
     }
@@ -4915,6 +4921,12 @@ app.get("/i/:workspaceId/:bookingId", async (req, res, next) => {
   try {
     const workspaceId = String(req.params.workspaceId ?? "");
     const bookingId = String(req.params.bookingId ?? "");
+    // Require the HMAC sig (same as the quote/contract pages): the invoice page
+    // exposes the client's name + full payment ledger, so possession of the
+    // signed link — not a guessable booking id — must be the authorization.
+    if (!verifyDocumentToken("invoice", workspaceId, bookingId, String(req.query.sig ?? ""))) {
+      return res.status(404).send("Invoice not found.");
+    }
     const workspace = await findWorkspaceByWorkspaceId(workspaceId);
     if (!workspace || !workspace.googleTokens) return res.status(404).send("Invoice not found.");
     const booking = await getBookingRecord(workspace.email, workspace.googleTokens, bookingId);
