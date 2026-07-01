@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, listActiveLeadsForDate, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
+import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, busySlotsForDate, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
 import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -424,12 +424,12 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     // the day-level capacity isn't reached yet. Fails open on a Sheets hiccup —
     // a flaky read should never block a client from booking.
     if (timeSlots.length > 0 && input.eventTime) {
-      const busy = await listActiveLeadsForDate(workspace.email, tokens, input.eventDate).catch(() => []);
+      const busy = await busySlotsForDate(workspace.email, tokens, input.eventDate).catch(() => []);
       const slots = computeSlotAvailability({
         timeSlots,
         serviceDurations: workspace.config.serviceDurations,
         requestedEventType: input.eventType,
-        busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+        busy,
         bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
       });
       const requested = slots.find((slot) => slot.time === input.eventTime);
@@ -832,13 +832,13 @@ export async function getPublicSlotsForDate(
   if (!timeSlots.length) return { slots: [] };
 
   const tokens = await getWorkspaceCredentials(workspace.email);
-  const busy = await listActiveLeadsForDate(workspace.email, tokens, eventDate).catch(() => []);
+  const busy = await busySlotsForDate(workspace.email, tokens, eventDate).catch(() => []);
   return {
     slots: computeSlotAvailability({
       timeSlots,
       serviceDurations: workspace.config.serviceDurations,
       requestedEventType: eventType || "Other",
-      busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+      busy,
       bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
     }),
   };
@@ -887,12 +887,12 @@ export async function checkPublicAvailability(
     if (!timeSlots.includes(eventTime)) {
       return { ok: false, error: "Please choose one of the available time slots." };
     }
-    const busy = await listActiveLeadsForDate(workspace.email, tokens, eventDate).catch(() => []);
+    const busy = await busySlotsForDate(workspace.email, tokens, eventDate).catch(() => []);
     const slots = computeSlotAvailability({
       timeSlots,
       serviceDurations: workspace.config.serviceDurations,
       requestedEventType: eventType || "Other",
-      busy: busy.map((lead) => ({ eventTime: lead.eventTime, eventType: lead.eventType })),
+      busy,
       bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
     });
     const requested = slots.find((slot) => slot.time === eventTime);

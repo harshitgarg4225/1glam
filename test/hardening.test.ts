@@ -335,6 +335,14 @@ test("nextDocumentNumber issues professional, year-scoped sequences", () => {
   );
 });
 
+test("nextDocumentNumber buckets by the IST calendar year, not the server's UTC year", () => {
+  // 18:29 UTC on Dec 31 is 23:59 IST the SAME day — still 2026 in India.
+  assert.equal(nextDocumentNumber("INV", [], new Date("2026-12-31T18:29:00Z")), "INV-2026-0001");
+  // 18:30 UTC on Dec 31 is 00:00 IST on Jan 1 — the new year's sequence. A UTC
+  // host would have kept this in 2026 and corrupted the GST invoice sequence.
+  assert.equal(nextDocumentNumber("INV", ["INV-2026-0031"], new Date("2026-12-31T18:30:00Z")), "INV-2027-0001");
+});
+
 // --- Partial payment ledger (parsePaymentsLog / derivePaymentStatus) ------------
 
 const { parsePaymentsLog, paymentsTotal, derivePaymentStatus } = await import("../src/services/booking.ts");

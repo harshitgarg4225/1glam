@@ -11,7 +11,10 @@ import { computeAdvanceAmount, depositPercentForEvent, parsePaymentsLog, payment
 // Scans the numbers already issued this year and returns the next in sequence —
 // what an accountant or GST audit expects, instead of random record ids.
 export function nextDocumentNumber(prefix: string, existing: (string | undefined | null)[], now = new Date()): string {
-  const year = now.getFullYear();
+  // Bucket by the IST calendar year, not the server's local year — otherwise a
+  // document issued at 23:30 IST on Dec 31 (which is still that year in India) is
+  // filed under the next year on a UTC host, corrupting the sequential GST number.
+  const year = Number(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata", year: "numeric" }));
   const pattern = new RegExp(`^${prefix}-${year}-(\\d{1,6})$`);
   let max = 0;
   for (const value of existing) {
@@ -276,7 +279,7 @@ export async function buildQuotePdfBytes(
     title: "Luxury Quote",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: quoteNumber,
-    docDate: new Date().toLocaleDateString("en-IN"),
+    docDate: new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
     gstNumber: workspace.config.gstNumber,
   }, bold, regular, theme, logo);
 
@@ -375,7 +378,7 @@ export async function buildInvoicePdfBytes(
     title: "Booking Invoice",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: invoiceNumber,
-    docDate: new Date().toLocaleDateString("en-IN"),
+    docDate: new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
     gstNumber: workspace.config.gstNumber,
   }, bold, regular, theme, logo);
 
@@ -500,7 +503,7 @@ export async function generateContractPdfBytes(
     title: "Booking Agreement",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: contractNumber,
-    docDate: new Date().toLocaleDateString("en-IN"),
+    docDate: new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
     gstNumber: workspace.config.gstNumber,
   }, bold, regular, theme, logo);
 
