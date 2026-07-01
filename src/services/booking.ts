@@ -236,6 +236,9 @@ export type LeadRecord = {
   clientName: string;
   clientWhatsApp: string;
   clientInstagram: string;
+  // Optional client email — captured at booking so reminders/receipts can reach
+  // clients who aren't on WhatsApp. Empty for records created before this.
+  clientEmail: string;
   eventType: string;
   eventDate: string;
   // Optional end date for a multi-day event (e.g. sangeet + wedding). Empty for
@@ -297,6 +300,7 @@ export type BookingRecord = {
   bookedAt: string;
   clientName: string;
   clientWhatsApp: string;
+  clientEmail: string;
   eventType: string;
   eventDate: string;
   // Optional multi-day end date (empty for single-day). Blocks the whole span.
@@ -365,6 +369,7 @@ export type CreateLeadInput = {
   clientName: string;
   clientWhatsApp: string;
   clientInstagram?: string;
+  clientEmail?: string;
   eventType: string;
   eventDate: string;
   eventEndDate?: string;
@@ -462,6 +467,7 @@ export async function createLeadForWorkspace(
     clientNote: "",
     travelCost: pricing.travelCost,
     eventEndDate: input.eventEndDate ?? "",
+    clientEmail: input.clientEmail ?? "",
   };
 
   await persistLead(workspace, tokens, lead, async () => {
@@ -696,6 +702,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     statusChangedAt: new Date().toISOString(),
     travelCost: lead.record.travelCost || 0,
     eventEndDate: lead.record.eventEndDate || "",
+    clientEmail: lead.record.clientEmail || "",
   };
 
   const updatedLead: LeadRecord = {
@@ -1017,6 +1024,7 @@ function leadFromBooking(booking: BookingRecord): LeadRecord {
     quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "", referredBy: "",
     lostReason: "", urgencyFlag: "", clientNote: "", travelCost: booking.travelCost,
     eventEndDate: booking.eventEndDate,
+    clientEmail: booking.clientEmail,
   };
 }
 
@@ -1341,6 +1349,7 @@ export async function importClients(
       clientNote: "",
       travelCost: 0,
       eventEndDate: "",
+      clientEmail: "",
     });
   }
 
@@ -2243,6 +2252,7 @@ function leadToRow(lead: LeadRecord) {
     lead.clientNote,
     lead.travelCost,
     lead.eventEndDate,
+    lead.clientEmail,
   ];
 }
 
@@ -2295,6 +2305,7 @@ function rowToLead(row: string[]): LeadRecord {
     clientNote: row[44] ?? "",
     travelCost: Number(row[45] ?? 0),
     eventEndDate: row[46] ?? "",
+    clientEmail: row[47] ?? "",
   };
 }
 
@@ -2340,6 +2351,7 @@ export function bookingToRow(booking: BookingRecord) {
     booking.statusChangedAt,
     booking.travelCost,
     booking.eventEndDate,
+    booking.clientEmail,
   ];
 }
 
@@ -2385,6 +2397,7 @@ export function rowToBooking(row: string[]): BookingRecord {
     statusChangedAt: row[37] ?? "",
     travelCost: Number(row[38] ?? 0),
     eventEndDate: row[39] ?? "",
+    clientEmail: row[40] ?? "",
   };
 }
 

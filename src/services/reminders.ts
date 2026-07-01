@@ -5,6 +5,7 @@ import { listWorkspaces, withDistributedLock } from "./database.js";
 import { buildDigestSummary } from "./insights.js";
 import { logInteractionForWorkspace } from "./integrations.js";
 import { logger, captureException } from "./logger.js";
+import { emailEnabled, sendEmail, wrapEmailHtml } from "./email.js";
 import { sendWhatsAppTemplate } from "./messaging.js";
 import { sendPushToWorkspace } from "./push.js";
 import { appConfig } from "../config.js";
@@ -155,6 +156,21 @@ async function runReminderJob() {
               String(workspace.config.reminderTemplateLang || "en"),
               [booking.clientName, booking.eventDate, eventTime],
             );
+
+            // Second channel: email the client too when they gave an email and
+            // email is configured — best-effort, so a mail hiccup never blocks the
+            // (already-sent) WhatsApp reminder or its "sent" marker.
+            if (emailEnabled(workspace.config) && booking.clientEmail) {
+              const safeName = booking.clientName.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+              await sendEmail(workspace.config, {
+                to: booking.clientEmail,
+                subject: `Reminder: your ${booking.eventType} on ${booking.eventDate}`,
+                html: wrapEmailHtml(
+                  workspace.config,
+                  `<h2>See you soon!</h2><p>Hi ${safeName}, a friendly reminder of your <strong>${booking.eventType}</strong> booking on <strong>${booking.eventDate}</strong>${booking.eventTime ? " at " + booking.eventTime : ""}.</p>`,
+                ),
+              }).catch(() => undefined);
+            }
 
             await markBookingReminderSent(workspace.email, tokens, booking.bookingId, String(day));
 

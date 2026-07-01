@@ -23,6 +23,7 @@ export const publicBookingSchema = z.object({
   clientName: z.string().trim().min(1).max(120),
   clientWhatsApp: z.string().trim().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
   clientInstagram: z.string().max(120).optional(),
+  clientEmail: z.string().trim().email().max(160).optional().or(z.literal("")),
   eventType: z.string().trim().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   // Optional end date for a multi-day event; must be a valid ISO date. The

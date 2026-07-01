@@ -24,6 +24,7 @@ const fullBooking = {
   statusChangedAt: "2026-12-02T06:00:00.000Z",
   travelCost: 1200,
   eventEndDate: "2026-12-03",
+  clientEmail: "priya@example.com",
 };
 
 // The bug this guards: a booking row written wider than the sheet's column range
@@ -51,6 +52,12 @@ test("eventEndDate (multi-day) round-trips through the sheet row", () => {
   const row = bookingToRow(fullBooking).map((v) => String(v ?? ""));
   const back = rowToBooking(row);
   assert.equal(back.eventEndDate, "2026-12-03");
+});
+
+test("clientEmail round-trips through the sheet row", () => {
+  const row = bookingToRow(fullBooking).map((v) => String(v ?? ""));
+  const back = rowToBooking(row);
+  assert.equal(back.clientEmail, "priya@example.com");
 });
 
 test("legacy rows missing the new trailing columns still read safely", () => {
