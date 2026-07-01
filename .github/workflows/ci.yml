@@ -32,3 +32,42 @@ jobs:
           # Tests set their own values where needed; this is a harmless fallback.
           # 32+ chars so it satisfies the production-grade secret-length check.
           SESSION_SECRET: ci-test-session-secret-0123456789abcdef
+
+  # Runs the suite a second time against a REAL Postgres with OPERATIONAL_STORE
+  # =postgres, so the money datastore (leads/bookings/payments — upsert, backfill,
+  # refund clamp, no-show fee) is actually exercised. The file-mode job above
+  # never touches these SQL paths; the Postgres-only integration tests skip there
+  # and run here.
+  postgres-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: busydays_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests against Postgres
+        run: npm test
+        env:
+          SESSION_SECRET: ci-test-session-secret-0123456789abcdef
+          # "localhost" in the URL makes the pool skip TLS (see database.ts).
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/busydays_test
+          OPERATIONAL_STORE: postgres
