@@ -129,6 +129,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   birthdayTemplateLang: string;
   // Custom domain for the booking page (e.g. "bookings.glowbyaisha.com").
   customDomain: string;
+  // IANA timezone (e.g. "Asia/Kolkata"); anchors the booking window + doc dates.
+  timezone: string;
   documentTemplate: string;
   quoteIntro: string;
   cancellationPolicy: string;

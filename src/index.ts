@@ -3798,7 +3798,8 @@ app.post("/api/public/:workspaceId/cancel/:bookingId", publicWriteLimiter, async
 async function ensureQuoteNumber(email: string, tokens: Credentials, lead: LeadRecord): Promise<LeadRecord> {
   if (lead.quoteNumber) return lead;
   const data = await getDashboardData(email, tokens);
-  const number = nextDocumentNumber("Q", data.leads.map((l) => l.quoteNumber));
+  const tz = (await getWorkspaceByEmail(email))?.config.timezone || "Asia/Kolkata";
+  const number = nextDocumentNumber("Q", data.leads.map((l) => l.quoteNumber), new Date(), tz);
   return updateLeadRecord(email, tokens, lead.leadId, (current) => ({
     ...current,
     quoteNumber: current.quoteNumber || number,
@@ -3809,7 +3810,8 @@ async function ensureQuoteNumber(email: string, tokens: Credentials, lead: LeadR
 async function ensureInvoiceNumber(email: string, tokens: Credentials, booking: BookingRecord): Promise<BookingRecord> {
   if (booking.invoiceNumber) return booking;
   const data = await getDashboardData(email, tokens);
-  const number = nextDocumentNumber("INV", data.bookings.map((b) => b.invoiceNumber));
+  const tz = (await getWorkspaceByEmail(email))?.config.timezone || "Asia/Kolkata";
+  const number = nextDocumentNumber("INV", data.bookings.map((b) => b.invoiceNumber), new Date(), tz);
   return updateBookingRecord(email, tokens, booking.bookingId, (current) => ({
     ...current,
     invoiceNumber: current.invoiceNumber || number,

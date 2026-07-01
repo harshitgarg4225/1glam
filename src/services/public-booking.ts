@@ -180,8 +180,12 @@ function parseAddons(raw: string): PublicAddon[] {
 }
 
 
-function addDaysIso(days: number) {
-  const date = new Date();
+function addDaysIso(days: number, timeZone = "Asia/Kolkata") {
+  // "Today" in the workspace's timezone (not the server's UTC day), then + days.
+  // en-CA formats as YYYY-MM-DD. Anchoring to the business timezone fixes the
+  // off-by-one that occurred near the local midnight boundary on a UTC host.
+  const todayInTz = new Date().toLocaleDateString("en-CA", { timeZone });
+  const date = new Date(`${todayInTz}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
@@ -255,8 +259,8 @@ export function buildAvailability(config: WorkspaceConfig): PublicAvailability {
 
   return {
     enabled: String(config.bookingPageEnabled || "Yes").toLowerCase() !== "no",
-    minDate: addDaysIso(leadTime),
-    maxDate: addDaysIso(maxAdvance),
+    minDate: addDaysIso(leadTime, config.timezone || "Asia/Kolkata"),
+    maxDate: addDaysIso(maxAdvance, config.timezone || "Asia/Kolkata"),
     offWeekdays: parseOffWeekdays(config.bookingWeeklyOffDays),
     blockedDates: parseBlockedDates(config.bookingBlockedDates),
     timeSlots: parseTimeSlots(config.bookingTimeSlots),

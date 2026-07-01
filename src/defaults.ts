@@ -115,6 +115,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     birthdayTemplate: "",
     birthdayTemplateLang: "en",
     customDomain: "",
+    timezone: "Asia/Kolkata",
     documentTemplate: "classic",
     quoteIntro: "",
     cancellationPolicy: "",

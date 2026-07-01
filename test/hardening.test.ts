@@ -343,6 +343,13 @@ test("nextDocumentNumber buckets by the IST calendar year, not the server's UTC 
   assert.equal(nextDocumentNumber("INV", ["INV-2026-0031"], new Date("2026-12-31T18:30:00Z")), "INV-2027-0001");
 });
 
+test("nextDocumentNumber buckets by the workspace timezone", () => {
+  // 18:30 UTC on Dec 31 = Jan 1 in IST, but still Dec 31 (13:30) in New York.
+  const t = new Date("2026-12-31T18:30:00Z");
+  assert.equal(nextDocumentNumber("INV", [], t, "Asia/Kolkata"), "INV-2027-0001");
+  assert.equal(nextDocumentNumber("INV", [], t, "America/New_York"), "INV-2026-0001");
+});
+
 // --- Partial payment ledger (parsePaymentsLog / derivePaymentStatus) ------------
 
 const { parsePaymentsLog, paymentsTotal, derivePaymentStatus } = await import("../src/services/booking.ts");
