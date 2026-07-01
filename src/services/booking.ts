@@ -936,6 +936,34 @@ export async function cancelBooking(email: string, tokens: Credentials, bookingI
   return updatedBooking;
 }
 
+// Marks a booking as a no-show and records the configured no-show fee for the
+// artist's books. The fee is documentation (kind:"fee") — it is NOT collected
+// income (any advance already paid is a separate payment entry), so it never
+// inflates the collected total. A no-show closes the booking, so the remaining
+// balance is cleared. Idempotent: re-marking won't add a second fee.
+export async function markBookingNoShow(
+  email: string,
+  tokens: Credentials,
+  bookingId: string,
+  feePercent: number,
+): Promise<BookingRecord> {
+  const pct = Math.max(0, Math.min(100, Number(feePercent) || 0));
+  return updateBookingRecord(email, tokens, bookingId, (current) => {
+    const log = parsePaymentsLog(current.paymentsLog);
+    const feeAmount = Math.round((current.finalPrice * pct) / 100);
+    const already = log.some((entry) => entry.kind === "fee" && entry.note.startsWith("No-show"));
+    if (pct > 0 && feeAmount > 0 && !already) {
+      log.push({ amount: feeAmount, method: "", note: `No-show fee (${pct}%)`, at: new Date().toISOString(), kind: "fee" });
+    }
+    return {
+      ...current,
+      status: "No Show",
+      paymentsLog: JSON.stringify(log),
+      balanceDue: 0,
+    };
+  });
+}
+
 // Minimal lead-shaped record for the calendar event when the original lead row
 // is missing (e.g. manually deleted from the sheet).
 function leadFromBooking(booking: BookingRecord): LeadRecord {
@@ -1015,8 +1043,11 @@ export type PaymentEntry = {
   // "refund" entries subtract from the running total (cancelled weddings are
   // a fact of life). "tip" entries are money received but NOT against the
   // service price, so they're tracked separately and never move the balance or
-  // payment status. Everything else counts as a payment toward the booking.
-  kind?: "payment" | "refund" | "tip";
+  // payment status. "fee" entries record a no-show / late-cancellation fee for
+  // the artist's books — they are NOT collected income (any money was already
+  // logged as the advance), so they never move the collected total or balance.
+  // Everything else counts as a payment toward the booking.
+  kind?: "payment" | "refund" | "tip" | "fee";
   // Gateway reference (e.g. Razorpay payment_id) for online entries, so the
   // money can later be refunded through the gateway, not just on paper.
   ref?: string;
@@ -1039,6 +1070,7 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
           kind:
             e.kind === "refund" ? ("refund" as const)
             : e.kind === "tip" ? ("tip" as const)
+            : e.kind === "fee" ? ("fee" as const)
             : ("payment" as const),
           ...(e.ref ? { ref: String(e.ref).slice(0, 60) } : {}),
         };
@@ -1054,7 +1086,9 @@ export function parsePaymentsLog(raw: string | undefined | null): PaymentEntry[]
 // here would wrongly mark a booking overpaid / close out its balance early.
 export function paymentsTotal(log: PaymentEntry[]): number {
   return log.reduce((sum, entry) => {
-    if (entry.kind === "tip") return sum;
+    // Tips and recorded fees (no-show/cancellation) are not collected income
+    // against the service price, so they never move the collected total.
+    if (entry.kind === "tip" || entry.kind === "fee") return sum;
     return sum + (entry.kind === "refund" ? -entry.amount : entry.amount);
   }, 0);
 }
