@@ -161,6 +161,11 @@
     banner.className = "status-banner " + cls;
     banner.textContent = label;
 
+    // A cancelled booking is closed — hide the payment card entirely so the
+    // client isn't confused by a lingering "Balance due" and pay affordance.
+    const isClosed = ["Cancelled", "Lost"].includes(d.leadStatus);
+    if (isClosed) document.getElementById("payment-card").style.display = "none";
+
     // Header
     document.getElementById("event-type").textContent = d.eventType;
     document.getElementById("biz-name").textContent = d.businessName;
