@@ -296,7 +296,7 @@
             </div>
             <div>
               <label for="clientWhatsApp">WhatsApp number</label>
-              <input type="tel" id="clientWhatsApp" inputmode="tel" autocomplete="tel" placeholder="+91…" required />
+              <input type="tel" id="clientWhatsApp" inputmode="tel" autocomplete="tel" placeholder="98765 43210" required />
             </div>
           </div>
 
@@ -723,7 +723,9 @@
           if (!btn) return;
           const iso = btn.getAttribute("data-qd-iso");
           el("eventDate").value = iso;
-          el("selected-date").textContent = "Selected: " + iso;
+          // Same human-friendly format as a calendar pick (not raw "2026-07-06").
+          el("selected-date").textContent = "Selected: " + new Date(iso + "T00:00:00Z").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+          el("selected-date").classList.remove("muted");
           document.querySelectorAll(".cal-day").forEach((c) => c.classList.toggle("selected", c.dataset.iso === iso));
           document.querySelectorAll(".quick-date-chip").forEach((c) => {
             const on = c.dataset.qdIso === iso;
@@ -1011,6 +1013,9 @@
         input.addEventListener("blur", () => setTimeout(close, 150));
       })();
 
+      // The client's selected dialling code, kept in the country-code <select>
+      // (not injected into the number field) and recombined at submit.
+      let clientPhoneCode = "+91";
       // Country-code selector for the client's WhatsApp number (default +91, list
       // from the backend). Keeps the number stored with its dialling code.
       (async function attachClientPhoneCode() {
@@ -1025,15 +1030,22 @@
         sel.style.cssText = "flex:0 0 auto;width:auto;min-width:92px;";
         data.codes.forEach((c) => { const o = document.createElement("option"); o.value = c.code; o.textContent = c.label; sel.appendChild(o); });
         sel.value = data.default;
+        clientPhoneCode = data.default;
         const row = document.createElement("div");
         row.style.cssText = "display:flex;gap:6px;align-items:stretch;";
         input.parentNode.insertBefore(row, input);
         row.appendChild(sel); row.appendChild(input);
         input.style.flex = "1"; input.style.minWidth = "0";
-        if (!input.value.trim()) input.value = data.default + " ";
+        // The dialling code stays in the select — we never pre-fill "+91 " into
+        // the field, so the client just types their number and can't type over or
+        // around a prefix. If they change country and have already typed a bare
+        // national number, re-prefix it; a full "+.." number is left as-is.
         const strip = (v) => v.replace(/^\s*\+\d{1,4}\s*/, "").trim();
-        sel.addEventListener("change", () => { input.value = sel.value + " " + strip(input.value); input.focus(); });
-        input.addEventListener("blur", () => { const v = input.value.trim(); if (v && !v.startsWith("+")) input.value = sel.value + " " + v; });
+        sel.addEventListener("change", () => {
+          clientPhoneCode = sel.value;
+          const v = input.value.trim();
+          if (v.startsWith("+")) input.value = sel.value + " " + strip(v);
+        });
       })();
 
       // Keep the sticky bar's price live as the client picks a package / add-ons,
@@ -1108,8 +1120,13 @@
         }
       });
 
+      let submittingBooking = false;
       el("form").addEventListener("submit", async (event) => {
         event.preventDefault();
+        // Guard against a double-tap firing two bookings: the sticky bar calls
+        // requestSubmit(), and a fast second tap could slip in before the buttons
+        // disable. One in-flight submit at a time.
+        if (submittingBooking) return;
         const statusEl = el("status");
         statusEl.textContent = "";
 
@@ -1156,12 +1173,15 @@
           scrollToEl("clientName"); el("clientName").focus();
           return;
         }
-        // The value carries a country code (e.g. "+91 98…", "+971 5…"), so accept
-        // any plausible international length (8–15 digits incl. code) rather than
-        // a hard 10 — a valid UAE/Singapore number is shorter than 10 nationally.
-        const waDigits = el("clientWhatsApp").value.replace(/\D/g, "");
+        // Recombine the dialling code (from the select) with the national number
+        // (from the field). If the field already holds a full "+.." number (e.g.
+        // browser autofill), use it as-is so we never double the code. Accept any
+        // plausible international length (8–15 digits incl. code).
+        const waRaw = el("clientWhatsApp").value.trim();
+        const clientWhatsAppValue = waRaw.startsWith("+") ? waRaw : `${clientPhoneCode} ${waRaw}`;
+        const waDigits = clientWhatsAppValue.replace(/\D/g, "");
         if (waDigits.length < 8 || waDigits.length > 15) {
-          statusEl.textContent = "Please add a valid WhatsApp number with country code — it's how the artist confirms your date.";
+          statusEl.textContent = "Please add a valid WhatsApp number — it's how the artist confirms your date.";
           scrollToEl("clientWhatsApp"); el("clientWhatsApp").focus();
           return;
         }
@@ -1189,7 +1209,7 @@
           locationText: el("locationText").value.trim() || undefined,
           addons: checkedAddons || undefined,
           clientName: el("clientName").value.trim(),
-          clientWhatsApp: el("clientWhatsApp").value.trim(),
+          clientWhatsApp: clientWhatsAppValue,
           clientInstagram: el("clientInstagram").value.trim() || undefined,
           notes: [el("notes").value.trim(), variantNote, intakeNote].filter(Boolean).join("\n") || undefined,
           promoCode: appliedPromoCode || undefined,
@@ -1198,6 +1218,7 @@
 
         const submitBtn = el("submit");
         const ctaGo = el("cta-go");
+        submittingBooking = true;
         submitBtn.disabled = true;
         submitBtn.textContent = "Sending…";
         ctaGo.disabled = true;
@@ -1224,28 +1245,31 @@
               " request for " + data.eventDate + " has been sent to " + data.businessName +
               ". Your date is tentatively held — it's locked in once " + data.businessName +
               " confirms and the advance is paid. You'll usually hear back on WhatsApp within a day.";
+          }
 
-            // Hand the client a permanent home for this booking: one link to
-            // track status, pay the advance, sign the contract, or reschedule —
-            // instead of the request vanishing into a confirmation message.
-            let appointmentUrl = "";
-            if (data.leadId) {
-              appointmentUrl = location.origin + "/appointment/" +
-                encodeURIComponent(workspaceId) + "/" + encodeURIComponent(data.leadId);
-              const apptBtn = el("appointment-link");
-              apptBtn.href = appointmentUrl;
-              apptBtn.classList.remove("hidden");
-            }
-
-            if (ownerWhatsApp) {
-              const text =
-                "Hi! I just requested a " + data.eventType + " booking for " + data.eventDate +
+          // Give EVERY client (confirmed OR waitlisted) a next action — a link to
+          // track status and a one-tap WhatsApp to the artist — instead of the
+          // waitlist path dead-ending with no button.
+          let appointmentUrl = "";
+          if (data.leadId) {
+            appointmentUrl = location.origin + "/appointment/" +
+              encodeURIComponent(workspaceId) + "/" + encodeURIComponent(data.leadId);
+            const apptBtn = el("appointment-link");
+            apptBtn.href = appointmentUrl;
+            apptBtn.textContent = data.waitlisted ? "Track my waitlist status" : "View my appointment";
+            apptBtn.classList.remove("hidden");
+          }
+          if (ownerWhatsApp) {
+            const text = data.waitlisted
+              ? "Hi! I just joined your waitlist for a " + data.eventType + " on " + data.eventDate +
+                ". My name is " + payload.clientName + "." + (appointmentUrl ? "\n\nMy appointment: " + appointmentUrl : "")
+              : "Hi! I just requested a " + data.eventType + " booking for " + data.eventDate +
                 " via your booking page. My name is " + payload.clientName + "." +
                 (appointmentUrl ? "\n\nMy appointment: " + appointmentUrl : "");
-              const waBtn = el("wa-confirm");
-              waBtn.href = "https://wa.me/" + ownerWhatsApp + "?text=" + encodeURIComponent(text);
-              waBtn.classList.remove("hidden");
-            }
+            const waBtn = el("wa-confirm");
+            waBtn.href = "https://wa.me/" + ownerWhatsApp + "?text=" + encodeURIComponent(text);
+            waBtn.textContent = data.waitlisted ? "Message the artist" : "Confirm on WhatsApp";
+            waBtn.classList.remove("hidden");
           }
 
           hide("booking");
@@ -1263,6 +1287,7 @@
           statusEl.textContent = (error instanceof TypeError)
             ? "We couldn't reach the server. Please check your connection and try again."
             : ((error.message || "Something went wrong. Please try again.").replace(/^[a-zA-Z]+:\s+/, ""));
+          submittingBooking = false;
           submitBtn.disabled = false;
           submitBtn.textContent = "Request booking";
           ctaGo.disabled = false;
