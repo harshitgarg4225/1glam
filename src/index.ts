@@ -386,7 +386,9 @@ app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
   if (!req.session.profile) {
-    return res.status(401).json({ error: "Unauthorized" });
+    // relogin:true lets the frontend redirect to sign-in with a clear message
+    // instead of the user losing their action to an opaque "Unauthorized".
+    return res.status(401).json({ error: "Your session has expired — please sign in again.", relogin: true });
   }
   next();
 });
@@ -7899,9 +7901,30 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
   if (error instanceof ZodError) {
     const first = error.issues[0];
     const field = first?.path?.join(".");
+    // Public routes (booking page etc.) shouldn't leak internal field names to a
+    // bride — drop the "field:" prefix there; the authenticated app keeps it.
+    const isPublic = req.path.startsWith("/api/public/");
     return res.status(400).json({
-      error: field ? `${field}: ${first.message}` : first?.message || "Invalid request data.",
+      error: field && !isPublic ? `${field}: ${first.message}` : first?.message || "Please check the details and try again.",
     });
+  }
+
+  // Malformed / oversized request body (express.json) surfaces a developer-
+  // looking SyntaxError; map it to friendly copy instead of a raw 500.
+  const errType = (error as { type?: string })?.type;
+  if (errType === "entity.parse.failed") {
+    return res.status(400).json({ error: "That request looked malformed — please refresh the page and try again." });
+  }
+  if (errType === "entity.too.large") {
+    return res.status(413).json({ error: "That was too large to send. Please try again with less data." });
+  }
+  // Multer upload errors (file too large / too many files) carry a LIMIT_* code.
+  const errCode = (error as { code?: string })?.code;
+  if (errCode === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({ error: "That image is over the size limit — please use a smaller photo (under 10 MB)." });
+  }
+  if (typeof errCode === "string" && errCode.startsWith("LIMIT_")) {
+    return res.status(400).json({ error: "There was a problem with that upload — please try a different file." });
   }
 
   // Google API permission/auth failures ("caller does not have permission",
@@ -7921,7 +7944,20 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
   // Known, intentionally-thrown business errors carry user-safe messages.
   // Anything else is treated as an internal fault and kept generic.
   const isUserSafe = Boolean(message) && message.length < 200 && !/\b(at |\/home\/|\/usr\/|node_modules|ECONN|ETIMEDOUT|ENOTFOUND)\b/.test(message);
-  res.status(500).json({ error: isUserSafe ? message : "Something went wrong on our end. Please try again." });
+  const friendly = isUserSafe ? message : "Something went wrong on our end. Please try again.";
+
+  // Browser page routes (OAuth callbacks, /q, /i, /book…) get a branded HTML page
+  // with a next step, not a raw JSON blob dumped mid-navigation.
+  const wantsHtml =
+    !req.path.startsWith("/api/") &&
+    !req.path.startsWith("/webhooks/") &&
+    req.accepts(["json", "html"]) === "html";
+  if (wantsHtml) {
+    return res.status(500).type("html").send(
+      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Something went wrong</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#FAF8F5;color:#3d3a36;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}.card{max-width:420px;text-align:center;background:#fff;border:1px solid #ece7df;border-radius:16px;padding:32px}h1{font-size:20px;margin:0 0 8px}p{color:#6b6459;font-size:15px;line-height:1.5;margin:0 0 20px}a{display:inline-block;background:#C26B45;color:#fff;text-decoration:none;padding:11px 22px;border-radius:10px;font-weight:600}</style></head><body><div class="card"><h1>Something went wrong</h1><p>${escapeAttr(friendly)}</p><a href="/">Try again</a></div></body></html>`,
+    );
+  }
+  res.status(500).json({ error: friendly });
 });
 
 // Exported so integration tests can boot the fully-wired app on an ephemeral
