@@ -238,6 +238,9 @@ export type LeadRecord = {
   clientInstagram: string;
   eventType: string;
   eventDate: string;
+  // Optional end date for a multi-day event (e.g. sangeet + wedding). Empty for
+  // a normal single-day booking. When set, the whole span is blocked.
+  eventEndDate: string;
   eventTime: string;
   locationText: string;
   distanceKm: number;
@@ -296,6 +299,8 @@ export type BookingRecord = {
   clientWhatsApp: string;
   eventType: string;
   eventDate: string;
+  // Optional multi-day end date (empty for single-day). Blocks the whole span.
+  eventEndDate: string;
   eventTime: string;
   venue: string;
   assignedArtist: string;
@@ -362,6 +367,7 @@ export type CreateLeadInput = {
   clientInstagram?: string;
   eventType: string;
   eventDate: string;
+  eventEndDate?: string;
   eventTime?: string;
   locationText: string;
   distanceKm?: number;
@@ -455,6 +461,7 @@ export async function createLeadForWorkspace(
     urgencyFlag: "",
     clientNote: "",
     travelCost: pricing.travelCost,
+    eventEndDate: input.eventEndDate ?? "",
   };
 
   await persistLead(workspace, tokens, lead, async () => {
@@ -688,6 +695,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     arrivedAt: "",
     statusChangedAt: new Date().toISOString(),
     travelCost: lead.record.travelCost || 0,
+    eventEndDate: lead.record.eventEndDate || "",
   };
 
   const updatedLead: LeadRecord = {
@@ -1008,6 +1016,7 @@ function leadFromBooking(booking: BookingRecord): LeadRecord {
     quoteGeneratedAt: "", quoteVoidedAt: "", quoteAdjustments: "", orderItems: booking.orderItems,
     quoteNumber: "", quoteViewedAt: "", quoteAcceptedAt: "", referredBy: "",
     lostReason: "", urgencyFlag: "", clientNote: "", travelCost: booking.travelCost,
+    eventEndDate: booking.eventEndDate,
   };
 }
 
@@ -1331,6 +1340,7 @@ export async function importClients(
       urgencyFlag: "",
       clientNote: "",
       travelCost: 0,
+      eventEndDate: "",
     });
   }
 
@@ -1426,6 +1436,40 @@ export async function busySlotsForDate(
     }
   }
   return windows;
+}
+
+// True when `date` falls inside an active multi-day event's span. A multi-day
+// booking (eventEndDate > eventDate) commits the artist for every day in the
+// range, so no other booking can land on any of those days — including the
+// event's own start and end. ISO date strings compare chronologically.
+export async function dateHasMultiDayConflict(
+  email: string,
+  tokens: Credentials,
+  date: string,
+): Promise<boolean> {
+  const workspace = await getRequiredWorkspace(email);
+  const [leads, bookings] = await Promise.all([
+    listLeadRows(workspace, tokens),
+    listBookingRows(workspace, tokens),
+  ]);
+  const spans: [string, string][] = [];
+  for (const lead of leads) {
+    if (
+      lead.eventEndDate && lead.eventEndDate > lead.eventDate &&
+      !["Lost", "Completed"].includes(lead.status) && lead.source !== "Waitlist"
+    ) {
+      spans.push([lead.eventDate, lead.eventEndDate]);
+    }
+  }
+  for (const booking of bookings) {
+    if (
+      booking.eventEndDate && booking.eventEndDate > booking.eventDate &&
+      !["Completed", "Cancelled"].includes(booking.status)
+    ) {
+      spans.push([booking.eventDate, booking.eventEndDate]);
+    }
+  }
+  return spans.some(([start, end]) => date >= start && date <= end);
 }
 
 export async function getDashboardData(email: string, tokens: Credentials): Promise<DashboardData> {
@@ -2198,6 +2242,7 @@ function leadToRow(lead: LeadRecord) {
     lead.urgencyFlag,
     lead.clientNote,
     lead.travelCost,
+    lead.eventEndDate,
   ];
 }
 
@@ -2249,6 +2294,7 @@ function rowToLead(row: string[]): LeadRecord {
     urgencyFlag: row[43] ?? "",
     clientNote: row[44] ?? "",
     travelCost: Number(row[45] ?? 0),
+    eventEndDate: row[46] ?? "",
   };
 }
 
@@ -2293,6 +2339,7 @@ export function bookingToRow(booking: BookingRecord) {
     booking.arrivedAt,
     booking.statusChangedAt,
     booking.travelCost,
+    booking.eventEndDate,
   ];
 }
 
@@ -2337,6 +2384,7 @@ export function rowToBooking(row: string[]): BookingRecord {
     arrivedAt: row[36] ?? "",
     statusChangedAt: row[37] ?? "",
     travelCost: Number(row[38] ?? 0),
+    eventEndDate: row[39] ?? "",
   };
 }
 

@@ -25,6 +25,9 @@ export const publicBookingSchema = z.object({
   clientInstagram: z.string().max(120).optional(),
   eventType: z.string().trim().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+  // Optional end date for a multi-day event; must be a valid ISO date. The
+  // handler ignores it unless it's strictly after eventDate.
+  eventEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD").optional(),
   eventTime: z.string().max(20).optional(),
   // Venue is often unknown when a bride first requests a date; the artist
   // confirms it on WhatsApp anyway. Accept a blank and default to a clear

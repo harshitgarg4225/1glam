@@ -279,6 +279,13 @@
             <div class="cal" id="calendar"></div>
             <input type="hidden" id="eventDate" />
             <div class="selected-date muted" id="selected-date">No date selected yet.</div>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;text-transform:none;letter-spacing:0;color:var(--text);font-weight:500;cursor:pointer;">
+              <input type="checkbox" id="multiday-toggle" style="width:17px;height:17px;accent-color:var(--accent);" /> This event runs over multiple days
+            </label>
+            <div id="multiday-wrap" class="hidden" style="margin-top:8px;">
+              <label for="eventEndDate">Last day</label>
+              <input type="date" id="eventEndDate" />
+            </div>
           </div>
 
           <div id="time-slots-wrap" class="hidden">
@@ -1222,6 +1229,7 @@
         const payload = {
           eventType: selectedEventType,
           eventDate: el("eventDate").value,
+          eventEndDate: (el("multiday-toggle")?.checked && el("eventEndDate")?.value) ? el("eventEndDate").value : undefined,
           eventTime: eventTimeValue,
           locationText: el("locationText").value.trim() || undefined,
           addons: checkedAddons || undefined,
@@ -1316,6 +1324,20 @@
       // now redundant, so hide it and let the floating bar drive submission.
       el("submit").style.display = "none";
       el("cta-go").addEventListener("click", () => el("form").requestSubmit());
+
+      // Multi-day event: reveal the end-date input and constrain it to be on or
+      // after the selected start date.
+      el("multiday-toggle")?.addEventListener("change", (e) => {
+        const wrap = el("multiday-wrap");
+        if (e.target.checked) {
+          wrap.classList.remove("hidden");
+          const start = el("eventDate").value;
+          if (start) el("eventEndDate").min = start;
+        } else {
+          wrap.classList.add("hidden");
+          el("eventEndDate").value = "";
+        }
+      });
 
       // Lightbox: explicit close button + Escape, on top of tap-to-dismiss.
       el("lightbox-close").addEventListener("click", (e) => {

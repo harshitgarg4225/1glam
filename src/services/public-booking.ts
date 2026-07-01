@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, busySlotsForDate, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
+import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, busySlotsForDate, dateHasMultiDayConflict, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
 import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -271,6 +271,7 @@ export type PublicBookingInput = {
   clientInstagram?: string;
   eventType: string;
   eventDate: string;
+  eventEndDate?: string;
   eventTime?: string;
   locationText: string;
   addons?: string;
@@ -465,6 +466,13 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
   const { waitlisted, result } = await withSerializedLock(lockKey, async () => {
     let waitlisted = false;
 
+    // The requested date can't fall inside an existing multi-day event (which
+    // commits the artist for its whole span). Checked inside the lock so a race
+    // can't slip two bookings onto the same committed day.
+    if (await dateHasMultiDayConflict(workspace.email, tokens, input.eventDate).catch(() => false)) {
+      throw new Error("That date is already booked for a multi-day event. Please pick another date.");
+    }
+
     // Duration-aware slot conflict: a 4-hour bridal at 09:00 occupies
     // 09:00-13:00, so an 11:00 request must be refused (or waitlisted) even when
     // the day-level capacity isn't reached yet. Fails open on a Sheets hiccup —
@@ -506,6 +514,8 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
       clientInstagram: input.clientInstagram,
       eventType: input.eventType,
       eventDate: input.eventDate,
+      // Only honour a multi-day end date when it's strictly after the start.
+      eventEndDate: input.eventEndDate && input.eventEndDate > input.eventDate ? input.eventEndDate : "",
       eventTime: input.eventTime,
       locationText: input.locationText,
       inboundMessage,
@@ -877,6 +887,10 @@ export async function getPublicSlotsForDate(
   if (!timeSlots.length) return { slots: [] };
 
   const tokens = await getWorkspaceCredentials(workspace.email);
+  // A day inside an existing multi-day event is fully committed — no slots.
+  if (await dateHasMultiDayConflict(workspace.email, tokens, eventDate).catch(() => false)) {
+    return { slots: [] };
+  }
   const busy = await busySlotsForDate(workspace.email, tokens, eventDate).catch(() => []);
   return {
     slots: computeSlotAvailability({
@@ -925,6 +939,9 @@ export async function checkPublicAvailability(
   const busyAllDay = await hasAllDayCalendarEvent(workspace, tokens, eventDate).catch(() => false);
   if (busyAllDay) {
     return { ok: false, error: "That date is unavailable. Please choose another." };
+  }
+  if (await dateHasMultiDayConflict(workspace.email, tokens, eventDate).catch(() => false)) {
+    return { ok: false, error: "The artist is already booked for a multi-day event that includes this date." };
   }
   const timeSlots = slotsForDate(workspace.config, eventDate, eventType);
   if (timeSlots.length > 0 && eventTime) {

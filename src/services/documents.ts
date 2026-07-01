@@ -209,6 +209,13 @@ export function travelLineItem(travelCost: number, distanceKm?: number): [string
   return [[`Travel & Conveyance${km}`, inr(cost)]];
 }
 
+// The "Date" line for a document — a single date, or a range for a multi-day
+// event (e.g. "2026-12-24 – 2026-12-26").
+function eventDateLine(start: string, end: string): string {
+  if (!start) return "";
+  return end && end > start ? `Date: ${start} – ${end}` : `Date: ${start}`;
+}
+
 // Builds the quote PDF bytes in memory (no Drive upload). Used for both the
 // in-app preview and the Drive-backed shareable document.
 export async function buildQuotePdfBytes(
@@ -294,7 +301,7 @@ export async function buildQuotePdfBytes(
   // estimate with a missing line reads as professional; a placeholder does not.
   y = drawSection(page, "Event Details", [
     `Event: ${lead.eventType}`,
-    lead.eventDate ? `Date: ${lead.eventDate}` : "",
+    eventDateLine(lead.eventDate, lead.eventEndDate),
     lead.eventTime ? `Time: ${lead.eventTime}` : "",
     lead.locationText ? `Location: ${lead.locationText}` : "",
   ].filter(Boolean), y - 12, bold, regular, theme);
@@ -390,7 +397,7 @@ export async function buildInvoicePdfBytes(
 
   y = drawSection(page, "Booking Details", [
     `Event: ${booking.eventType}`,
-    booking.eventDate ? `Date: ${booking.eventDate}` : "",
+    eventDateLine(booking.eventDate, booking.eventEndDate),
     booking.eventTime ? `Time: ${booking.eventTime}` : "",
     booking.venue ? `Venue: ${booking.venue}` : "",
     booking.assignedArtist ? `Assigned Artist: ${booking.assignedArtist}` : "",
@@ -517,7 +524,7 @@ export async function generateContractPdfBytes(
   y = drawSection(page, "Booking Details", [
     `Booking ID: ${booking.bookingId}`,
     `Event: ${booking.eventType}`,
-    booking.eventDate ? `Date: ${booking.eventDate}` : "",
+    eventDateLine(booking.eventDate, booking.eventEndDate),
     booking.eventTime ? `Time: ${booking.eventTime}` : "",
     booking.venue ? `Venue: ${booking.venue}` : "",
     `Artist: ${booking.assignedArtist || workspace.config.ownerName}`,
