@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont, type PDFPage } from "pdf-lib";
-import { fetchWithTimeout, isPublicHttpUrl } from "./http.js";
+import { fetchWithTimeout, isPublicHttpUrlResolved } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
 import { buildPublicDocumentUrl, buildInvoicePageUrl, buildQuoteViewUrl } from "./document-links.js";
@@ -716,8 +716,9 @@ async function embedLogo(
   pdf: PDFDocument,
   logoUrl: string,
 ): Promise<{ image: PdfImage; width: number; height: number } | null> {
-  // SSRF guard: only fetch logos from public hosts (the URL is owner-supplied).
-  if (!logoUrl || !isPublicHttpUrl(logoUrl)) return null;
+  // SSRF guard: only fetch logos from public hosts (the URL is owner-supplied);
+  // resolves DNS so a hostname pointing at a private/metadata IP is rejected too.
+  if (!logoUrl || !(await isPublicHttpUrlResolved(logoUrl))) return null;
   try {
     const res = await fetchWithTimeout(logoUrl);
     if (!res.ok) return null;

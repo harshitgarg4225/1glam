@@ -71,6 +71,25 @@ function delay(ms: number): Promise<void> {
 // host — blocking loopback, link-local (incl. the 169.254.169.254 cloud metadata
 // endpoint) and RFC1918 private ranges. Hostnames that aren't IP literals are
 // allowed (we don't resolve DNS here); this stops the trivial, high-impact cases.
+// True when an IP string is loopback / private / link-local / cloud-metadata /
+// multicast-reserved — i.e. must never be reachable via a user-supplied URL.
+export function isPrivateIp(ip: string): boolean {
+  const host = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) {
+    return true;
+  }
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 10 || a === 127 || a === 0) return true;
+    if (a === 169 && b === 254) return true; // link-local + cloud metadata
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a >= 224) return true; // multicast / reserved
+  }
+  return false;
+}
+
 export function isPublicHttpUrl(raw: string): boolean {
   let url: URL;
   try {
@@ -84,24 +103,31 @@ export function isPublicHttpUrl(raw: string): boolean {
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
     return false;
   }
+  return !isPrivateIp(host); // rejects IP-LITERAL private hosts
+}
 
-  // IPv6 loopback / unique-local / link-local.
-  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) {
+// SSRF-hardened variant: the sync check only catches IP-literal hosts, so a
+// domain that RESOLVES to a private/metadata IP (DNS-rebinding, internal DNS)
+// would slip through. This resolves the hostname and rejects if ANY resolved
+// address is private. Fails closed on a DNS error. (A rebind race between this
+// check and the actual fetch remains — pin to the validated IP if that matters.)
+export async function isPublicHttpUrlResolved(raw: string): Promise<boolean> {
+  if (!isPublicHttpUrl(raw)) return false;
+  let host: string;
+  try {
+    host = new URL(raw).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  } catch {
     return false;
   }
-
-  // IPv4 literal in a private / loopback / link-local range.
-  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (m) {
-    const [a, b] = [Number(m[1]), Number(m[2])];
-    if (a === 10 || a === 127 || a === 0) return false;
-    if (a === 169 && b === 254) return false; // link-local + cloud metadata
-    if (a === 192 && b === 168) return false;
-    if (a === 172 && b >= 16 && b <= 31) return false;
-    if (a >= 224) return false; // multicast / reserved
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":")) return true; // IP literal, already covered
+  try {
+    const { lookup } = await import("node:dns/promises");
+    const results = await lookup(host, { all: true });
+    if (!results.length) return false;
+    return results.every((r) => !isPrivateIp(r.address));
+  } catch {
+    return false;
   }
-
-  return true;
 }
 
 function safeHost(url: string): string {
