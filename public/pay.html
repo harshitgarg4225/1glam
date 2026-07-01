@@ -355,7 +355,17 @@
     // and lost after money has moved).
     function showPayError(msg) {
       const el = document.getElementById("pay-error");
-      el.textContent = msg;
+      el.innerHTML = "";
+      const line = document.createElement("div");
+      line.textContent = msg;
+      el.appendChild(line);
+      // Always give the client a way out — especially after a payment that
+      // couldn't be auto-verified, they need to confirm their money landed.
+      const a = document.createElement("a");
+      a.href = appointmentUrl;
+      a.textContent = "Check my appointment status →";
+      a.style.cssText = "display:inline-block;margin-top:10px;font-size:14px;font-weight:600;color:var(--accent);text-decoration:none;";
+      el.appendChild(a);
       el.style.display = "block";
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
