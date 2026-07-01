@@ -904,7 +904,16 @@ export async function completeBooking(email: string, tokens: Credentials, bookin
 
 // Cancel keeps the financial record (advance received stays on the row) but
 // frees the date: calendar event removed, booking marked Cancelled, lead Lost.
-export async function cancelBooking(email: string, tokens: Credentials, bookingId: string) {
+// When a late (client-initiated) cancellation carries a fee, the retained
+// deposit is recorded as a "fee" ledger marker (documentation only — the money
+// was already logged as the advance; nothing is refunded automatically, and the
+// artist issues any refund of the un-retained portion from the manual flow).
+export async function cancelBooking(
+  email: string,
+  tokens: Credentials,
+  bookingId: string,
+  opts?: { feeAmount?: number },
+) {
   const workspace = await getRequiredWorkspace(email);
   const booking = await findBookingById(workspace, tokens, bookingId);
   if (!booking) throw new Error("Booking not found");
@@ -914,11 +923,29 @@ export async function cancelBooking(email: string, tokens: Credentials, bookingI
     await deleteCalendarEvent(tokens, workspace.confirmedCalendarId, booking.record.confirmedCalendarEventId);
   }
 
+  const log = parsePaymentsLog(booking.record.paymentsLog);
+  const feeAmount = Math.max(0, Math.round(Number(opts?.feeAmount) || 0));
+  // You can't retain more than what's actually been collected.
+  const retained = Math.min(feeAmount, Math.max(0, paymentsTotal(log)));
+  const alreadyRecorded = log.some((entry) => entry.kind === "fee" && entry.note.startsWith("Cancellation"));
+  if (retained > 0 && !alreadyRecorded) {
+    log.push({
+      amount: retained,
+      method: "",
+      note: `Cancellation fee — ₹${retained.toLocaleString("en-IN")} retained`,
+      at: new Date().toISOString(),
+      kind: "fee",
+    });
+  }
+
   const updatedBooking: BookingRecord = {
     ...booking.record,
     status: "Cancelled",
     confirmedCalendarEventId: "",
     statusChangedAt: new Date().toISOString(),
+    paymentsLog: JSON.stringify(log),
+    // Cancelled — nothing further to collect on this booking.
+    balanceDue: 0,
   };
   await updateBookingRow(workspace, tokens, booking.rowNumber, updatedBooking);
 

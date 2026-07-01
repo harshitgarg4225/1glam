@@ -3763,7 +3763,8 @@ app.post("/api/public/:workspaceId/cancel/:bookingId", publicWriteLimiter, async
     const fee = cancellationFeeFor(workspace.config, existing.finalPrice, existing.eventDate);
 
     if (existing.status !== "Cancelled") {
-      await cancelBooking(workspace.email, tokens, bookingId);
+      // Client-initiated: a late cancellation forfeits the fee (retained deposit).
+      await cancelBooking(workspace.email, tokens, bookingId, { feeAmount: fee.feeAmount });
       // Log who cancelled, and flag the fee so the artist can follow up.
       await logInteractionForWorkspace(workspace.email, tokens, {
         leadId: existing.leadId || bookingId,
