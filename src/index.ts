@@ -110,7 +110,7 @@ import { generateConversationReply, deriveToneProfile } from "./services/grok.js
 import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
-import { fetchWithTimeout, isPublicHttpUrl } from "./services/http.js";
+import { fetchWithTimeout, isPublicHttpUrlResolved } from "./services/http.js";
 import { encryptionEnabled } from "./services/crypto.js";
 import {
   generateInvoiceDocument,
@@ -250,6 +250,33 @@ const upload = multer({
     }
   },
 });
+
+// The multer filter only checks the CLIENT-declared MIME type, which is trivially
+// spoofed. This sniffs the real content (magic bytes) so a non-image (script,
+// HTML, PDF) can't be stored behind an image label — important for the public,
+// unauthenticated payment-screenshot upload especially.
+function looksLikeImage(buf: Buffer | undefined): boolean {
+  if (!buf || buf.length < 12) return false;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true; // JPEG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true; // PNG
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return true; // GIF
+  if (buf.subarray(0, 4).toString("ascii") === "RIFF" && buf.subarray(8, 12).toString("ascii") === "WEBP") return true; // WEBP
+  if (buf.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brand = buf.subarray(8, 12).toString("ascii");
+    if (["heic", "heix", "hevc", "mif1", "msf1", "heif", "avif"].includes(brand)) return true; // HEIC/HEIF/AVIF
+  }
+  return false;
+}
+
+// Returns true (and sends a 400) when the uploaded file isn't actually an image.
+function rejectIfNotImage(req: express.Request, res: express.Response): boolean {
+  const file = (req as express.Request & { file?: { buffer?: Buffer } }).file;
+  if (file?.buffer && !looksLikeImage(file.buffer)) {
+    res.status(400).json({ error: "That file doesn't look like a valid image. Please upload a photo (JPG, PNG, WEBP or HEIC)." });
+    return true;
+  }
+  return false;
+}
 
 // Constant-time secret comparison for shared-secret webhooks (WATI/Manychat),
 // so a plain `!==` can't be used as a timing oracle to recover the secret.
@@ -880,6 +907,7 @@ app.post(
   async (req, res, next) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      if (rejectIfNotImage(req, res)) return; // content sniff (not just client MIME)
       const result = await submitPaymentScreenshot(
         String(req.params.workspaceId),
         String(req.params.leadId),
@@ -1366,6 +1394,7 @@ app.post(
         return res.status(401).json({ error: "Unauthorized" });
       }
       if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      if (rejectIfNotImage(req, res)) return;
       const result = await uploadPublicImage(req.session.profile.email, req.session.googleTokens, {
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
@@ -1429,6 +1458,7 @@ app.post(
         return res.status(401).json({ error: "Unauthorized" });
       }
       if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      if (rejectIfNotImage(req, res)) return;
       const result = await uploadLogoImage(req.session.profile.email, req.session.googleTokens, {
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
@@ -1459,6 +1489,7 @@ app.post(
         return res.status(401).json({ error: "Unauthorized" });
       }
       if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      if (rejectIfNotImage(req, res)) return;
       const result = await uploadCoverImage(req.session.profile.email, req.session.googleTokens, {
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
@@ -1488,6 +1519,7 @@ app.post(
         return res.status(401).json({ error: "Unauthorized" });
       }
       if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      if (rejectIfNotImage(req, res)) return;
       const result = await addPortfolioImage(req.session.profile.email, req.session.googleTokens, {
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
@@ -3352,7 +3384,7 @@ app.post("/api/campaigns/broadcast", async (req, res, next) => {
     if (!segment || !message?.trim()) return res.status(400).json({ error: "segment and message are required" });
     // Only forward a clean, public https image URL to WhatsApp — never a
     // file:/data:/javascript: scheme or a private-network address.
-    if (imageUrl && !isPublicHttpUrl(imageUrl)) {
+    if (imageUrl && !(await isPublicHttpUrlResolved(imageUrl))) {
       return res.status(400).json({ error: "Image link must be a public https URL." });
     }
     const job = startCampaignBroadcast(req.session.profile.email, req.session.googleTokens, { segment, message: message.trim(), imageUrl });
@@ -6325,6 +6357,7 @@ app.post(
         return res.status(401).json({ error: "Unauthorized" });
       }
       if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+      if (rejectIfNotImage(req, res)) return;
       const workspace = await getWorkspaceByEmail(req.session.profile.email);
       if (!workspace) return res.status(404).json({ error: "Workspace not found" });
       const phone = String(req.params.phone ?? "").replace(/\D/g, "");

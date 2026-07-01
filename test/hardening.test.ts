@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // that transitively pull it in (booking.ts → config.ts).
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
-const { isPublicHttpUrl } = await import("../src/services/http.ts");
+const { isPublicHttpUrl, isPrivateIp, isPublicHttpUrlResolved } = await import("../src/services/http.ts");
 const { roundToPremiumNumber } = await import("../src/services/booking.ts");
 const { parseDocumentAdjustments, parseOrderItems, travelLineItem } = await import("../src/services/documents.ts");
 const { buildAssistantSnapshot } = await import("../src/services/assistant.ts");
@@ -471,4 +471,21 @@ test("recordPaymentSchema accepts refunds and defaults to payment", () => {
   assert.equal(recordPaymentSchema.parse({ amount: 100 }).type, "payment");
   assert.equal(recordPaymentSchema.parse({ amount: 100, type: "refund" }).type, "refund");
   assert.throws(() => recordPaymentSchema.parse({ amount: 100, type: "chargeback" }));
+});
+
+test("isPrivateIp flags loopback / private / link-local / metadata ranges", () => {
+  for (const ip of ["127.0.0.1", "10.1.2.3", "192.168.0.1", "172.16.0.1", "172.31.255.255", "169.254.169.254", "0.0.0.0", "::1", "fd00::1", "fe80::1", "224.0.0.1"]) {
+    assert.equal(isPrivateIp(ip), true, `${ip} should be private`);
+  }
+  for (const ip of ["8.8.8.8", "1.1.1.1", "172.32.0.1", "173.0.0.1", "20.20.20.20"]) {
+    assert.equal(isPrivateIp(ip), false, `${ip} should be public`);
+  }
+});
+
+test("isPublicHttpUrlResolved rejects private literals/schemes and allows public literals", async () => {
+  assert.equal(await isPublicHttpUrlResolved("http://169.254.169.254/latest/meta-data"), false); // cloud metadata
+  assert.equal(await isPublicHttpUrlResolved("http://127.0.0.1/x"), false);
+  assert.equal(await isPublicHttpUrlResolved("http://localhost/x"), false);
+  assert.equal(await isPublicHttpUrlResolved("file:///etc/passwd"), false); // non-http scheme
+  assert.equal(await isPublicHttpUrlResolved("https://8.8.8.8/logo.png"), true); // public IP literal (no DNS needed)
 });
