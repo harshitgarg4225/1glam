@@ -140,6 +140,10 @@ export const workspaceConfigSchema = z.object({
   serviceShootAddons: z.string().optional().default(""),
   serviceOtherAddons: z.string().optional().default(""),
   bookingTimeSlots: slotsField,
+  // Per-weekday slot overrides, e.g. "Mon: 10:00,14:00 | Sat: 09:00,21:00". A
+  // weekday not listed uses the general/per-event slots. Free-form string parsed
+  // in public-booking.ts (kept as-is here so a bad token can't 400 a settings save).
+  bookingWeekdaySlots: z.string().optional().default(""),
   bookingWaitlistEnabled: z.string().optional().default("No"),
   portfolioImages: z.string().optional().default(""),
   aboutText: z.string().optional().default(""),
