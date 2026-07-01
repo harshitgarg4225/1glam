@@ -213,6 +213,36 @@ function getEventTimeSlots(config: WorkspaceConfig, eventType: string): string[]
   return parseTimeSlots(String(config[fieldKey] || ""));
 }
 
+// Per-weekday slot overrides: "Mon: 10:00,14:00 | Sat: 09:00,21:00" → a map of
+// weekday index (0=Sun..6=Sat) to normalized HH:MM slots. A weekday not listed
+// isn't in the map (callers fall back to the general/per-event slots).
+export function parseWeekdaySlots(raw: string): Record<number, string[]> {
+  const out: Record<number, string[]> = {};
+  for (const part of String(raw || "").split("|")) {
+    const colon = part.indexOf(":");
+    if (colon < 1) continue;
+    const day = WEEKDAY_INDEX[part.slice(0, colon).trim().toLowerCase()];
+    if (day === undefined) continue;
+    out[day] = parseTimeSlots(part.slice(colon + 1)); // reuses the HH:MM normalizer
+  }
+  return out;
+}
+
+function getWeekdayTimeSlots(config: WorkspaceConfig, weekday: number): string[] {
+  return parseWeekdaySlots(String(config.bookingWeekdaySlots || ""))[weekday] ?? [];
+}
+
+// The bookable start times for a specific date + event. Precedence (most
+// specific first): per-event slots → per-weekday slots → the general list.
+function slotsForDate(config: WorkspaceConfig, eventDate: string, eventType: string): string[] {
+  const eventSlots = getEventTimeSlots(config, eventType);
+  if (eventSlots.length > 0) return eventSlots;
+  const weekday = new Date(`${eventDate}T00:00:00Z`).getUTCDay();
+  const weekdaySlots = getWeekdayTimeSlots(config, weekday);
+  if (weekdaySlots.length > 0) return weekdaySlots;
+  return parseTimeSlots(config.bookingTimeSlots);
+}
+
 export function buildAvailability(config: WorkspaceConfig): PublicAvailability {
   const leadTime = Math.max(0, Number(config.bookingLeadTimeDays) || 0);
   const maxAdvance = Number(config.bookingMaxAdvanceDays) > 0 ? Number(config.bookingMaxAdvanceDays) : 365;
@@ -404,8 +434,7 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
     throw new Error("That date is unavailable. Please choose another.");
   }
 
-  const eventSlots = getEventTimeSlots(workspace.config, input.eventType);
-  const timeSlots = eventSlots.length > 0 ? eventSlots : parseTimeSlots(workspace.config.bookingTimeSlots);
+  const timeSlots = slotsForDate(workspace.config, input.eventDate, input.eventType);
   if (timeSlots.length > 0 && input.eventTime) {
     if (!timeSlots.includes(input.eventTime)) {
       throw new Error("Please choose one of the available time slots.");
@@ -844,8 +873,7 @@ export async function getPublicSlotsForDate(
   if (!workspace) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return { slots: [] };
 
-  const eventSlots = getEventTimeSlots(workspace.config, eventType);
-  const timeSlots = eventSlots.length > 0 ? eventSlots : parseTimeSlots(workspace.config.bookingTimeSlots);
+  const timeSlots = slotsForDate(workspace.config, eventDate, eventType);
   if (!timeSlots.length) return { slots: [] };
 
   const tokens = await getWorkspaceCredentials(workspace.email);
@@ -898,8 +926,7 @@ export async function checkPublicAvailability(
   if (busyAllDay) {
     return { ok: false, error: "That date is unavailable. Please choose another." };
   }
-  const eventSlots = getEventTimeSlots(workspace.config, eventType);
-  const timeSlots = eventSlots.length > 0 ? eventSlots : parseTimeSlots(workspace.config.bookingTimeSlots);
+  const timeSlots = slotsForDate(workspace.config, eventDate, eventType);
   if (timeSlots.length > 0 && eventTime) {
     if (!timeSlots.includes(eventTime)) {
       return { ok: false, error: "Please choose one of the available time slots." };

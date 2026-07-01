@@ -98,6 +98,7 @@ export function buildDefaultConfig(profile: { email: string; name: string }): Wo
     serviceShootAddons: "",
     serviceOtherAddons: "",
     bookingTimeSlots: "",
+    bookingWeekdaySlots: "",
     bookingWaitlistEnabled: "No",
     portfolioImages: "",
     aboutText: "",

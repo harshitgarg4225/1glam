@@ -8,7 +8,7 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-
 const { computeSlotAvailability, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
 const { parseQuotePackages, parseDocumentAdjustments } = await import("../src/services/documents.ts");
 const { computeInsights, buildDigestSummary, buildServicesContext } = await import("../src/services/insights.ts");
-const { matchSelectedAddons, parseBlockedDates } = await import("../src/services/public-booking.ts");
+const { matchSelectedAddons, parseBlockedDates, parseWeekdaySlots } = await import("../src/services/public-booking.ts");
 const { buildDefaultConfig } = await import("../src/defaults.ts");
 
 const baseConfig = () =>
@@ -355,4 +355,15 @@ test("parseBlockedDates keeps single dates and expands inclusive ranges", () => 
   assert.ok(mixed.includes("2026-07-01"));
   // Junk and reversed ranges are ignored, not thrown.
   assert.deepEqual(parseBlockedDates("garbage, 2026-12-31:2026-12-01"), []);
+});
+
+test("parseWeekdaySlots maps weekday names to normalized HH:MM slots", () => {
+  const map = parseWeekdaySlots("Sat: 09:00,21:00 | Sun: 11:00 | Mon: 10:00,14:00");
+  assert.deepEqual(map[6], ["09:00", "21:00"]); // Sat
+  assert.deepEqual(map[0], ["11:00"]);          // Sun
+  assert.deepEqual(map[1], ["10:00", "14:00"]); // Mon
+  assert.equal(map[3], undefined);              // Wed not listed → falls back to defaults
+  // Unknown day names and non-HH:MM times are dropped, not thrown.
+  const m2 = parseWeekdaySlots("garbage | Fri: 9am, 18:00");
+  assert.deepEqual(m2[5], ["18:00"]);
 });

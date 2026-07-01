@@ -106,6 +106,8 @@ export type WorkspaceConfig = PricingRuleConfig & {
   serviceShootAddons: string;
   serviceOtherAddons: string;
   bookingTimeSlots: string;
+  // Per-weekday slot overrides, e.g. "Mon: 10:00,14:00 | Sat: 09:00,21:00".
+  bookingWeekdaySlots: string;
   bookingWaitlistEnabled: string;
   portfolioImages: string;
   aboutText: string;
