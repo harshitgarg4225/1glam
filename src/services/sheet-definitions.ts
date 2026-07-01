@@ -61,6 +61,7 @@ export const leadHeaders = [
   "Urgency Flag",
   "Client Note",
   "Travel Cost",
+  "Event End Date",
 ] as const;
 
 export const bookingHeaders = [
@@ -103,6 +104,7 @@ export const bookingHeaders = [
   "Arrived At",
   "Status Changed At",
   "Travel Cost",
+  "Event End Date",
 ] as const;
 
 export const artistHeaders = [
