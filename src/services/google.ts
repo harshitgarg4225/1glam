@@ -3,6 +3,24 @@ import type { Credentials } from "google-auth-library";
 import { appConfig } from "../config.js";
 import type { GoogleProfile, StoredGoogleTokens } from "../types.js";
 
+// Retry transient Google API failures (429 rate-limit, 5xx) with exponential
+// backoff so a quota burst or a blip degrades gracefully instead of hard-failing
+// a dashboard read or a calendar write. httpMethodsToRetry deliberately EXCLUDES
+// POST, so non-idempotent Sheets appends (new lead/booking rows) are never
+// retried — that would duplicate rows. GET reads and PUT updates are safe.
+google.options({
+  retry: true,
+  retryConfig: {
+    retry: 4,
+    retryDelay: 300,
+    httpMethodsToRetry: ["GET", "PUT", "HEAD", "OPTIONS", "DELETE"],
+    statusCodesToRetry: [
+      [429, 429],
+      [500, 599],
+    ],
+  },
+});
+
 export function createOAuthClient() {
   return new google.auth.OAuth2(
     appConfig.googleClientId,

@@ -1334,6 +1334,39 @@ export async function listActiveLeadsForDate(
   );
 }
 
+// The busy time windows on a date for slot-conflict checks. Unions active LEADS
+// with active BOOKINGS — a booking whose lead has moved to Completed still
+// occupies its slot, so checking leads alone would free the slot and double-book.
+// Duplicates (a confirmed lead + its booking) are harmless: the slot is busy
+// either way. Waitlisted leads don't hold a slot.
+export async function busySlotsForDate(
+  email: string,
+  tokens: Credentials,
+  eventDate: string,
+): Promise<{ eventTime: string; eventType: string }[]> {
+  const workspace = await getRequiredWorkspace(email);
+  const [leads, bookings] = await Promise.all([
+    listLeadRows(workspace, tokens),
+    listBookingRows(workspace, tokens),
+  ]);
+  const windows: { eventTime: string; eventType: string }[] = [];
+  for (const lead of leads) {
+    if (
+      lead.eventDate === eventDate &&
+      !["Lost", "Completed"].includes(lead.status) &&
+      lead.source !== "Waitlist"
+    ) {
+      windows.push({ eventTime: lead.eventTime, eventType: lead.eventType });
+    }
+  }
+  for (const booking of bookings) {
+    if (booking.eventDate === eventDate && !["Completed", "Cancelled"].includes(booking.status)) {
+      windows.push({ eventTime: booking.eventTime, eventType: booking.eventType });
+    }
+  }
+  return windows;
+}
+
 export async function getDashboardData(email: string, tokens: Credentials): Promise<DashboardData> {
   const workspace = await getRequiredWorkspace(email);
   const leads = await listLeadRows(workspace, tokens);
