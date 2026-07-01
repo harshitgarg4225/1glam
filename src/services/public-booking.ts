@@ -133,15 +133,32 @@ function parseOffWeekdays(raw: string): number[] {
   ];
 }
 
-function parseBlockedDates(raw: string): string[] {
-  return [
-    ...new Set(
-      String(raw || "")
-        .split(",")
-        .map((value) => value.trim())
-        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)),
-    ),
-  ];
+// Blocked dates. Each comma-separated token is either a single ISO date
+// (2026-12-25) or an inclusive range (2026-12-24:2026-12-31, also accepting
+// ".." or "to" as the separator) so an artist can block a whole holiday/vacation
+// span in one entry instead of listing every day. Ranges are bounded to a year
+// so a typo can't expand into a runaway list.
+function expandBlockedRange(startIso: string, endIso: string, into: Set<string>) {
+  let cursor = new Date(`${startIso}T00:00:00Z`);
+  const end = new Date(`${endIso}T00:00:00Z`);
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime()) || end < cursor) return;
+  for (let i = 0; i < 366 && cursor <= end; i += 1) {
+    into.add(cursor.toISOString().slice(0, 10));
+    cursor = new Date(cursor.getTime() + 86_400_000);
+  }
+}
+
+export function parseBlockedDates(raw: string): string[] {
+  const out = new Set<string>();
+  for (const token of String(raw || "").split(",").map((value) => value.trim())) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(token)) {
+      out.add(token);
+      continue;
+    }
+    const range = /^(\d{4}-\d{2}-\d{2})\s*(?:\.\.|:|to)\s*(\d{4}-\d{2}-\d{2})$/i.exec(token);
+    if (range) expandBlockedRange(range[1], range[2], out);
+  }
+  return [...out];
 }
 
 function sanitizePhone(raw: string) {

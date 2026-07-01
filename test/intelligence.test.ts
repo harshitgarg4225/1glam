@@ -8,7 +8,7 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-
 const { computeSlotAvailability, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
 const { parseQuotePackages, parseDocumentAdjustments } = await import("../src/services/documents.ts");
 const { computeInsights, buildDigestSummary, buildServicesContext } = await import("../src/services/insights.ts");
-const { matchSelectedAddons } = await import("../src/services/public-booking.ts");
+const { matchSelectedAddons, parseBlockedDates } = await import("../src/services/public-booking.ts");
 const { buildDefaultConfig } = await import("../src/defaults.ts");
 
 const baseConfig = () =>
@@ -338,4 +338,21 @@ test("buildServicesContext reflects current prices, durations and travel", () =>
   assert.match(text, /Bridal Makeup: from Rs 15,000 \(about 4h\)/);
   assert.match(text, /Mumbai/);
   assert.match(text, /Owner notes: I only take one bridal per day\./);
+});
+
+test("parseBlockedDates keeps single dates and expands inclusive ranges", () => {
+  // Single dates unchanged.
+  assert.deepEqual(parseBlockedDates("2026-12-25"), ["2026-12-25"]);
+  // Range (colon separator) expands inclusively.
+  assert.deepEqual(
+    parseBlockedDates("2026-12-24:2026-12-27"),
+    ["2026-12-24", "2026-12-25", "2026-12-26", "2026-12-27"],
+  );
+  // ".." and "to" separators, mixed with a single date; deduped.
+  const mixed = parseBlockedDates("2026-01-01, 2026-06-10..2026-06-11, 2026-07-01 to 2026-07-01");
+  assert.ok(mixed.includes("2026-01-01"));
+  assert.ok(mixed.includes("2026-06-10") && mixed.includes("2026-06-11"));
+  assert.ok(mixed.includes("2026-07-01"));
+  // Junk and reversed ranges are ignored, not thrown.
+  assert.deepEqual(parseBlockedDates("garbage, 2026-12-31:2026-12-01"), []);
 });
