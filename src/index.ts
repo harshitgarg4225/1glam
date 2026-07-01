@@ -352,7 +352,10 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: appConfig.baseUrl.startsWith("https://"),
+      // Always Secure in a deployed environment (never send the session cookie
+      // over cleartext in staging/prod, even if APP_BASE_URL is misconfigured to
+      // http); locally it follows the base URL so http dev still works.
+      secure: appConfig.isDeployed || appConfig.baseUrl.startsWith("https://"),
       maxAge: 1000 * 60 * 60 * 24 * 7,
       path: "/",
     },
@@ -383,6 +386,22 @@ app.use(express.static(path.join(process.cwd(), "public")));
 // logged-out visitors so the landing page can render without bouncing them (and
 // Google's OAuth-verification crawler) to a login screen.
 const PUBLIC_API_PATHS = new Set(["/api/health", "/api/ready", "/api/session", "/api/document-templates", "/api/logout", "/api/auth/mobile/exchange", "/api/auth/google/id-token", "/api/auth/google/native-code", "/api/config/phone-codes", "/api/push/config"]);
+const STATE_CHANGING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+// A cross-site request per the browser's own signals. Prefers Sec-Fetch-Site
+// (sent by modern browsers); falls back to comparing the Origin host to the
+// request host. A missing Origin (native app, same-origin GET-turned-POST) is
+// NOT treated as cross-site — SameSite=Lax already covers that case.
+function isCrossSiteRequest(req: express.Request): boolean {
+  const secFetchSite = req.get("sec-fetch-site");
+  if (secFetchSite) return secFetchSite === "cross-site";
+  const origin = req.get("origin");
+  if (!origin) return false;
+  try {
+    return new URL(origin).host !== req.get("host");
+  } catch {
+    return true;
+  }
+}
 app.use((req, res, next) => {
   if (req.path !== "/api" && !req.path.startsWith("/api/")) return next();
   if (PUBLIC_API_PATHS.has(req.path) || req.path.startsWith("/api/public/")) return next();
@@ -390,6 +409,13 @@ app.use((req, res, next) => {
     // relogin:true lets the frontend redirect to sign-in with a clear message
     // instead of the user losing their action to an opaque "Unauthorized".
     return res.status(401).json({ error: "Your session has expired — please sign in again.", relogin: true });
+  }
+  // CSRF defence for cookie-authenticated state changes: a cross-site request
+  // (the classic CSRF shape) is rejected. Same-origin app requests send
+  // Sec-Fetch-Site: same-origin (or no Origin at all), so this never blocks the
+  // web app or the native shell — it's defence-in-depth on top of SameSite=Lax.
+  if (STATE_CHANGING_METHODS.has(req.method) && isCrossSiteRequest(req)) {
+    return res.status(403).json({ error: "This request was blocked for security. Please refresh the page and try again." });
   }
   next();
 });

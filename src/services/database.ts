@@ -53,7 +53,14 @@ export function getPool() {
   if (!pool) {
     pool = new Pool({
       connectionString: appConfig.databaseUrl,
-      ssl: appConfig.databaseUrl.includes("localhost") ? false : { rejectUnauthorized: false },
+      // localhost → no TLS; with a CA bundle → verify the server cert (closes the
+      // MITM gap); otherwise encrypt-but-don't-verify (the managed-provider
+      // default, kept so setting a CA is an opt-in that can't break the connection).
+      ssl: appConfig.databaseUrl.includes("localhost")
+        ? false
+        : appConfig.databaseCaCert
+          ? { ca: appConfig.databaseCaCert, rejectUnauthorized: true }
+          : { rejectUnauthorized: false },
       // Bounded pool: workspaces are small JSONB rows, so 10 connections per
       // instance is plenty — and it keeps N instances from breaching the
       // Postgres max_connections ceiling.
