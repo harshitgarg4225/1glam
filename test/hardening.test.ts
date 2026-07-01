@@ -360,6 +360,18 @@ test("parsePaymentsLog tolerates junk and keeps only positive amounts", () => {
   assert.equal(paymentsTotal(log), 8000);
 });
 
+test("paymentsTotal excludes no-show/cancellation fee entries (not collected income)", () => {
+  const log = parsePaymentsLog(JSON.stringify([
+    { amount: 9000, method: "UPI", note: "advance", kind: "payment", at: "2026-06-01T10:00:00Z" },
+    { amount: 15000, method: "", note: "No-show fee (50%)", kind: "fee", at: "2026-06-02T00:00:00Z" },
+    { amount: 500, method: "UPI", note: "", kind: "tip", at: "2026-06-03T00:00:00Z" },
+  ]));
+  assert.equal(log.length, 3);
+  assert.equal(log[1].kind, "fee"); // the parser preserves the fee kind (doesn't coerce to payment)
+  // Only the real ₹9,000 payment counts as collected — the fee and tip don't.
+  assert.equal(paymentsTotal(log), 9000);
+});
+
 test("derivePaymentStatus reflects the money actually received", () => {
   // Nothing received yet.
   assert.equal(derivePaymentStatus(50000, 15000, 0), "Advance Due");

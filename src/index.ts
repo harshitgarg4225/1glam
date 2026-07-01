@@ -34,6 +34,7 @@ import {
   parsePaymentsLog,
   paymentsTotal,
   recordBookingPayment,
+  markBookingNoShow,
   rescheduleBooking,
   toggleLeadUrgency,
   updateBookingRecord,
@@ -6749,12 +6750,14 @@ app.post("/api/bookings/:bookingId/no-show", async (req, res, next) => {
     );
     if (!workspace || !booking) return res.status(404).json({ error: "Booking not found" });
 
-    await updateBookingRecord(req.session.profile.email, req.session.googleTokens, req.params.bookingId, (current) => ({
-      ...current,
-      status: "No Show",
-    }));
+    const feePercent = Math.max(0, Math.min(100, Number(workspace.config.noShowFeePercent) || 0));
+    await markBookingNoShow(req.session.profile.email, req.session.googleTokens, req.params.bookingId, feePercent);
 
-    res.json({ ok: true, noShowFeePercent: workspace.config.noShowFeePercent || 0 });
+    res.json({
+      ok: true,
+      noShowFeePercent: feePercent,
+      noShowFee: Math.round((booking.finalPrice * feePercent) / 100),
+    });
   } catch (error) {
     next(error);
   }
