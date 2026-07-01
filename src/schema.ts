@@ -160,6 +160,10 @@ export const workspaceConfigSchema = z.object({
   birthdayTemplate: z.string().optional().default(""),
   birthdayTemplateLang: z.string().optional().default("en"),
   customDomain: z.string().optional().default(""),
+  // IANA timezone the business runs in (e.g. "Asia/Kolkata", "America/New_York").
+  // Anchors the booking window and document dates. Defaults to IST so existing
+  // India workspaces are unchanged.
+  timezone: z.string().optional().default("Asia/Kolkata"),
   documentTemplate: z.string().optional().default("classic"),
   quoteIntro: z.string().optional().default(""),
   cancellationPolicy: z.string().optional().default(""),
