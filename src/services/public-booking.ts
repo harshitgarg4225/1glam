@@ -269,6 +269,7 @@ export type PublicBookingInput = {
   clientName: string;
   clientWhatsApp: string;
   clientInstagram?: string;
+  clientEmail?: string;
   eventType: string;
   eventDate: string;
   eventEndDate?: string;
@@ -512,6 +513,7 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
       clientName: input.clientName,
       clientWhatsApp: input.clientWhatsApp,
       clientInstagram: input.clientInstagram,
+      clientEmail: input.clientEmail,
       eventType: input.eventType,
       eventDate: input.eventDate,
       // Only honour a multi-day end date when it's strictly after the start.

@@ -62,6 +62,7 @@ export const leadHeaders = [
   "Client Note",
   "Travel Cost",
   "Event End Date",
+  "Client Email",
 ] as const;
 
 export const bookingHeaders = [
@@ -105,6 +106,7 @@ export const bookingHeaders = [
   "Status Changed At",
   "Travel Cost",
   "Event End Date",
+  "Client Email",
 ] as const;
 
 export const artistHeaders = [

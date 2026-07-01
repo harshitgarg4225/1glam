@@ -316,6 +316,9 @@
           <label for="clientInstagram">Instagram handle (optional)</label>
           <input type="text" id="clientInstagram" placeholder="@yourhandle" />
 
+          <label for="clientEmail">Email (optional — for reminders &amp; receipts)</label>
+          <input type="email" id="clientEmail" inputmode="email" autocomplete="email" placeholder="you@example.com" />
+
           <label for="notes">Anything else? (optional)</label>
           <textarea id="notes" placeholder="Number of people, look references, timings…"></textarea>
 
@@ -1236,6 +1239,7 @@
           clientName: el("clientName").value.trim(),
           clientWhatsApp: clientWhatsAppValue,
           clientInstagram: el("clientInstagram").value.trim() || undefined,
+          clientEmail: el("clientEmail").value.trim() || undefined,
           notes: [el("notes").value.trim(), variantNote, intakeNote].filter(Boolean).join("\n") || undefined,
           promoCode: appliedPromoCode || undefined,
           preferredArtist: el("preferredArtist")?.value || undefined,
