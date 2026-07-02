@@ -557,6 +557,67 @@
       .bd-spinner { display: inline-block; width: 15px; height: 15px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: bd-spin .7s linear infinite; vertical-align: -3px; margin-right: 8px; }
       @media (prefers-reduced-motion: reduce) { .bd-spinner { animation-duration: 2s; } }
       @media (max-width: 640px) { .tab-more-wrap { margin-left: 0; } }
+
+      /* ── Desktop side rail ──
+         On wide screens the 16-destination tab bar becomes a fixed left rail —
+         same markup, same JS (activateTab only toggles classes); this is a pure
+         CSS layout mode. Kept below every overlay (confirm 1200, drawers 8000,
+         modals 9000). Phones keep the bottom nav; mid-size keeps top tabs. */
+      @media (min-width: 1200px) {
+        body.authenticated nav.tabs.requires-auth {
+          position: fixed;
+          top: 0; left: 0; bottom: 0;
+          width: 210px;
+          flex-direction: column;
+          align-items: stretch;
+          flex-wrap: nowrap;
+          gap: 2px;
+          padding: 18px 12px 16px;
+          border-bottom: none;
+          border-right: 1px solid var(--line);
+          overflow-y: auto;
+          z-index: 100;
+        }
+        body.authenticated .shell {
+          width: calc(100vw - 210px - 64px);
+          max-width: 1280px;
+          margin-left: calc(210px + 32px);
+          margin-right: 32px;
+        }
+        body.authenticated .tabs .tab-button {
+          text-align: left;
+          padding: 10px 14px;
+          border-bottom: none;
+          margin-bottom: 0;
+          border-radius: 10px;
+          border-left: 3px solid transparent;
+        }
+        body.authenticated .tabs .tab-button.active {
+          color: var(--accent);
+          background: var(--accent-soft);
+          border-left-color: var(--accent);
+        }
+        body.authenticated .tabs .tab-more-wrap {
+          margin-left: 0;
+          margin-top: auto;
+          flex-direction: column;
+          align-items: stretch;
+          padding-top: 10px;
+          border-top: 1px solid var(--line);
+        }
+        /* The More menu renders inline in the rail (an accordion) instead of a
+           floating dropdown — same .open toggle JS. */
+        body.authenticated .tabs .tab-more-menu {
+          position: static;
+          box-shadow: none;
+          border: none;
+          background: transparent;
+          min-width: 0;
+          margin-top: 2px;
+          padding: 0;
+        }
+        body.authenticated .tabs .tab-more-item { border-radius: 8px; padding: 9px 14px; }
+      }
       .button.primary-action { width: 100%; margin-top: 10px; }
       .gallery-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-top: 12px; }
       .gallery-preview img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
