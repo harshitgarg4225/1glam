@@ -1790,21 +1790,23 @@ app.post("/api/assistant/ask", async (req, res, next) => {
 
     const { leads, bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
     const snapshot = buildAssistantSnapshot(leads, bookings);
-    const answer = await askBusinessAssistant({
+    const result = await askBusinessAssistant({
       ownerName: workspace.config.ownerName,
       brandName: workspace.config.businessName,
       city: workspace.config.city,
       question,
       snapshot,
     });
-    if (!answer) {
+    if (!result) {
       return res.status(503).json({ error: "The AI assistant isn't available right now. Please try again in a moment." });
     }
     let balanceCredits: number | null = null;
     if (appConfig.xaiApiKey) {
       balanceCredits = await meterUsage(req.session.profile.email, "aiAssistant");
     }
-    res.json({ ok: true, answer, balanceCredits, lowBalance: balanceCredits !== null && isLowBalance(balanceCredits) });
+    // actions are already validated against the snapshot server-side — the UI
+    // renders them as ordinary tappable action buttons; nothing auto-executes.
+    res.json({ ok: true, answer: result.answer, actions: result.actions, balanceCredits, lowBalance: balanceCredits !== null && isLowBalance(balanceCredits) });
   } catch (error) {
     next(error);
   }
