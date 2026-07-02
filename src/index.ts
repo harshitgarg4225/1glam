@@ -106,7 +106,7 @@ import {
   verifyMetaWebhook,
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
-import { generateConversationReply, deriveToneProfile } from "./services/grok.js";
+import { generateConversationReply, deriveToneProfile, draftCampaignMessage } from "./services/grok.js";
 import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate } from "./services/messaging.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
@@ -1810,6 +1810,40 @@ app.post("/api/assistant/ask", async (req, res, next) => {
   }
 });
 
+// Drafts a WhatsApp campaign/announcement message in the artist's voice for a
+// chosen audience segment. Metered like other AI replies; unavailable AI keeps
+// the campaign textarea fully manual.
+app.post("/api/campaigns/draft-message", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const workspace = await getWorkspaceByEmail(req.session.profile.email);
+    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+    const segmentLabel = String(req.body?.segmentLabel || "past clients").slice(0, 80);
+    const hint = String(req.body?.hint || "").slice(0, 300);
+    const message = await draftCampaignMessage({
+      brandName: workspace.config.businessName || workspace.config.ownerName,
+      ownerName: workspace.config.ownerName,
+      city: workspace.config.city,
+      language: workspace.config.aiLanguage,
+      signOff: workspace.config.aiSignOff,
+      toneProfile: workspace.config.aiToneProfile,
+      servicesContext: workspace.config.aiServicesContext,
+      segmentLabel,
+      hint,
+    });
+    if (!message) {
+      return res.status(503).json({ error: "AI drafting isn't available right now — write the message yourself or try again in a moment." });
+    }
+    let balanceCredits: number | null = null;
+    if (appConfig.xaiApiKey) {
+      balanceCredits = await meterUsage(req.session.profile.email, "aiReply");
+    }
+    res.json({ ok: true, message, balanceCredits, lowBalance: balanceCredits !== null && isLowBalance(balanceCredits) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Auto mode only: lists live reviews from Google Business Profile. Returns
 // apiAvailable:false (so the UI shows assisted mode) until the project is
 // allowlisted and the artist has granted the business.manage scope.
@@ -2421,11 +2455,9 @@ app.post("/api/leads", async (req, res, next) => {
       parsed,
     );
 
-    // Lead creation runs AI enrichment (profile tier, tags, insight, reply).
-    if (appConfig.xaiApiKey) {
-      await meterUsage(req.session.profile.email, "aiLeadEnrichment");
-    }
-
+    // AI-enrichment metering happens inside createLeadForWorkspace (it fires on
+    // every path that actually enriches — manual, booking page, webhooks — not
+    // just this endpoint).
     res.json({ ok: true, ...result });
   } catch (error) {
     next(error);
