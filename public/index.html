@@ -1891,7 +1891,7 @@
             </div>
           </div>
           <div style="margin-bottom:10px;">
-            <label for="campaign-message">Message</label>
+            <label for="campaign-message" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">Message <button type="button" class="button tiny secondary" id="campaign-ai-draft" title="Drafts a message in your voice for the chosen audience — you edit and send">✨ Draft with AI</button></label>
             <textarea id="campaign-message" rows="4" maxlength="1000" placeholder="e.g. 🪔 Happy Diwali! Bridal dates for February are filling fast — reply to lock yours 💫" style="width:100%;"></textarea>
           </div>
           <div class="action-row">
@@ -10326,6 +10326,30 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         } finally { clearLoading(btn); }
       });
 
+      // ✨ AI-drafts the campaign message in her voice for the chosen audience.
+      // Whatever she already typed becomes the hint; the draft lands in the
+      // textarea for her to edit — the AI never sends anything itself.
+      document.getElementById("campaign-ai-draft")?.addEventListener("click", async () => {
+        const btn = document.getElementById("campaign-ai-draft");
+        const seg = document.getElementById("campaign-segment");
+        const segmentLabel = seg?.options[seg.selectedIndex]?.textContent?.trim() || "past clients";
+        const ta = document.getElementById("campaign-message");
+        setLoading(btn, "Drafting…");
+        try {
+          const r = await postJson("/api/campaigns/draft-message", { segmentLabel, hint: ta.value.trim().slice(0, 300) });
+          if (r.message) {
+            ta.value = r.message;
+            ta.focus();
+            toast("Draft ready — tweak it so it sounds like you, then send.", "success");
+            if (typeof r.balanceCredits === "number") updateCreditsPill(r.balanceCredits);
+          }
+        } catch (err) {
+          toast(err.message || "Couldn't draft right now — write it manually.", "error");
+        } finally {
+          clearLoading(btn, "✨ Draft with AI");
+        }
+      });
+
       document.getElementById("campaign-send")?.addEventListener("click", async () => {
         const segment = document.getElementById("campaign-segment").value;
         const message = document.getElementById("campaign-message").value.trim();
@@ -11372,6 +11396,25 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       globalSearchInput?.addEventListener("input", (e) => runGlobalSearch(e.target.value));
+      // Keyboard-first: ↑/↓ move through results (reusing the .focused style),
+      // Enter opens the focused result (or the first). Selection resets on type.
+      let searchFocusIdx = -1;
+      globalSearchInput?.addEventListener("input", () => { searchFocusIdx = -1; });
+      globalSearchInput?.addEventListener("keydown", (e) => {
+        const items = [...globalSearchResults.querySelectorAll(".search-result-item")];
+        if (!items.length) return;
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          searchFocusIdx = e.key === "ArrowDown"
+            ? Math.min(items.length - 1, searchFocusIdx + 1)
+            : Math.max(0, searchFocusIdx - 1);
+          items.forEach((el, i) => el.classList.toggle("focused", i === searchFocusIdx));
+          items[searchFocusIdx]?.scrollIntoView({ block: "nearest" });
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          (items[searchFocusIdx] || items[0])?.click();
+        }
+      });
       globalSearchModal?.addEventListener("click", (e) => {
         if (e.target === globalSearchModal) closeGlobalSearch();
         const leadItem = e.target.closest("[data-sr-lead]");

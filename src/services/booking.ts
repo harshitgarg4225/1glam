@@ -11,6 +11,7 @@ import { sendPushToWorkspace } from "./push.js";
 import { listArtists } from "./team.js";
 import { getWorkspaceByEmail } from "./workspace.js";
 import { lockKeyFromString, withSerializedLock } from "./database.js";
+import { meterUsage } from "./wallet.js";
 import * as opStore from "./operational-store.js";
 import { TtlCache } from "./cache.js";
 import { bookingHeaders, leadHeaders, sheetNames } from "./sheet-definitions.js";
@@ -415,6 +416,14 @@ export async function createLeadForWorkspace(
     followers: input.followers,
     inboundMessage: input.inboundMessage,
   });
+  // Meter the enrichment where it actually runs, so every path is billed once
+  // (manual add, booking page, inbound webhooks) — previously only the manual
+  // endpoint was metered. enrichLeadWithGrok returns null when AI is off or the
+  // call failed, so a no-op is never charged. Best-effort: billing must never
+  // fail a lead creation.
+  if (aiLeadIntel) {
+    void meterUsage(email, "aiLeadEnrichment").catch(() => undefined);
+  }
   const resolvedProfileTier = input.profileTier ?? aiLeadIntel?.profileTier ?? "Mid";
   const pricing = calculatePricing(workspace, { ...input, profileTier: resolvedProfileTier }, demandCount, travel);
   const createdAt = new Date().toISOString();

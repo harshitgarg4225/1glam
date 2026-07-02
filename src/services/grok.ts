@@ -304,6 +304,58 @@ export async function generateReviewReplies(input: {
   }
 }
 
+// Drafts a short WhatsApp announcement in the artist's voice for a given
+// audience segment (campaigns tab). Returns "" when AI is unavailable — the
+// textarea stays manual; drafting is an assist, never a gate.
+export async function draftCampaignMessage(input: {
+  brandName: string;
+  ownerName: string;
+  city: string;
+  language?: string;
+  signOff?: string;
+  toneProfile?: string;
+  servicesContext?: string;
+  segmentLabel: string;
+  hint?: string;
+}): Promise<string> {
+  if (!appConfig.xaiApiKey) return "";
+
+  const systemPrompt =
+    "You draft a short WhatsApp announcement for a luxury Indian makeup artist to send personally to past clients. " +
+    "Return strict JSON only with key: message. " +
+    "The message: warm, personal, 2-4 short sentences, at most 2 emojis, no hashtags, no ALL CAPS, " +
+    "and it ends with a soft reply-to-book nudge. It must read like a person texting, never a brand blast. " +
+    "Write it for the audience described by segmentLabel. Match the owner's toneProfile when given. " +
+    "If a hint is provided, build the message around it. Never invent prices, dates or offers not in the hint.";
+
+  try {
+    const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${appConfig.xaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: appConfig.xaiModel,
+        input: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(input, null, 2) },
+        ],
+      }),
+    });
+
+    if (!response.ok) return "";
+    const payload = (await response.json()) as { output_text?: string };
+    const parsed = payload.output_text ? safeParseJson(payload.output_text) : null;
+    const message = parsed && typeof (parsed as { message?: unknown }).message === "string"
+      ? String((parsed as { message: string }).message).trim()
+      : "";
+    return message.slice(0, 900);
+  } catch {
+    return "";
+  }
+}
+
 function normalizeSentiment(value: unknown): "positive" | "neutral" | "negative" {
   const v = String(value ?? "").toLowerCase();
   if (v === "negative") return "negative";
