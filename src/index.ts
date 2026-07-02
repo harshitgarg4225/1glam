@@ -1790,21 +1790,23 @@ app.post("/api/assistant/ask", async (req, res, next) => {
 
     const { leads, bookings } = await getDashboardData(req.session.profile.email, req.session.googleTokens);
     const snapshot = buildAssistantSnapshot(leads, bookings);
-    const answer = await askBusinessAssistant({
+    const result = await askBusinessAssistant({
       ownerName: workspace.config.ownerName,
       brandName: workspace.config.businessName,
       city: workspace.config.city,
       question,
       snapshot,
     });
-    if (!answer) {
+    if (!result) {
       return res.status(503).json({ error: "The AI assistant isn't available right now. Please try again in a moment." });
     }
     let balanceCredits: number | null = null;
     if (appConfig.xaiApiKey) {
       balanceCredits = await meterUsage(req.session.profile.email, "aiAssistant");
     }
-    res.json({ ok: true, answer, balanceCredits, lowBalance: balanceCredits !== null && isLowBalance(balanceCredits) });
+    // actions are already validated against the snapshot server-side — the UI
+    // renders them as ordinary tappable action buttons; nothing auto-executes.
+    res.json({ ok: true, answer: result.answer, actions: result.actions, balanceCredits, lowBalance: balanceCredits !== null && isLowBalance(balanceCredits) });
   } catch (error) {
     next(error);
   }
@@ -6941,6 +6943,16 @@ app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
     );
     if (!workspace || !booking) {
       return res.status(404).json({ error: "Booking not found" });
+    }
+
+    // Re-derive payment state at send time: a stale button (old tab, lingering
+    // AI-suggested action) must never message a client who has already paid.
+    const collectionKind = String(req.body?.kind || "advance");
+    if (collectionKind === "advance" && booking.paymentStatus !== "Advance Due") {
+      return res.status(400).json({ error: "The advance is already paid — no reminder needed." });
+    }
+    if (collectionKind === "balance" && Number(booking.balanceDue) <= 0) {
+      return res.status(400).json({ error: "Nothing is due on this booking — no reminder needed." });
     }
 
     const lead = await getLeadRecord(

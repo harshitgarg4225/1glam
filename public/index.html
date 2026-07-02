@@ -1460,12 +1460,15 @@
             <button class="button" type="submit" id="ask-btn">Ask</button>
           </form>
           <div class="ask-chips">
-            <button class="ask-chip" type="button" data-ask="Who hasn't paid their advance yet?">Who hasn't paid?</button>
+            <button class="ask-chip" type="button" data-ask="Who still owes their advance? Send them reminders.">Chase unpaid advances</button>
             <button class="ask-chip" type="button" data-ask="What do I have coming up in the next 7 days?">What's coming up this week?</button>
             <button class="ask-chip" type="button" data-ask="Which clients should I follow up with today and why?">Who should I follow up with?</button>
             <button class="ask-chip" type="button" data-ask="How much confirmed revenue do I have, and how much of it is still unpaid?">How's my money looking?</button>
           </div>
           <div class="ask-answer" id="ask-answer"></div>
+          <!-- Actions the assistant proposes (validated server-side) — the owner
+               taps to run them through the exact same flows as the tables. -->
+          <div id="ask-actions" style="display:none;margin-top:10px;flex-wrap:wrap;gap:6px;"></div>
         </div>
         <div class="panel section" id="automation-panel" style="margin-bottom:20px;display:none;">
           <details id="automation-details">
@@ -9070,6 +9073,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             toast("Marked completed — lovely work! 🎉", "success");
           }
           await refreshSession();
+          // The table/drawer re-render replaces their buttons, but a button that
+          // SURVIVES the refresh (the assistant's suggested actions) would stay
+          // stuck on "…" — clear it. And a successful action makes the rest of
+          // the AI's proposals stale (they described the pre-action world), so
+          // retire the whole suggestion strip.
+          if (b.isConnected) clearLoading(b);
+          const askWrap = b.closest("#ask-actions");
+          if (askWrap) { askWrap.innerHTML = ""; askWrap.style.display = "none"; }
         } catch (error) {
           toast(error.message, "error");
           documentStatus.textContent = error.message;
@@ -9862,14 +9873,42 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       const askForm = document.getElementById("ask-form");
       const askInput = document.getElementById("ask-input");
       const askAnswer = document.getElementById("ask-answer");
+      // Maps a server-validated assistant action to the SAME data-* button
+      // contract the bookings table/drawer use, so tapping it runs the exact
+      // same flow (confirms, toasts, wa.me links) as everywhere else.
+      function assistantActionButton(action) {
+        const id = escapeHtml(action.id);
+        const label = escapeHtml(action.label);
+        const attrs = ({
+          record_payment: `data-booking-record-payment="${id}"`,
+          send_advance_reminder: `data-booking-action="advance-reminder" data-booking-id="${id}"`,
+          send_balance_reminder: `data-booking-action="balance-reminder" data-booking-id="${id}"`,
+          send_invoice: `data-booking-action="send-invoice" data-booking-id="${id}"`,
+          send_contract: `data-booking-action="send-contract" data-booking-id="${id}"`,
+          ask_review: `data-booking-action="review" data-booking-id="${id}"`,
+          mark_completed: `data-booking-action="complete" data-booking-id="${id}"`,
+          open_booking: `data-ask-open-booking="${id}"`,
+          open_lead: `data-ask-open-lead="${id}"`,
+        })[action.type];
+        return attrs ? `<button class="button small secondary" ${attrs}>${label}</button>` : "";
+      }
+
       async function submitAsk(question) {
         const btn = document.getElementById("ask-btn");
+        const askActions = document.getElementById("ask-actions");
         setLoading(btn, "Thinking…");
         askAnswer.classList.add("show");
         askAnswer.textContent = "Looking at your bookings…";
+        askActions.style.display = "none";
+        askActions.innerHTML = "";
         try {
           const r = await postJson("/api/assistant/ask", { question });
           askAnswer.textContent = r.answer;
+          const buttons = (r.actions || []).map(assistantActionButton).filter(Boolean);
+          if (buttons.length) {
+            askActions.innerHTML = `<span class="muted" style="font-size:12px;align-self:center;">✨ Suggested — tap to run:</span>` + buttons.join("");
+            askActions.style.display = "flex";
+          }
           if (r.balanceCredits !== null && r.balanceCredits !== undefined) updateCreditsPill(r.balanceCredits);
         } catch (error) {
           askAnswer.textContent = error.message;
@@ -9877,6 +9916,20 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           clearLoading(btn);
         }
       }
+      // The assistant's proposed actions run through the same named handlers as
+      // the bookings table/drawer; open_* actions jump straight to the record.
+      const askActionsEl = document.getElementById("ask-actions");
+      askActionsEl?.addEventListener("click", handleBookingActionButtons);
+      askActionsEl?.addEventListener("click", handleBookingUtilityButtons);
+      askActionsEl?.addEventListener("click", (e) => {
+        const ob = e.target.closest("[data-ask-open-booking]");
+        if (ob) { activateTab("bookings"); setTimeout(() => openBookingDrawer(ob.getAttribute("data-ask-open-booking")), 100); return; }
+        const ol = e.target.closest("[data-ask-open-lead]");
+        if (ol) {
+          const lead = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === ol.getAttribute("data-ask-open-lead"));
+          if (lead) { activateTab("leads"); setTimeout(() => openLeadDrawer(lead), 100); }
+        }
+      });
       askForm?.addEventListener("submit", (e) => {
         e.preventDefault();
         const q = askInput.value.trim();
