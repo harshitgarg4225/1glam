@@ -6945,6 +6945,16 @@ app.post("/api/bookings/:bookingId/send-collection", async (req, res, next) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
+    // Re-derive payment state at send time: a stale button (old tab, lingering
+    // AI-suggested action) must never message a client who has already paid.
+    const collectionKind = String(req.body?.kind || "advance");
+    if (collectionKind === "advance" && booking.paymentStatus !== "Advance Due") {
+      return res.status(400).json({ error: "The advance is already paid — no reminder needed." });
+    }
+    if (collectionKind === "balance" && Number(booking.balanceDue) <= 0) {
+      return res.status(400).json({ error: "Nothing is due on this booking — no reminder needed." });
+    }
+
     const lead = await getLeadRecord(
       req.session.profile.email,
       req.session.googleTokens,

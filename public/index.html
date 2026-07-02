@@ -9073,6 +9073,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             toast("Marked completed — lovely work! 🎉", "success");
           }
           await refreshSession();
+          // The table/drawer re-render replaces their buttons, but a button that
+          // SURVIVES the refresh (the assistant's suggested actions) would stay
+          // stuck on "…" — clear it. And a successful action makes the rest of
+          // the AI's proposals stale (they described the pre-action world), so
+          // retire the whole suggestion strip.
+          if (b.isConnected) clearLoading(b);
+          const askWrap = b.closest("#ask-actions");
+          if (askWrap) { askWrap.innerHTML = ""; askWrap.style.display = "none"; }
         } catch (error) {
           toast(error.message, "error");
           documentStatus.textContent = error.message;
@@ -9898,7 +9906,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           askAnswer.textContent = r.answer;
           const buttons = (r.actions || []).map(assistantActionButton).filter(Boolean);
           if (buttons.length) {
-            askActions.innerHTML = buttons.join("");
+            askActions.innerHTML = `<span class="muted" style="font-size:12px;align-self:center;">✨ Suggested — tap to run:</span>` + buttons.join("");
             askActions.style.display = "flex";
           }
           if (r.balanceCredits !== null && r.balanceCredits !== undefined) updateCreditsPill(r.balanceCredits);
