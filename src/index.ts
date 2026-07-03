@@ -2543,8 +2543,12 @@ app.post("/api/bookings/quick", async (req, res, next) => {
       source: "Manual",
       clientName: parsed.clientName,
       clientWhatsApp: parsed.clientWhatsApp,
+      clientEmail: parsed.clientEmail || undefined,
       eventType: parsed.eventType,
       eventDate: parsed.eventDate,
+      // Only honour a multi-day end date when it's strictly after the start —
+      // same gate as the public booking page.
+      eventEndDate: parsed.eventEndDate && parsed.eventEndDate > parsed.eventDate ? parsed.eventEndDate : undefined,
       eventTime: parsed.eventTime,
       locationText: parsed.locationText,
     });
