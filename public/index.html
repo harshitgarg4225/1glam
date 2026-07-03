@@ -3653,6 +3653,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="wizard-field" style="flex:1;"><label for="qb-date">Date</label><input id="qb-date" name="eventDate" type="date" required /></div>
             <div class="wizard-field" style="flex:1;"><label for="qb-time">Time (optional)</label><input id="qb-time" name="eventTime" type="time" /></div>
           </div>
+          <div style="display:flex;gap:10px;">
+            <div class="wizard-field" style="flex:1;"><label for="qb-end">Last day <span class="muted" style="font-weight:400;">(multi-day events)</span></label><input id="qb-end" name="eventEndDate" type="date" /></div>
+            <div class="wizard-field" style="flex:1;"><label for="qb-email">Email <span class="muted" style="font-weight:400;">(optional)</span></label><input id="qb-email" name="clientEmail" type="email" autocomplete="off" placeholder="for reminders & receipts" /></div>
+          </div>
           <p class="muted" id="qb-duration-hint" style="display:none;font-size:12.5px;margin:-6px 0 12px;"></p>
           <div id="qb-conflict" style="margin-bottom:14px;"></div>
           <div class="wizard-field suggest-wrap"><label for="qb-venue">Where? <span class="muted" style="font-weight:400;">(can add later)</span></label><input id="qb-venue" name="locationText" autocomplete="off" placeholder="Venue or area, city" /></div>

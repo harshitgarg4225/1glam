@@ -48,6 +48,10 @@ export const quickBookingSchema = z.object({
   clientWhatsApp: z.string().trim().regex(/^\+?[\d\s\-()+]{8,20}$/, "Invalid phone number"),
   eventType: z.string().trim().min(1).max(40),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+  // Optional multi-day end date and client email — blank ("") tolerated because
+  // the form submits every named field.
+  eventEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD").optional().or(z.literal("")),
+  clientEmail: z.string().trim().email().max(160).optional().or(z.literal("")),
   eventTime: z.string().max(20).optional(),
   // Venue and price are optional — artists often block the date first and
   // settle details after a trial or a call.

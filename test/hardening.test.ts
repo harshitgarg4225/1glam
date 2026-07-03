@@ -218,6 +218,27 @@ test("quickBookingSchema accepts a valid walk-in booking and coerces types", () 
   assert.equal(parsed.advancePaid, false);
 });
 
+test("quickBookingSchema tolerates blank optional multi-day/email fields (form submits \"\")", () => {
+  const parsed = quickBookingSchema.parse({
+    clientName: "Meera", clientWhatsApp: "+91 98765 43210", eventType: "Party",
+    eventDate: "2026-08-15", eventEndDate: "", clientEmail: "", price: "0",
+  });
+  assert.equal(parsed.eventEndDate, "");
+  assert.equal(parsed.clientEmail, "");
+  // And accepts real values when provided.
+  const full = quickBookingSchema.parse({
+    clientName: "Meera", clientWhatsApp: "+91 98765 43210", eventType: "Bridal",
+    eventDate: "2026-08-15", eventEndDate: "2026-08-17", clientEmail: "meera@example.com",
+  });
+  assert.equal(full.eventEndDate, "2026-08-17");
+  assert.equal(full.clientEmail, "meera@example.com");
+  // Garbage in the optional fields is rejected, not silently accepted.
+  assert.throws(() => quickBookingSchema.parse({
+    clientName: "M", clientWhatsApp: "+91 98765 43210", eventType: "Party",
+    eventDate: "2026-08-15", clientEmail: "not-an-email",
+  }));
+});
+
 test("quickBookingSchema rejects bad phone and bad date, allows decide-later price/venue", () => {
   const base = {
     clientName: "Meera", clientWhatsApp: "+919876543210", eventType: "Party",
