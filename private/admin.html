@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>BusyDays — Admin</title>
+  <style>
+    :root { --bg:#FAF8F5; --card:#fff; --line:#ece7df; --text:#3d3a36; --muted:#8a8378; --accent:#C26B45; --accent-soft:#FBF0EA; --success:#15803d; --danger:#b91c1c; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 28px 16px 60px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-top:16px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--line); }
+    td { padding:10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    tr.pick { cursor:pointer; }
+    tr.pick:hover td { background:var(--accent-soft); }
+    .bal { font-weight:700; }
+    .bal.low { color:var(--danger); }
+    form { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+    label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:5px; font-weight:600; }
+    input { font:inherit; padding:9px 12px; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--text); }
+    input:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
+    button { font:inherit; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:10px; padding:10px 20px; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:wait; }
+    #status { font-size:13.5px; margin-top:10px; min-height:18px; }
+    #status.ok { color:var(--success); }
+    #status.err { color:var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>BusyDays — Admin</h1>
+    <div class="muted">Manual wallet recharges. Confirm you've RECEIVED the money before crediting — credits apply instantly.</div>
+
+    <div class="panel">
+      <form id="credit-form">
+        <div><label for="cf-email">Workspace email</label><input id="cf-email" type="email" required placeholder="artist@gmail.com" style="min-width:260px;" /></div>
+        <div><label for="cf-credits">Credits</label><input id="cf-credits" type="number" min="1" max="100000" required placeholder="500" style="width:110px;" /></div>
+        <div><label for="cf-note">Note (shows in her ledger)</label><input id="cf-note" maxlength="120" placeholder="UPI received ₹500 — 3 Jul" style="min-width:220px;" /></div>
+        <button type="submit" id="cf-submit">Add credits</button>
+      </form>
+      <div id="status"></div>
+    </div>
+
+    <div class="panel">
+      <div class="muted" style="margin-bottom:8px;"><span id="ws-count">…</span> workspaces — click a row to fill the form</div>
+      <table>
+        <thead><tr><th>Business</th><th>Email</th><th>City</th><th>Credits</th><th>Joined</th></tr></thead>
+        <tbody id="ws-body"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+    const statusEl = document.getElementById("status");
+    function setStatus(msg, ok) { statusEl.textContent = msg; statusEl.className = ok ? "ok" : "err"; }
+
+    async function loadWorkspaces() {
+      const body = document.getElementById("ws-body");
+      try {
+        const r = await fetch("/api/admin/workspaces");
+        const data = await r.json();
+        if (!r.ok || !data.ok) throw new Error(data.error || "Failed to load");
+        document.getElementById("ws-count").textContent = data.workspaces.length;
+        body.innerHTML = data.workspaces.map((w) => `
+          <tr class="pick" data-email="${esc(w.email)}">
+            <td><strong>${esc(w.businessName || "—")}</strong><br><span class="muted">${esc(w.name)}</span></td>
+            <td>${esc(w.email)}</td>
+            <td>${esc(w.city || "—")}</td>
+            <td class="bal ${Number(w.balanceCredits) <= 50 ? "low" : ""}">${Number(w.balanceCredits).toLocaleString("en-IN")}</td>
+            <td class="muted">${w.createdAt ? esc(String(w.createdAt).slice(0, 10)) : "—"}</td>
+          </tr>`).join("") || `<tr><td colspan="5" class="muted">No workspaces yet.</td></tr>`;
+      } catch (e) {
+        body.innerHTML = `<tr><td colspan="5" class="muted">${esc(e.message)}</td></tr>`;
+      }
+    }
+
+    document.getElementById("ws-body").addEventListener("click", (e) => {
+      const row = e.target.closest("tr.pick");
+      if (!row) return;
+      document.getElementById("cf-email").value = row.getAttribute("data-email");
+      document.getElementById("cf-credits").focus();
+    });
+
+    // One idempotency ref per form-fill: a retried submit can't double-credit.
+    let creditRef = crypto.randomUUID();
+    ["cf-email", "cf-credits", "cf-note"].forEach((id) =>
+      document.getElementById(id).addEventListener("input", () => { creditRef = crypto.randomUUID(); }));
+
+    document.getElementById("credit-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("cf-submit");
+      btn.disabled = true;
+      setStatus("Crediting…", true);
+      try {
+        const r = await fetch("/api/admin/credit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: document.getElementById("cf-email").value.trim(),
+            credits: Number(document.getElementById("cf-credits").value),
+            note: document.getElementById("cf-note").value.trim(),
+            ref: "manual-" + creditRef,
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) throw new Error(data.error || "Failed");
+        setStatus(data.applied
+          ? `Done — new balance: ${Number(data.balanceCredits).toLocaleString("en-IN")} credits.`
+          : `Already credited (same reference) — balance: ${Number(data.balanceCredits).toLocaleString("en-IN")} credits.`, true);
+        document.getElementById("cf-credits").value = "";
+        document.getElementById("cf-note").value = "";
+        creditRef = crypto.randomUUID();
+        loadWorkspaces();
+      } catch (err) {
+        setStatus(err.message, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    loadWorkspaces();
+  </script>
+</body>
+</html>
