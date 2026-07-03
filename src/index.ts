@@ -2058,6 +2058,9 @@ app.get("/api/wallet", async (req, res, next) => {
       usageThisMonth,
       creditsUsedThisMonth,
       packs: CREDIT_PACKS,
+      // Manual-recharge channel while online top-ups are off: the Wallet tab
+      // shows a one-tap "request a top-up" WhatsApp button when this is set.
+      supportWhatsApp: appConfig.supportWhatsApp || "",
       // What each automated action costs, so the artist can see where credits go
       // instead of running out without warning.
       costs: (Object.keys(USAGE_COSTS) as UsageKind[]).map((k) => ({
@@ -2159,6 +2162,69 @@ app.post("/api/wallet/verify", async (req, res, next) => {
     });
     if (!result) return res.status(404).json({ error: "Workspace not found" });
     res.json({ ok: true, balanceCredits: result.wallet.balanceCredits, applied: result.applied });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Platform admin: manual wallet recharges ──────────────────────────────────
+// The control surface for the manual top-up loop while Razorpay top-ups are off:
+// artist requests a recharge (Wallet tab → WhatsApp), the operator receives the
+// money (UPI etc.), then credits her wallet from /admin. Gated to ADMIN_EMAILS;
+// everything else sees a 404 so the surface's existence isn't advertised.
+function isAdminSession(req: express.Request): boolean {
+  const email = req.session.profile?.email?.toLowerCase();
+  return Boolean(email && appConfig.adminEmails.includes(email));
+}
+
+app.get("/admin", (req, res) => {
+  if (!isAdminSession(req)) return res.status(404).send("Not found");
+  // Lives OUTSIDE public/ so express.static can't serve it to non-admins.
+  res.sendFile(path.join(process.cwd(), "private", "admin.html"));
+});
+
+app.get("/api/admin/workspaces", async (req, res, next) => {
+  try {
+    if (!isAdminSession(req)) return res.status(404).json({ error: "Not found" });
+    const all = await listWorkspaces();
+    const rows = all.map((w) => {
+      const wallet = getWallet(w);
+      return {
+        email: w.email,
+        name: w.name,
+        businessName: w.config?.businessName || "",
+        city: w.config?.city || "",
+        balanceCredits: wallet.balanceCredits,
+        createdAt: w.createdAt || "",
+      };
+    });
+    rows.sort((a, b) => (a.businessName || a.email).localeCompare(b.businessName || b.email));
+    res.json({ ok: true, workspaces: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/credit", async (req, res, next) => {
+  try {
+    if (!isAdminSession(req)) return res.status(404).json({ error: "Not found" });
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const credits = Math.round(Number(req.body?.credits));
+    const note = String(req.body?.note || "").slice(0, 120);
+    const ref = String(req.body?.ref || "").slice(0, 60);
+    if (!email || !Number.isFinite(credits) || credits <= 0 || credits > 100000) {
+      return res.status(400).json({ error: "Provide the workspace email and a credit amount between 1 and 100,000." });
+    }
+    const result = await creditWallet(email, {
+      credits,
+      reason: note || "Manual top-up",
+      // Idempotent by ref: the admin page sends one ref per form submission, so
+      // a retried request can never double-credit.
+      ...(ref ? { ref } : {}),
+    });
+    if (!result) return res.status(404).json({ error: "No workspace found for that email." });
+    logger.info("admin_manual_credit", { by: req.session.profile?.email, target: email, credits, applied: result.applied });
+    res.json({ ok: true, applied: result.applied, balanceCredits: result.wallet.balanceCredits });
   } catch (error) {
     next(error);
   }

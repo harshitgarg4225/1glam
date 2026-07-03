@@ -2265,6 +2265,7 @@
             </div>
           </div>
           <div id="wallet-low-banner" style="display:none;margin-top:14px;font-size:13px;background:#FDF4E3;border:1px solid #E0A23C;color:#9A6516;border-radius:10px;padding:11px 13px;font-weight:500;">⚠️ Your credits are running low. Top up below so your messages and AI keep flowing.</div>
+          <div id="wallet-request-topup" style="display:none;margin-top:14px;"></div>
           <div id="wallet-test-banner" class="muted" style="display:none;margin-top:14px;font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;">🧪 Test mode — no real money is charged. Use Razorpay test cards to try top-ups.</div>
           <div id="wallet-not-configured" class="muted" style="display:none;margin-top:14px;font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;">Top-ups aren't switched on yet. Connect your Razorpay account in payment settings to start buying credits.</div>
         </div>
@@ -7268,6 +7269,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           renderWalletUsage(data.usageThisMonth || [], data.creditsUsedThisMonth || 0);
           renderWalletCosts(data.costs || [], data.enforced, data.balanceCredits);
           renderWalletLedger(data.ledger || []);
+          // Manual-recharge channel: one tap opens WhatsApp to the BusyDays team
+          // with a prefilled request; credits land after the payment is received.
+          const reqWrap = document.getElementById("wallet-request-topup");
+          if (reqWrap) {
+            if (data.supportWhatsApp) {
+              const me = sessionState?.workspace?.email || "";
+              const msg = encodeURIComponent(`Hi! I'd like to top up my BusyDays credits.\nWorkspace: ${me}\nAmount: ₹`);
+              reqWrap.innerHTML = `<a class="button small secondary" href="https://wa.me/${escapeHtml(data.supportWhatsApp)}?text=${msg}" target="_blank" rel="noreferrer">💬 Request a top-up on WhatsApp</a> <span class="muted" style="font-size:12px;">Pay by UPI — credits are added as soon as we confirm the payment.</span>`;
+              reqWrap.style.display = "block";
+            } else {
+              reqWrap.style.display = "none";
+            }
+          }
         } catch (error) {
           ledgerBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">${escapeHtml(error.message)}</td></tr>`;
         }

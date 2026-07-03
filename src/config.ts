@@ -13,6 +13,12 @@ const envSchema = z.object({
   // or to throttle a launch so provisioning doesn't stampede.
   MAX_WORKSPACES: z.coerce.number().int().min(0).optional().default(0),
   DATABASE_URL: z.string().optional().default(""),
+  // Comma-separated emails allowed into the /admin control dashboard (manual
+  // wallet top-ups, workspace overview). Empty = admin surface disabled.
+  ADMIN_EMAILS: z.string().optional().default(""),
+  // Platform support WhatsApp number (digits, with country code). When set,
+  // artists get a one-tap "request a top-up" button in the Wallet tab.
+  SUPPORT_WHATSAPP: z.string().optional().default(""),
   // Optional PEM CA bundle for the Postgres connection. When set, the pool
   // VERIFIES the server certificate against it (rejectUnauthorized: true) instead
   // of the encrypt-but-don't-verify default — closes an MITM gap to the DB.
@@ -104,6 +110,8 @@ export const appConfig = {
   maxWorkspaces: parsed.MAX_WORKSPACES,
   databaseUrl: parsed.DATABASE_URL,
   databaseCaCert: parsed.DATABASE_CA_CERT,
+  adminEmails: parsed.ADMIN_EMAILS.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+  supportWhatsApp: parsed.SUPPORT_WHATSAPP.replace(/\D/g, ""),
   // "dual"/"postgres" only take effect when a database is configured; otherwise
   // we transparently stay on the Sheets path (see operational-store.ts).
   operationalStore: parsed.OPERATIONAL_STORE,
