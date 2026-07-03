@@ -1544,7 +1544,7 @@
               <form id="lead-form">
                 <div class="section-grid">
                   <div><label for="clientName">Client name</label><input id="clientName" name="clientName" required /></div>
-                  <div><label for="clientWhatsApp">Their WhatsApp number</label><input id="clientWhatsApp" name="clientWhatsApp" required placeholder="+91…" /></div>
+                  <div><label for="clientWhatsApp">Their WhatsApp number</label><input id="clientWhatsApp" name="clientWhatsApp" required placeholder="98765 43210" /></div>
                   <div><label for="clientInstagram">Their Instagram (optional)</label><input id="clientInstagram" name="clientInstagram" /></div>
                   <div>
                     <label for="source">How they found you</label>
@@ -2617,7 +2617,7 @@
                 <div><label for="businessName">Business name</label><input id="businessName" name="businessName" required placeholder="e.g. Glow by Aisha" /></div>
                 <div><label for="ownerName">Your name</label><input id="ownerName" name="ownerName" required /></div>
                 <div><label for="ownerEmail">Your email</label><input id="ownerEmail" name="ownerEmail" type="email" required /></div>
-                <div><label for="ownerWhatsApp">Your WhatsApp number</label><input id="ownerWhatsApp" name="ownerWhatsApp" required placeholder="+91…" /></div>
+                <div><label for="ownerWhatsApp">Your WhatsApp number</label><input id="ownerWhatsApp" name="ownerWhatsApp" required placeholder="98765 43210" /></div>
                 <div><label for="city">Base city</label><input id="city" name="city" required placeholder="e.g. Mumbai" /><p class="hint" style="margin:4px 0 0;font-size:11.5px;color:var(--muted);">Where you're based — travel charges are calculated from here to the venue.</p></div>
                 <div><label for="instagramHandle">Instagram handle (optional)</label><input id="instagramHandle" name="instagramHandle" placeholder="glowbyaisha" /></div>
                 <div><label for="timezone">Timezone</label><input id="timezone" name="timezone" list="tz-list" placeholder="Asia/Kolkata" /><datalist id="tz-list"><option value="Asia/Kolkata"></option><option value="Asia/Dubai"></option><option value="Asia/Singapore"></option><option value="Europe/London"></option><option value="America/New_York"></option><option value="America/Los_Angeles"></option><option value="Australia/Sydney"></option></datalist><p class="hint" style="margin:4px 0 0;font-size:11.5px;color:var(--muted);">Your local timezone — sets your booking window and document dates. Defaults to India (Asia/Kolkata).</p></div>
@@ -3644,7 +3644,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         <p class="muted" style="font-size:13px;margin:0 0 14px;">For a client you've already said yes to — on the phone or in person. This confirms the booking and puts it on your calendar in one go.</p>
         <form id="quick-booking-form">
           <div class="wizard-field suggest-wrap"><label for="qb-name">Client name</label><input id="qb-name" name="clientName" required autocomplete="off" placeholder="Start typing — past clients appear" /></div>
-          <div class="wizard-field"><label for="qb-phone">Their WhatsApp number</label><input id="qb-phone" name="clientWhatsApp" required placeholder="+91…" /></div>
+          <div class="wizard-field"><label for="qb-phone">Their WhatsApp number</label><input id="qb-phone" name="clientWhatsApp" required placeholder="98765 43210" /></div>
           <div class="wizard-field">
             <label for="qb-event">Occasion</label>
             <select id="qb-event" name="eventType"><option>Bridal</option><option>Engagement</option><option>Reception</option><option>Party</option><option>Shoot</option><option>Other</option></select>
@@ -3709,7 +3709,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         <form id="lead-edit-form">
           <input type="hidden" id="le-lead-id" />
           <div class="wizard-field"><label for="le-name">Client name</label><input id="le-name" required maxlength="120" /></div>
-          <div class="wizard-field"><label for="le-phone">WhatsApp number</label><input id="le-phone" required placeholder="+91…" /></div>
+          <div class="wizard-field"><label for="le-phone">WhatsApp number</label><input id="le-phone" required placeholder="98765 43210" /></div>
           <div class="wizard-field"><label for="le-instagram">Instagram (optional)</label><input id="le-instagram" maxlength="120" /></div>
           <div class="wizard-field">
             <label for="le-event">Occasion</label>
@@ -3780,7 +3780,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           </div>
           <div class="wizard-field">
             <label for="qs-whatsapp">Your WhatsApp number</label>
-            <input id="qs-whatsapp" name="ownerWhatsApp" required placeholder="+91…" />
+            <input id="qs-whatsapp" name="ownerWhatsApp" required placeholder="98765 43210" />
             <div class="hint">Where clients and booking alerts reach you.</div>
           </div>
           <div class="wizard-field">
@@ -3997,8 +3997,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       let _phoneCodesCache = null;
       async function fetchPhoneCodes() {
         if (_phoneCodesCache) return _phoneCodesCache;
+        // A failed fetch returns the fallback WITHOUT caching it, so a transient
+        // error can't permanently reduce every dropdown to India-only.
         try { _phoneCodesCache = await getJson("/api/config/phone-codes"); }
-        catch { _phoneCodesCache = { default: "+91", codes: [{ code: "+91", label: "🇮🇳 India +91" }] }; }
+        catch { return { default: "+91", codes: [{ code: "+91", label: "🇮🇳 India +91" }] }; }
         return _phoneCodesCache;
       }
       async function attachPhoneCountryCode(inputId) {
@@ -4021,26 +4023,55 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (existing) {
           const match = data.codes.map((c) => c.code).sort((a, b) => b.length - a.length).find((c) => existing.replace(/\s/g, "").startsWith(c));
           if (match) sel.value = match;
-        } else {
-          input.value = data.default + " ";
         }
-        sel.addEventListener("change", () => { input.value = sel.value + " " + stripCode(input.value); input.focus(); });
-        // Safety net: a bare number always gets the selected code prepended, so
-        // we never store a number without its country code.
+        // The dialling code lives in the select ONLY — never pre-filled into the
+        // field, so the user just types their national number and can't type
+        // over/around a prefix (which produced doubled codes like "+91 +91…").
+        sel.addEventListener("change", () => {
+          const v = input.value.trim();
+          if (v) input.value = sel.value + " " + stripCode(v);
+          input.focus();
+        });
+        // Normalise on blur so the stored value always carries its country code
+        // exactly once:
+        //   "+91 98765…"      → left as-is (select syncs to it)
+        //   "919876543210"    → user typed the code without "+" → just add "+"
+        //   "98765 43210"     → bare national number → prefix the selected code
         input.addEventListener("blur", () => {
           const v = input.value.trim();
-          if (v && !v.startsWith("+")) input.value = sel.value + " " + v;
+          if (!v) return;
+          if (v.startsWith("+")) {
+            const match = data.codes.map((c) => c.code).sort((a, b) => b.length - a.length).find((c) => v.replace(/\s/g, "").startsWith(c));
+            if (match) sel.value = match;
+            return;
+          }
+          const digits = v.replace(/\D/g, "");
+          const codeDigits = sel.value.replace(/\D/g, "");
+          // Longer than a national number AND starting with the selected code →
+          // they included the code themselves; don't prepend it a second time.
+          if (digits.length > 10 && digits.startsWith(codeDigits)) {
+            input.value = "+" + digits;
+            return;
+          }
+          input.value = sel.value + " " + v;
         });
       }
 
-      attachCityAutocomplete("city");
-      attachCityAutocomplete("qs-city");
-      attachPhoneCountryCode("ownerWhatsApp");
-      attachPhoneCountryCode("qs-whatsapp");
-      // Client phone fields across the artist-facing forms get the same picker.
-      attachPhoneCountryCode("clientWhatsApp");
-      attachPhoneCountryCode("qb-phone");
-      attachPhoneCountryCode("le-phone");
+      // Deferred a tick: these helpers reach getJson → fetchWithTimeout, whose
+      // FETCH_TIMEOUT_MS const initialises LATER in this script. Calling them
+      // synchronously here hit the temporal dead zone, the catch swallowed the
+      // ReferenceError, and every country dropdown silently fell back to an
+      // India-only list. One macrotask later, everything is initialised.
+      setTimeout(() => {
+        attachCityAutocomplete("city");
+        attachCityAutocomplete("qs-city");
+        attachPhoneCountryCode("ownerWhatsApp");
+        attachPhoneCountryCode("qs-whatsapp");
+        // Client phone fields across the artist-facing forms get the same picker.
+        attachPhoneCountryCode("clientWhatsApp");
+        attachPhoneCountryCode("qb-phone");
+        attachPhoneCountryCode("le-phone");
+      }, 0);
 
       // Non-blocking format nudges for UPI / GST. The server no longer rejects
       // these (a bad value must not block the whole settings save), so we warn
