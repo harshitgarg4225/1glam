@@ -5,6 +5,7 @@ import { buildDefaultConfig } from "../defaults.js";
 import { workspaceConfigSchema } from "../schema.js";
 import { findWorkspaceByEmail, saveWorkspace, updateWorkspaceByEmail } from "./database.js";
 import { createGoogleClients } from "./google.js";
+import { logger } from "./logger.js";
 import {
   artistHeaders,
   bookingHeaders,
@@ -145,9 +146,23 @@ export async function updateWorkspaceConfig(
   workspace.tentativeCalendarId = nextConfig.tentativeCalendarId;
   workspace.updatedAt = new Date().toISOString();
 
-  await seedSpreadsheet(workspace.spreadsheetId, nextConfig, tokens, { includeSampleArtist: false });
   await saveWorkspace(workspace);
+  await mirrorConfigToSheet(workspace.spreadsheetId, nextConfig, tokens);
   return workspace;
+}
+
+// The workspace record is the source of truth for config; the Settings tab in
+// the artist's Sheet is a convenience mirror. A stale/revoked Google token must
+// never fail a settings save, so mirror failures are logged and swallowed.
+async function mirrorConfigToSheet(spreadsheetId: string, config: WorkspaceConfig, tokens: Credentials) {
+  try {
+    await seedSpreadsheet(spreadsheetId, config, tokens, { includeSampleArtist: false });
+  } catch (error) {
+    logger.warn("config sheet mirror failed (saved to primary store)", {
+      spreadsheetId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 // Uploads a portfolio image to the artist's Google Drive, makes it publicly
@@ -190,8 +205,8 @@ export async function addPortfolioImage(
 
   workspace.config = { ...workspace.config, portfolioImages };
   workspace.updatedAt = new Date().toISOString();
-  await seedSpreadsheet(workspace.spreadsheetId, workspace.config, tokens, { includeSampleArtist: false });
   await saveWorkspace(workspace);
+  await mirrorConfigToSheet(workspace.spreadsheetId, workspace.config, tokens);
 
   return { imageUrl, portfolioImages };
 }
@@ -262,8 +277,8 @@ export async function uploadLogoImage(
   const logoUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
   workspace.config = { ...workspace.config, logoUrl };
   workspace.updatedAt = new Date().toISOString();
-  await seedSpreadsheet(workspace.spreadsheetId, workspace.config, tokens, { includeSampleArtist: false });
   await saveWorkspace(workspace);
+  await mirrorConfigToSheet(workspace.spreadsheetId, workspace.config, tokens);
 
   return { logoUrl };
 }
@@ -297,8 +312,8 @@ export async function uploadCoverImage(
   const coverImageUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
   workspace.config = { ...workspace.config, coverImageUrl };
   workspace.updatedAt = new Date().toISOString();
-  await seedSpreadsheet(workspace.spreadsheetId, workspace.config, tokens, { includeSampleArtist: false });
   await saveWorkspace(workspace);
+  await mirrorConfigToSheet(workspace.spreadsheetId, workspace.config, tokens);
 
   return { coverImageUrl };
 }
