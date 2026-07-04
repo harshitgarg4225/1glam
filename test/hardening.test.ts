@@ -434,9 +434,9 @@ test("recordPaymentSchema accepts instalments and rejects bad amounts", () => {
 const { parseHexColor, getDocumentTheme } = await import("../src/services/document-themes.ts");
 
 test("parseHexColor accepts #RGB/#RRGGBB and rejects junk and near-white", () => {
-  const terracotta = parseHexColor("#C26B45");
-  assert.ok(terracotta);
-  assert.ok(Math.abs(terracotta.red - 0xc2 / 255) < 1e-6);
+  const burgundy = parseHexColor("#71121F");
+  assert.ok(burgundy);
+  assert.ok(Math.abs(burgundy.red - 0x71 / 255) < 1e-6);
   assert.ok(parseHexColor("#abc"));
   assert.equal(parseHexColor(""), null);
   assert.equal(parseHexColor("red"), null);
@@ -448,7 +448,7 @@ test("parseHexColor accepts #RGB/#RRGGBB and rejects junk and near-white", () =>
 
 test("getDocumentTheme tints with the brand colour but keeps body text readable", () => {
   const stock = getDocumentTheme("classic");
-  const branded = getDocumentTheme("classic", "#C26B45");
+  const branded = getDocumentTheme("classic", "#71121F");
   // Headings take the brand hue.
   assert.notDeepEqual(branded.title, stock.title);
   assert.deepEqual(branded.title, branded.sectionHeading);

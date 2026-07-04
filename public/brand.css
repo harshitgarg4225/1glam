@@ -4,15 +4,15 @@
    layout stays in each page's own <style>; only the design tokens and the
    handful of truly shared primitives live here. */
 :root {
-  --bg: #FAF8F5;
-  --surface: #F4F0EA;
+  --bg: #FAF9F7;
+  --surface: #F4F2EF;
   --card: #FFFFFF;
-  --text: #1C1917;
-  --muted: #6B635B;
-  --line: #E8E2DA;
-  --accent: #C26B45;
-  --accent-hover: #A85A38;
-  --accent-soft: #FBF0EA;
+  --text: #141210;
+  --muted: #6D6660;
+  --line: #E8E4DF;
+  --accent: #71121F;
+  --accent-hover: #560E18;
+  --accent-soft: #F8EEEF;
   --sage: #7A8C7E;
   --sage-soft: #EEF2EE;
   --success: #166534;

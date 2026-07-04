@@ -12,9 +12,9 @@
     <link rel="manifest" href="/manifest.json" />
     <!-- Brand icons: SVG "B" mark for browser tabs; PNG apple-touch-icon for
          the iOS home screen (Safari ignores manifest icons for Add to Home). -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%2371121F'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="theme-color" content="#C26B45" />
+    <meta name="theme-color" content="#71121F" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -24,15 +24,15 @@
     <script src="/mobile-bridge.js" defer></script>
     <style>
       :root {
-        --bg: #FAF8F5;
-        --surface: #F4F0EA;
+        --bg: #FAF9F7;
+        --surface: #F4F2EF;
         --card: #FFFFFF;
-        --text: #1C1917;
-        --muted: #6B635B;
-        --line: #E8E2DA;
-        --accent: #C26B45;
-        --accent-hover: #A85A38;
-        --accent-soft: #FBF0EA;
+        --text: #141210;
+        --muted: #6D6660;
+        --line: #E8E4DF;
+        --accent: #71121F;
+        --accent-hover: #560E18;
+        --accent-soft: #F8EEEF;
         --sage: #7A8C7E;
         --sage-soft: #EEF2EE;
         --success: #166534;
@@ -374,41 +374,61 @@
         overflow: hidden;
       }
       .hero-inner {
-        max-width: 860px;
+        max-width: 1080px;
         margin: 0 auto;
-        padding: 72px 28px 64px;
+        padding: 56px 28px 64px;
         text-align: center;
       }
+      /* Chanel-style masthead: quiet, wide-tracked, all caps. */
       .hero-wordmark {
-        font-size: clamp(34px, 6vw, 56px);
-        font-weight: 800;
-        letter-spacing: -0.03em;
+        font-size: clamp(24px, 3.6vw, 38px);
+        font-weight: 700;
+        letter-spacing: 0.32em;
+        text-indent: 0.32em; /* re-centres the tracked caps */
+        text-transform: uppercase;
         color: var(--text);
         line-height: 1;
       }
       .hero-eyebrow {
-        margin-top: 12px;
+        margin-top: 14px;
         text-transform: uppercase;
         letter-spacing: 0.18em;
         font-size: 11px;
         font-weight: 600;
         color: var(--muted);
       }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
+        gap: 24px;
+        align-items: center;
+        margin-top: 40px;
+        text-align: left;
+      }
       .hero-headline {
-        font-size: clamp(30px, 5.2vw, 50px);
+        font-size: clamp(30px, 4.6vw, 46px);
         line-height: 1.08;
         font-weight: 800;
         letter-spacing: -0.025em;
-        margin: 34px 0 0;
+        margin: 0;
       }
       .hero-accent { color: var(--accent); }
       .hero-sub {
-        font-size: clamp(16px, 2vw, 19px);
+        font-size: clamp(16px, 2vw, 18.5px);
         line-height: 1.65;
         color: var(--muted);
-        max-width: 620px;
-        margin: 20px auto 0;
+        max-width: 480px;
+        margin: 18px 0 0;
       }
+      .hero-art { position: relative; min-width: 0; }
+      .hero-art svg { display: block; width: 100%; height: auto; }
+      @keyframes chip-float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-6px); }
+      }
+      .hero-chip { animation: chip-float 5s ease-in-out infinite; }
+      .hero-chip-2 { animation-delay: -1.7s; }
+      .hero-chip-3 { animation-delay: -3.4s; }
       .zero-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -440,23 +460,29 @@
         color: var(--text);
       }
       .hero-cta-row {
-        margin-top: 44px;
+        margin-top: 32px;
         display: flex;
         flex-direction: column;
-        align-items: center;
+        align-items: flex-start;
         gap: 12px;
       }
       .hero-cta {
         font-size: 16px;
         padding: 14px 30px;
         border-radius: 10px;
-        box-shadow: 0 6px 20px rgba(194,107,69,0.28);
+        box-shadow: 0 6px 20px rgba(113,18,31,0.28);
       }
       .hero-cta-note { font-size: 13px; color: var(--muted); }
-      .hero-legal { margin-top: 28px; font-size: 12.5px; color: var(--muted); }
+      .hero-legal { margin-top: 24px; font-size: 12.5px; color: var(--muted); }
       .hero-legal a { color: var(--accent); }
+      @media (max-width: 900px) {
+        .hero-grid { grid-template-columns: 1fr; gap: 8px; text-align: center; }
+        .hero-sub { margin-left: auto; margin-right: auto; }
+        .hero-cta-row { align-items: center; }
+        .hero-art { max-width: 420px; margin: 18px auto 0; }
+      }
       @media (max-width: 640px) {
-        .hero-inner { padding: 52px 18px 48px; }
+        .hero-inner { padding: 44px 18px 48px; }
         .zero-grid { gap: 10px; }
         .zero-card { padding: 20px 8px 16px; }
         .hero-br { display: none; }
@@ -506,7 +532,7 @@
       .explain-data {
         margin-top: 40px;
         background: var(--accent-soft);
-        border: 1px solid #F0D9CC;
+        border: 1px solid #E9D3D6;
         border-radius: var(--radius-lg);
         padding: 24px 26px;
       }
@@ -625,7 +651,7 @@
       .mypage-preview-frame { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); height: 520px; }
       .mypage-preview-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
       .portfolio-drop { border: 2px dashed var(--line); border-radius: 12px; padding: 28px 18px; text-align: center; cursor: pointer; background: var(--surface); transition: border-color 0.15s, background 0.15s; }
-      .portfolio-drop:hover, .portfolio-drop.drag-over { border-color: var(--accent); background: #FBF0EA; }
+      .portfolio-drop:hover, .portfolio-drop.drag-over { border-color: var(--accent); background: #F8EEEF; }
       .portfolio-drop-icon { font-size: 30px; margin-bottom: 6px; }
       .portfolio-drop-label { font-size: 13px; color: var(--muted); }
       .portfolio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 12px; }
@@ -636,7 +662,7 @@
       .setup-checklist { border-left: 4px solid var(--accent); }
       .setup-steps { display: flex; flex-direction: column; gap: 8px; }
       .setup-step { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; transition: border-color 0.15s, background 0.15s; text-align: left; }
-      .setup-step:hover { border-color: var(--accent); background: #FBF0EA; }
+      .setup-step:hover { border-color: var(--accent); background: #F8EEEF; }
       .setup-step.done { cursor: default; opacity: 0.7; }
       .setup-step.done:hover { border-color: var(--line); background: var(--card); }
       .setup-step .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #fff; }
@@ -653,7 +679,7 @@
       .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
       .template-card { border: 2px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: var(--card); transition: border-color 0.15s; }
       .template-card:hover { border-color: var(--accent); }
-      .template-card.selected { border-color: var(--accent); background: #FBF0EA; }
+      .template-card.selected { border-color: var(--accent); background: #F8EEEF; }
       .template-swatch { height: 64px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--line); position: relative; overflow: hidden; }
       .template-swatch .band { position: absolute; top: 0; left: 0; right: 0; height: 20px; }
       .template-card strong { font-size: 13px; display: block; }
@@ -969,7 +995,7 @@
       .ask-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
       .ask-chip { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
       .ask-chip:hover { border-color: var(--accent); color: var(--accent); }
-      .ask-answer { margin-top: 14px; padding: 14px 16px; border-radius: var(--radius); background: var(--accent-soft); border: 1px solid #F0D9CC; font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; display: none; }
+      .ask-answer { margin-top: 14px; padding: 14px 16px; border-radius: var(--radius); background: var(--accent-soft); border: 1px solid #E9D3D6; font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; display: none; }
       .ask-answer.show { display: block; }
 
       /* ─── Clients directory ─── */
@@ -1119,14 +1145,14 @@
           color: #fff;
           border-radius: 50%;
           border: none;
-          box-shadow: 0 6px 20px rgba(194,107,69,0.38), 0 2px 8px rgba(0,0,0,0.12);
+          box-shadow: 0 6px 20px rgba(113,18,31,0.38), 0 2px 8px rgba(0,0,0,0.12);
           cursor: pointer;
           z-index: 6800;
           transition: transform 0.15s, box-shadow 0.15s;
           font-size: 26px; line-height: 1;
           -webkit-tap-highlight-color: transparent; touch-action: manipulation;
         }
-        .mobile-fab:active { transform: scale(0.88); box-shadow: 0 3px 10px rgba(194,107,69,0.28); }
+        .mobile-fab:active { transform: scale(0.88); box-shadow: 0 3px 10px rgba(113,18,31,0.28); }
       }
 
       /* ─── Filter chip row (Myntra-style horizontal scroll, mobile-only) ─── */
@@ -1335,15 +1361,106 @@
           <div class="hero-wordmark">BusyDays</div>
           <div class="hero-eyebrow">Made for makeup artists &amp; beauty professionals</div>
 
-          <h1 class="hero-headline">
-            Your calendar, your DMs, your bookings —<br class="hero-br" />
-            <span class="hero-accent">handled.</span>
-          </h1>
+          <div class="hero-grid">
+            <div class="hero-copy">
+              <h1 class="hero-headline">
+                Your calendar, your DMs, your bookings —<br class="hero-br" />
+                <span class="hero-accent">handled.</span>
+              </h1>
 
-          <p class="hero-sub">
-            Every enquiry answered, every booking captured, every date in sync.
-            BusyDays runs the busywork so you can do the work.
-          </p>
+              <p class="hero-sub">
+                Every enquiry answered, every booking captured, every date in sync.
+                BusyDays runs the busywork so you can do the work.
+              </p>
+
+              <div class="hero-cta-row">
+                <a href="/auth/google" class="button hero-cta">Get started with Google</a>
+                <span class="hero-cta-note">Free to start · Your data stays in your own Google account</span>
+              </div>
+
+              <p class="hero-legal">
+                By continuing you agree to our <a href="/legal/terms">Terms</a> and <a href="/legal/privacy">Privacy Policy</a>.
+              </p>
+            </div>
+
+            <!-- Editorial illustration: she's mid-stride through the city while
+                 BusyDays quietly confirms, collects and reminds around her. -->
+            <div class="hero-art" aria-hidden="true">
+              <svg viewBox="0 0 560 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- skyline -->
+                <g fill="#ECE8E2">
+                  <rect x="18" y="208" width="64" height="330" rx="5" />
+                  <rect x="96" y="150" width="58" height="388" rx="5" fill="#E4DFD8" />
+                  <rect x="168" y="238" width="52" height="300" rx="5" />
+                  <rect x="238" y="120" width="66" height="418" rx="5" fill="#E4DFD8" />
+                  <rect x="318" y="196" width="56" height="342" rx="5" />
+                  <rect x="388" y="158" width="62" height="380" rx="5" fill="#E4DFD8" />
+                  <rect x="464" y="242" width="70" height="296" rx="5" />
+                  <rect x="128" y="120" width="4" height="34" rx="2" fill="#DAD4CC" />
+                  <rect x="344" y="164" width="4" height="36" rx="2" fill="#DAD4CC" />
+                  <rect x="416" y="128" width="4" height="34" rx="2" fill="#DAD4CC" />
+                </g>
+                <!-- street -->
+                <rect x="0" y="530" width="560" height="90" fill="#F1EDE7" />
+                <g fill="#E2DCD4">
+                  <path d="M60 620 L110 540 L134 540 L92 620 Z" />
+                  <path d="M160 620 L202 540 L226 540 L192 620 Z" />
+                  <path d="M256 620 L290 540 L314 540 L288 620 Z" />
+                  <path d="M350 620 L376 540 L400 540 L382 620 Z" />
+                  <path d="M444 620 L462 540 L486 540 L476 620 Z" />
+                </g>
+                <ellipse cx="272" cy="556" rx="118" ry="12" fill="rgba(20,18,16,0.09)" />
+
+                <!-- figure: mid-stride, facing the headline -->
+                <g>
+                  <!-- back arm + bag -->
+                  <path d="M300 236 C312 258 322 276 334 298 L322 306 C310 284 296 260 291 242 Z" fill="#141210" />
+                  <path d="M322 302 C324 291 344 291 346 302" stroke="#141210" stroke-width="5" fill="none" />
+                  <rect x="306" y="301" width="58" height="44" rx="9" fill="#141210" />
+                  <circle cx="335" cy="322" r="4" fill="#F8EEEF" />
+                  <!-- back leg (push-off, heel lifted) -->
+                  <path d="M296 384 C306 420 320 458 338 494 C346 508 356 520 366 532 L382 546 L360 552 L344 534 C328 514 312 482 300 448 C293 428 287 404 284 390 Z" fill="#141210" />
+                  <!-- front leg (striding forward, stiletto) -->
+                  <path d="M246 386 C238 430 216 500 202 540 C194 548 184 552 178 556 L198 561 L200 572 L207 572 L205 559 C212 552 216 545 218 538 C230 498 250 430 260 388 Z" fill="#141210" />
+                  <!-- coat: burgundy, hem kicked with the stride -->
+                  <path d="M244 198 C228 214 234 258 242 286 C232 334 212 372 206 392 L338 388 C328 352 314 318 308 284 C314 252 318 216 302 196 C284 185 260 187 244 198 Z" fill="#71121F" />
+                  <!-- belt -->
+                  <path d="M240 282 C262 290 288 290 310 282 L310 292 C288 300 262 300 240 292 Z" fill="#141210" />
+                  <!-- front arm over the coat, phone in hand -->
+                  <path d="M258 208 C242 222 234 248 240 270 C244 290 250 302 255 312 L273 307 C266 293 260 279 258 264 C260 242 268 222 275 210 Z" fill="#141210" />
+                  <rect x="243" y="298" width="17" height="30" rx="4" transform="rotate(14 243 298)" fill="#141210" />
+                  <!-- neck + head + chignon -->
+                  <rect x="262" y="168" width="18" height="24" rx="6" fill="#141210" />
+                  <ellipse cx="271" cy="146" rx="24" ry="27" fill="#141210" />
+                  <circle cx="304" cy="132" r="15" fill="#141210" />
+                  <path d="M250 132 C258 116 282 110 298 120 L306 132 C296 122 274 120 258 134 Z" fill="#141210" />
+                </g>
+
+                <!-- floating "handled" cards -->
+                <g class="hero-chip">
+                  <rect x="14" y="76" width="192" height="58" rx="14" fill="#FFFFFF" stroke="#E8E4DF" />
+                  <circle cx="42" cy="105" r="11" fill="#71121F" />
+                  <path d="M36.5 105 L40.5 109 L48 100.5" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                  <text x="62" y="101" font-size="13" font-weight="700" fill="#141210">Booking confirmed</text>
+                  <text x="62" y="119" font-size="11" fill="#6D6660">Bridal · Sat 14 Jun</text>
+                </g>
+                <g class="hero-chip hero-chip-2">
+                  <rect x="342" y="44" width="204" height="58" rx="14" fill="#FFFFFF" stroke="#E8E4DF" />
+                  <circle cx="370" cy="73" r="11" fill="#71121F" />
+                  <text x="364.5" y="78" font-size="12" font-weight="800" fill="#FFFFFF">₹</text>
+                  <text x="390" y="69" font-size="13" font-weight="700" fill="#141210">Advance received</text>
+                  <text x="390" y="87" font-size="11" fill="#6D6660">₹8,000 · receipt sent</text>
+                </g>
+                <g class="hero-chip hero-chip-3">
+                  <rect x="366" y="408" width="180" height="58" rx="14" fill="#FFFFFF" stroke="#E8E4DF" />
+                  <circle cx="394" cy="437" r="11" fill="#71121F" />
+                  <path d="M394 431 L394 438 L399 441" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" fill="none" />
+                  <text x="414" y="433" font-size="13" font-weight="700" fill="#141210">Reminder sent</text>
+                  <text x="414" y="451" font-size="11" fill="#6D6660">Client call · 6:00 AM</text>
+                </g>
+              </svg>
+            </div>
+          </div>
 
           <div class="zero-grid">
             <div class="zero-card">
@@ -1359,15 +1476,6 @@
               <div class="zero-label">Missed<br />bookings</div>
             </div>
           </div>
-
-          <div class="hero-cta-row">
-            <a href="/auth/google" class="button hero-cta">Get started with Google</a>
-            <span class="hero-cta-note">Free to start · Your data stays in your own Google account</span>
-          </div>
-
-          <p class="hero-legal">
-            By continuing you agree to our <a href="/legal/terms">Terms</a> and <a href="/legal/privacy">Privacy Policy</a>.
-          </p>
         </div>
 
         <div class="landing-explain">
@@ -2568,8 +2676,8 @@
             <div>
               <label for="mypage-color">Brand colour</label>
               <div style="display:flex;gap:8px;align-items:center;">
-                <input type="color" id="mypage-color-picker" value="#C26B45" style="width:46px;height:42px;padding:3px;cursor:pointer;flex:0 0 auto;" />
-                <input type="text" id="mypage-color" name="brandColor" placeholder="#C26B45" style="flex:1;" />
+                <input type="color" id="mypage-color-picker" value="#71121F" style="width:46px;height:42px;padding:3px;cursor:pointer;flex:0 0 auto;" />
+                <input type="text" id="mypage-color" name="brandColor" placeholder="#71121F" style="flex:1;" />
               </div>
             </div>
             <div>
@@ -4603,7 +4711,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         classic: { band: "#9C7A4D", bg: "#F7F2EB" },
         minimal: { band: "#1A1A1A", bg: "#F7F7F7" },
         noir: { band: "#1C1A1F", bg: "#F4F4F6" },
-        blush: { band: "#C26B45", bg: "#FBF0EA" },
+        blush: { band: "#71121F", bg: "#F8EEEF" },
       };
       let documentTemplates = null;
       let selectedTemplate = "classic";
@@ -7378,7 +7486,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             name: sessionState?.workspace?.config?.businessName || "BusyDays",
             description: `${order.pack.label} — ${order.pack.credits} credits`,
             prefill: order.prefill,
-            theme: { color: "#C26B45" },
+            theme: { color: "#71121F" },
             handler: async (response) => {
               try {
                 const verify = await postJson("/api/wallet/verify", {

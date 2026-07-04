@@ -493,7 +493,7 @@ async function seedSpreadsheet(
     ["quote_packages", config.quotePackages, "Reusable quote packages, one per line: Name: Item=Price, Item=Price"],
     ["booking_slug", config.bookingSlug, "Pretty booking link name, e.g. glowbyaisha"],
     ["service_durations", config.serviceDurations, "Hours each occasion blocks on the calendar, e.g. Bridal=4, Party=2"],
-    ["brand_color", config.brandColor, "Accent colour for your booking page (hex, e.g. #C26B45)"],
+    ["brand_color", config.brandColor, "Accent colour for your booking page (hex, e.g. #71121F)"],
     ["cover_image_url", config.coverImageUrl, "Cover photo shown at the top of your booking page (URL)"],
     ["headline", config.headline, "Headline shown on your booking page"],
     ["tagline", config.tagline, "Short tagline under your business name"],
