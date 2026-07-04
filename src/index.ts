@@ -369,6 +369,23 @@ if (!sessionStore && appConfig.isDeployed) {
 }
 
 app.set("trust proxy", 1);
+
+// Canonical-host redirect: when the app is served on www.<domain>, requests
+// that arrive on the bare apex (busydays.co) 301 to the www host. Google's
+// OAuth verifier and people typing the short domain both land correctly —
+// as long as the apex domain is also attached to the deployment. Only GET/HEAD
+// are redirected (other methods would lose their body).
+const canonicalHost = new URL(appConfig.baseUrl).host;
+if (canonicalHost.startsWith("www.")) {
+  const apexHost = canonicalHost.slice(4);
+  app.use((req, res, next) => {
+    if ((req.method === "GET" || req.method === "HEAD") && req.headers.host === apexHost) {
+      return res.redirect(301, `${appConfig.baseUrl}${req.originalUrl}`);
+    }
+    next();
+  });
+}
+
 app.use(
   session({
     store: sessionStore,
@@ -7868,7 +7885,7 @@ app.post("/webhooks/leegality", async (req, res, next) => {
 // Shared, styled wrapper for the public legal pages. These are required for the
 // Meta app review (privacy + data deletion) and to set commercial terms.
 function legalPage(title: string, bodyHtml: string): string {
-  const lastUpdated = "5 June 2026";
+  const lastUpdated = "4 July 2026";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeAttr(title)} · BusyDays</title>
@@ -7923,6 +7940,8 @@ app.get("/legal/privacy", (_req, res) => {
   <li>We use Google Calendar access only to create, update and delete booking events we create on your behalf. We do not read events we did not create, except to check free/busy availability at your explicit request.</li>
   <li>We use Drive file access (drive.file scope) only to upload files our app generates — payment screenshots, portfolio photos, and your business logo. We cannot see or access other files in your Drive.</li>
   <li>We do not use data obtained via Google APIs to serve advertisements, and we do not transfer it to any third party except as necessary to provide the features you explicitly activate.</li>
+  <li><strong>No AI/ML model training:</strong> we do not use any data obtained through Google Workspace APIs (Sheets, Calendar, Drive) to develop, improve, or train generalized artificial-intelligence or machine-learning models — neither our own nor any third party's. Where you invoke an AI feature, the minimum data needed is sent to our AI processor (xAI) solely to generate that one response for you; it is not retained by us for training and we contractually prohibit its use for model training.</li>
+  <li><strong>No human access:</strong> our staff do not read data obtained via Google APIs except with your explicit permission (e.g. a support request), where required for security or legal compliance, or in aggregated, anonymised form.</li>
 </ul>
 
 <h2>3. Third parties we share with</h2>
