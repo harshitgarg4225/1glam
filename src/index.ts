@@ -135,7 +135,7 @@ import { computeLoyaltyStatuses, loyaltyForPhone } from "./services/loyalty.js";
 import { generateGiftCode, parseGiftCard, giftCardToRow } from "./services/gift-cards.js";
 import { emailEnabled, sendEmail, wrapEmailHtml } from "./services/email.js";
 import { TtlCache } from "./services/cache.js";
-import type { MetaChannel, WorkspaceConfig, WorkspaceRecord } from "./types.js";
+import type { MetaChannel, MetaChannelConnection, WorkspaceConfig, WorkspaceRecord } from "./types.js";
 import {
   addPortfolioImage,
   disconnectMetaConnection,
@@ -8279,6 +8279,20 @@ function resolveLeadMessagingContext(workspace: NonNullable<Awaited<ReturnType<t
     return {
       channel: "WhatsApp" as const,
       connection: workspace.metaConnections.whatsapp,
+      actorId: lead.clientWhatsApp,
+    };
+  }
+
+  // No Meta channel, but a WhatsApp send pipe exists (env WABA creds or the
+  // WATI BSP): return a WhatsApp context with an empty connection — the
+  // messaging layer resolves the actual transport (Meta env creds → WATI).
+  if (
+    lead.clientWhatsApp &&
+    ((appConfig.waAccessToken && appConfig.waPhoneNumberId) || (appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber))
+  ) {
+    return {
+      channel: "WhatsApp" as const,
+      connection: {} as MetaChannelConnection,
       actorId: lead.clientWhatsApp,
     };
   }

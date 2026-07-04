@@ -36,6 +36,13 @@ const envSchema = z.object({
   GOOGLE_REDIRECT_PATH: z.string().default("/auth/google/callback"),
   GOOGLE_MAPS_API_KEY: z.string().optional().default(""),
   WATI_WEBHOOK_SECRET: z.string().optional().default(""),
+  // Gupshup as the WhatsApp send pipe: an approved Meta BSP with pure
+  // per-message pricing (no upfront/monthly fee) and self-serve signup — no
+  // Meta app review on our side. When all three are set, outbound WhatsApp
+  // falls back to Gupshup whenever no direct Meta credentials are available.
+  GUPSHUP_API_KEY: z.string().optional().default(""),
+  GUPSHUP_APP_NAME: z.string().optional().default(""),
+  GUPSHUP_SOURCE_NUMBER: z.string().optional().default(""),
   MANYCHAT_WEBHOOK_SECRET: z.string().optional().default(""),
   XAI_API_KEY: z.string().optional().default(""),
   XAI_MODEL: z.string().default("grok-4.20-reasoning"),
@@ -124,6 +131,9 @@ export const appConfig = {
   googleRedirectUrl: new URL(parsed.GOOGLE_REDIRECT_PATH, parsed.APP_BASE_URL).toString(),
   googleMapsApiKey: parsed.GOOGLE_MAPS_API_KEY,
   watiWebhookSecret: parsed.WATI_WEBHOOK_SECRET,
+  gupshupApiKey: parsed.GUPSHUP_API_KEY,
+  gupshupAppName: parsed.GUPSHUP_APP_NAME,
+  gupshupSourceNumber: parsed.GUPSHUP_SOURCE_NUMBER.replace(/\D/g, ""),
   manychatWebhookSecret: parsed.MANYCHAT_WEBHOOK_SECRET,
   xaiApiKey: parsed.XAI_API_KEY,
   xaiModel: parsed.XAI_MODEL,

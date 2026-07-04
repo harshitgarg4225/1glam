@@ -141,6 +141,77 @@ async function sendInstagramMessage(
   return last;
 }
 
+// Which pipe an outbound WhatsApp goes through. Direct Meta credentials
+// (workspace connection or env) win; otherwise Gupshup — a Meta BSP with pure
+// per-message pricing whose API needs NO Meta app review on our side — carries
+// the send; null means neither is configured (callers fall back to wa.me
+// links). Pure for testability.
+export function resolveWaTransport(input: {
+  connectionToken?: string;
+  connectionPhoneId?: string;
+  envToken?: string;
+  envPhoneId?: string;
+  gupshupKey?: string;
+  gupshupApp?: string;
+  gupshupSource?: string;
+}): "meta" | "gupshup" | null {
+  const token = input.connectionToken || input.envToken;
+  const phoneId = input.connectionPhoneId || input.envPhoneId;
+  if (token && phoneId) return "meta";
+  if (input.gupshupKey && input.gupshupApp && input.gupshupSource) return "gupshup";
+  return null;
+}
+
+function gupshupTransportInput() {
+  return {
+    gupshupKey: appConfig.gupshupApiKey,
+    gupshupApp: appConfig.gupshupAppName,
+    gupshupSource: appConfig.gupshupSourceNumber,
+  };
+}
+
+async function postGupshup(path: string, form: Record<string, string>) {
+  const response = await fetchWithTimeout(`https://api.gupshup.io/wa/api/v1/${path}`, {
+    method: "POST",
+    headers: { apikey: appConfig.gupshupApiKey, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      channel: "whatsapp",
+      source: appConfig.gupshupSourceNumber,
+      "src.name": appConfig.gupshupAppName,
+      ...form,
+    }).toString(),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { status?: unknown; message?: unknown };
+  // Gupshup can 200 with status:"error" (bad template id, opted-out number…).
+  if (!response.ok || payload.status === "error") {
+    throw new Error(`WhatsApp send failed (Gupshup): ${payload.message || response.status}`);
+  }
+  return payload;
+}
+
+// Gupshup template send. Templates are created in the Gupshup dashboard and
+// referenced by their template ID — put that ID in the app's template-name
+// settings fields when running on Gupshup. Params are positional, matching ours.
+function sendGupshupTemplate(recipientPhone: string, templateId: string, bodyParams: string[]) {
+  return postGupshup("template/msg", {
+    destination: recipientPhone.replace(/\D/g, ""),
+    template: JSON.stringify({ id: templateId, params: bodyParams }),
+  });
+}
+
+// Free-text (session) send — valid inside WhatsApp's 24h customer-service
+// window, which is when we use free-text (replies to an inbound conversation).
+function sendGupshupSessionMessage(recipientPhone: string, message: string, imageUrl?: string) {
+  return postGupshup("msg", {
+    destination: recipientPhone.replace(/\D/g, ""),
+    message: JSON.stringify(
+      imageUrl
+        ? { type: "image", originalUrl: imageUrl, previewUrl: imageUrl, ...(message ? { caption: message } : {}) }
+        : { type: "text", text: message },
+    ),
+  });
+}
+
 export async function sendWhatsAppTemplate(
   connection: { accessToken?: string; phoneNumberId?: string },
   recipientPhone: string,
@@ -148,6 +219,16 @@ export async function sendWhatsAppTemplate(
   languageCode: string,
   bodyParams: string[],
 ) {
+  const transport = resolveWaTransport({
+    connectionToken: connection.accessToken,
+    connectionPhoneId: connection.phoneNumberId,
+    envToken: appConfig.waAccessToken,
+    envPhoneId: appConfig.waPhoneNumberId,
+    ...gupshupTransportInput(),
+  });
+  if (transport === "gupshup") {
+    return sendGupshupTemplate(recipientPhone, templateName, bodyParams);
+  }
   const accessToken = connection.accessToken || appConfig.waAccessToken;
   const phoneNumberId = connection.phoneNumberId || appConfig.waPhoneNumberId;
   if (!accessToken || !phoneNumberId) {
@@ -195,6 +276,16 @@ async function sendWhatsAppMessage(
   message: string,
   imageUrl?: string,
 ) {
+  const transport = resolveWaTransport({
+    connectionToken: connection.accessToken,
+    connectionPhoneId: connection.phoneNumberId,
+    envToken: appConfig.waAccessToken,
+    envPhoneId: appConfig.waPhoneNumberId,
+    ...gupshupTransportInput(),
+  });
+  if (transport === "gupshup") {
+    return sendGupshupSessionMessage(recipientPhone, message, imageUrl);
+  }
   const accessToken = connection.accessToken || appConfig.waAccessToken;
   const phoneNumberId = connection.phoneNumberId || appConfig.waPhoneNumberId;
   if (!accessToken || !phoneNumberId) {

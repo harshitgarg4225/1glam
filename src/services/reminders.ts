@@ -122,7 +122,7 @@ async function runReminderJob() {
     const whatsapp = workspace.metaConnections?.whatsapp;
     const connectionCanSend =
       whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
-    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId) || Boolean(appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber);
     if (!connectionCanSend && !envCanSend) continue;
 
     const daysBefore = parseReminderDays(workspace.config.reminderDaysBefore);
@@ -214,7 +214,7 @@ async function runReviewRequestJob() {
     const whatsapp = workspace.metaConnections?.whatsapp;
     const connectionCanSend =
       whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
-    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId) || Boolean(appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber);
     if (!connectionCanSend && !envCanSend) continue;
 
     // Status that should trigger the review ask (default "Completed"). We fire
@@ -299,7 +299,7 @@ async function runRebookNudgeJob() {
     const whatsapp = workspace.metaConnections?.whatsapp;
     const connectionCanSend =
       whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
-    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId) || Boolean(appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber);
     if (!connectionCanSend && !envCanSend) continue;
 
     const targetDate = addDaysToIso(-daysAfter);
@@ -368,7 +368,7 @@ async function runWinbackJob() {
     const whatsapp = workspace.metaConnections?.whatsapp;
     const connectionCanSend =
       whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
-    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId) || Boolean(appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber);
     if (!connectionCanSend && !envCanSend) continue;
 
     const targetDate = addDaysToIso(-daysAfter);
@@ -441,7 +441,7 @@ async function runBirthdayJob() {
     const whatsapp = workspace.metaConnections?.whatsapp;
     const connectionCanSend =
       whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
-    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId) || Boolean(appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber);
     if (!connectionCanSend && !envCanSend) continue;
 
     try {
@@ -541,7 +541,7 @@ async function runPaymentReminderJob() {
     const whatsapp = workspace.metaConnections?.whatsapp;
     const connectionCanSend =
       whatsapp?.status === "connected" && Boolean(whatsapp.accessToken && whatsapp.phoneNumberId);
-    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId);
+    const envCanSend = Boolean(appConfig.waAccessToken && appConfig.waPhoneNumberId) || Boolean(appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber);
     if (!connectionCanSend && !envCanSend) continue;
 
     try {
