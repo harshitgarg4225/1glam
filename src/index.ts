@@ -521,7 +521,7 @@ function buildBookingMeta(
     `<meta name="twitter:title" content="${escapeAttr(title)}" />`,
     `<meta name="twitter:description" content="${escapeAttr(desc)}" />`,
     image ? `<meta name="twitter:image" content="${escapeAttr(image)}" />` : "",
-    `<meta name="theme-color" content="#C26B45" />`,
+    `<meta name="theme-color" content="#71121F" />`,
   ]
     .filter(Boolean)
     .join("\n    ");
@@ -3749,7 +3749,7 @@ app.get("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next)
     res.json({
       ok: true,
       businessName: workspace.config.businessName || workspace.config.ownerName,
-      brandColor: workspace.config.brandColor || "#C26B45",
+      brandColor: workspace.config.brandColor || "#71121F",
       booking: {
         bookingId: booking.bookingId,
         leadId: booking.leadId || "",
@@ -3888,7 +3888,7 @@ app.get("/api/public/:workspaceId/cancel/:bookingId", async (req, res, next) => 
     res.json({
       ok: true,
       businessName: workspace.config.businessName || workspace.config.ownerName,
-      brandColor: workspace.config.brandColor || "#C26B45",
+      brandColor: workspace.config.brandColor || "#71121F",
       alreadyCancelled,
       cancellationPolicy: workspace.config.cancellationPolicy || "",
       booking: {
@@ -4312,7 +4312,7 @@ app.post("/api/bookings/:bookingId/send-invoice", async (req, res, next) => {
           <h2>Your Invoice</h2>
           <p>Hi ${esc(currentBooking.clientName)},</p>
           <p>Please find your invoice for your <strong>${esc(currentBooking.eventType)}</strong> booking on <strong>${esc(currentBooking.eventDate)}</strong>.</p>
-          <p style="margin:16px 0;"><a href="${esc(currentBooking.invoiceUrl || "")}" style="background:${workspace.config.brandColor || "#C26B45"};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">View & Pay Invoice</a></p>
+          <p style="margin:16px 0;"><a href="${esc(currentBooking.invoiceUrl || "")}" style="background:${workspace.config.brandColor || "#71121F"};color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">View & Pay Invoice</a></p>
           <p>Amount due: <strong>Rs. ${Math.round(currentBooking.balanceDue).toLocaleString("en-IN")}</strong></p>
           <p>Thank you — ${esc(workspace.config.businessName || workspace.config.ownerName)}</p>
         `),
@@ -4856,7 +4856,7 @@ app.get("/q/:workspaceId/:leadId", async (req, res, next) => {
     }
 
     const brand = workspace.config.businessName || workspace.config.ownerName || "Your artist";
-    const brandColor = /^#[0-9a-fA-F]{3,6}$/.test(workspace.config.brandColor) ? workspace.config.brandColor : "#C26B45";
+    const brandColor = /^#[0-9a-fA-F]{3,6}$/.test(workspace.config.brandColor) ? workspace.config.brandColor : "#71121F";
     const pdfUrl = `/d/quote/${encodeURIComponent(workspaceId)}/${encodeURIComponent(leadId)}?sig=${encodeURIComponent(sig)}`;
     const accepted = Boolean(lead.quoteAcceptedAt);
     const voided = Boolean(lead.quoteVoidedAt);
@@ -5103,7 +5103,7 @@ app.get("/i/:workspaceId/:bookingId", async (req, res, next) => {
     const sig = signDocumentToken("invoice", workspaceId, bookingId);
     const pdfUrl = `/d/invoice/${encodeURIComponent(workspaceId)}/${encodeURIComponent(bookingId)}?sig=${encodeURIComponent(sig)}`;
     const brand = workspace.config.businessName || workspace.config.ownerName || "Your artist";
-    const brandColor = /^#[0-9a-fA-F]{3,6}$/.test(workspace.config.brandColor) ? workspace.config.brandColor : "#C26B45";
+    const brandColor = /^#[0-9a-fA-F]{3,6}$/.test(workspace.config.brandColor) ? workspace.config.brandColor : "#71121F";
     const payments = parsePaymentsLog(booking.paymentsLog);
     const totalPaid = paymentsTotal(payments);
     const balanceDue = Math.max(0, booking.balanceDue);
@@ -7879,7 +7879,7 @@ function legalPage(title: string, bodyHtml: string): string {
   h1 { font-size: 28px; margin-bottom: 4px; }
   h2 { font-size: 18px; margin-top: 32px; }
   .muted { color: #6b6b80; font-size: 14px; }
-  a { color: #C26B45; }
+  a { color: #71121F; }
   nav { margin: 24px 0 8px; font-size: 14px; }
   nav a { margin-right: 16px; }
   ul { padding-left: 20px; }
@@ -8133,7 +8133,7 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
     req.accepts(["json", "html"]) === "html";
   if (wantsHtml) {
     return res.status(500).type("html").send(
-      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Something went wrong</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#FAF8F5;color:#3d3a36;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}.card{max-width:420px;text-align:center;background:#fff;border:1px solid #ece7df;border-radius:16px;padding:32px}h1{font-size:20px;margin:0 0 8px}p{color:#6b6459;font-size:15px;line-height:1.5;margin:0 0 20px}a{display:inline-block;background:#C26B45;color:#fff;text-decoration:none;padding:11px 22px;border-radius:10px;font-weight:600}</style></head><body><div class="card"><h1>Something went wrong</h1><p>${escapeAttr(friendly)}</p><a href="/">Try again</a></div></body></html>`,
+      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Something went wrong</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#FAF8F5;color:#3d3a36;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}.card{max-width:420px;text-align:center;background:#fff;border:1px solid #ece7df;border-radius:16px;padding:32px}h1{font-size:20px;margin:0 0 8px}p{color:#6b6459;font-size:15px;line-height:1.5;margin:0 0 20px}a{display:inline-block;background:#71121F;color:#fff;text-decoration:none;padding:11px 22px;border-radius:10px;font-weight:600}</style></head><body><div class="card"><h1>Something went wrong</h1><p>${escapeAttr(friendly)}</p><a href="/">Try again</a></div></body></html>`,
     );
   }
   res.status(500).json({ error: friendly });

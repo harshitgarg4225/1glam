@@ -49,7 +49,7 @@ export async function sendEmail(
 // Minimal branded HTML wrapper for transactional emails.
 export function wrapEmailHtml(config: WorkspaceConfig, body: string): string {
   const brand = config.businessName || "BusyDays";
-  const color = config.brandColor || "#C26B45";
+  const color = config.brandColor || "#71121F";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="margin:0;padding:0;background:#f5f5f5;font-family:sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px;">
 <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;">

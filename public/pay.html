@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pay Advance — BusyDays</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%2371121F'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="stylesheet" href="/brand.css" />
-  <meta name="theme-color" content="#C26B45" />
+  <meta name="theme-color" content="#71121F" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="BusyDays" />
@@ -127,7 +127,7 @@
       <p class="note hidden" id="no-upi-note" style="background:#FEF3C7;border:1px solid #FDE68A;color:#92400E;padding:12px 14px;border-radius:8px;">Please contact the artist directly to arrange your advance payment, then upload your payment screenshot below to confirm.</p>
 
       <div class="upload-section">
-        <div id="upi-after-note" style="display:none;background:#FBF0EA;border:1px solid #F0D9CC;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:14px;color:#7a4a2f;font-weight:600;">📲 Paid in your UPI app? Now upload the payment screenshot below so the artist can confirm your booking 👇</div>
+        <div id="upi-after-note" style="display:none;background:#F8EEEF;border:1px solid #E9D3D6;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:14px;color:#7a4a2f;font-weight:600;">📲 Paid in your UPI app? Now upload the payment screenshot below so the artist can confirm your booking 👇</div>
         <h2 style="font-size:15px;">Share your payment proof</h2>
         <p>After paying, upload a screenshot here. The artist will verify it and confirm your booking — you'll hear back shortly.</p>
         <div class="upload-drop" id="upload-drop">
@@ -294,7 +294,7 @@
           name: data.businessName,
           description: payStage === "balance" ? "Balance payment" : "Advance to lock your date",
           prefill: { name: data.clientName },
-          theme: { color: "#C26B45" },
+          theme: { color: "#71121F" },
           modal: {
             // Client closed checkout without paying → re-enable so they can retry.
             ondismiss: () => { btn.disabled = false; btn.innerHTML = original; },

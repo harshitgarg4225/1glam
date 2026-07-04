@@ -5,7 +5,7 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FAF8F5",
-  "theme_color": "#C26B45",
+  "theme_color": "#71121F",
   "orientation": "portrait-primary",
   "shortcuts": [
     { "name": "New booking", "short_name": "New booking", "url": "/?tab=dashboard&action=quickbook" },
@@ -15,13 +15,13 @@
   ],
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23C26B45'/%3E%3Ctext x='96' y='130' text-anchor='middle' font-family='system-ui,sans-serif' font-size='100' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%2371121F'/%3E%3Ctext x='96' y='130' text-anchor='middle' font-family='system-ui,sans-serif' font-size='100' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23C26B45'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%2371121F'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-family='system-ui,sans-serif' font-size='280' font-weight='700' fill='white'%3EB%3C/text%3E%3C/svg%3E",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
