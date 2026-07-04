@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
-const { sendBusinessMessage } = await import("../src/services/messaging.ts");
+const { sendBusinessMessage, resolveWaTransport } = await import("../src/services/messaging.ts");
 
 type Captured = { url: string; body: any };
 
@@ -77,4 +77,27 @@ test("Instagram always uses free text even when a template is given", async () =
   } finally {
     fetchMock.restore();
   }
+});
+
+test("resolveWaTransport: Meta wins when a token+phoneId pair exists", () => {
+  assert.equal(
+    resolveWaTransport({ connectionToken: "T", connectionPhoneId: "P", gupshupKey: "K", gupshupApp: "A", gupshupSource: "91999" }),
+    "meta",
+  );
+  assert.equal(resolveWaTransport({ envToken: "T", envPhoneId: "P" }), "meta");
+  // Connection token + env phone id still completes a Meta pair.
+  assert.equal(resolveWaTransport({ connectionToken: "T", envPhoneId: "P" }), "meta");
+});
+
+test("resolveWaTransport: Gupshup only when all three fields are set", () => {
+  assert.equal(resolveWaTransport({ gupshupKey: "K", gupshupApp: "A", gupshupSource: "91999" }), "gupshup");
+  assert.equal(resolveWaTransport({ gupshupKey: "K", gupshupApp: "A" }), null);
+  assert.equal(resolveWaTransport({ gupshupKey: "K", gupshupSource: "91999" }), null);
+  assert.equal(resolveWaTransport({ gupshupApp: "A", gupshupSource: "91999" }), null);
+});
+
+test("resolveWaTransport: nothing configured → null (wa.me fallback)", () => {
+  assert.equal(resolveWaTransport({}), null);
+  // A token without a phone id is not a usable Meta pair — falls through.
+  assert.equal(resolveWaTransport({ envToken: "T", gupshupKey: "K", gupshupApp: "A", gupshupSource: "9" }), "gupshup");
 });
