@@ -23,6 +23,9 @@ target 'App' do
   # FCM on iOS: converts the APNs token into an FCM registration token so the
   # server can send through one transport (FCM HTTP v1) for both platforms.
   pod 'FirebaseMessaging'
+  # Native in-app Google Sign-In (NativeGoogleSignInPlugin.swift) — the account
+  # sheet + serverAuthCode, so sign-in/sign-up never leave the app.
+  pod 'GoogleSignIn', '~> 8.0'
 end
 
 post_install do |installer|

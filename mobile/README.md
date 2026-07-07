@@ -10,7 +10,7 @@ The shell adds the two things a webview can't do alone:
 | Capability | How |
 |---|---|
 | **Native push** | FCM device tokens, registered via `POST /api/push/register-device`; the server fans out every notification to web-push *and* FCM (`src/services/push.ts` + `src/services/fcm.ts`). |
-| **Google sign-in** | Google blocks OAuth in webviews, so login opens the **system browser** (`/auth/google?mobile=1`), and the callback deep-links back with a single-use token (`busydays://auth?ott=…`) that the webview exchanges for a session (`POST /api/auth/mobile/exchange`). |
+| **Google sign-in** | The **native account sheet** (no browser). `NativeGoogleSignInPlugin` (Android/iOS) returns an ID token — verified at `POST /api/auth/google/id-token` for returning users — plus a one-time `serverAuthCode` for first-timers, exchanged at `POST /api/auth/google/native-code` to provision the workspace in-app. If the native path can't complete (missing config, cancelled, Play Services absent) it **falls back to the system browser** (`/auth/google?mobile=1` → `busydays://auth?ott=…` → `POST /api/auth/mobile/exchange`), so sign-in always works. |
 
 All app-side logic lives in `public/mobile-bridge.js` (served by the main app;
 inert in normal browsers, active only inside this shell).
@@ -42,6 +42,33 @@ inert in normal browsers, active only inside this shell).
    *Generate new private key*. Set the JSON (raw, or base64 if your platform's
    env UI mangles newlines) as `FCM_SERVICE_ACCOUNT_JSON` on the server.
    Without it the server simply skips native push.
+
+### Native Google Sign-In (in-app account sheet)
+
+The app signs users in **without a browser** using the native Google account
+sheet. It needs OAuth client IDs from the **same** Google Cloud project as your
+web `GOOGLE_CLIENT_ID`:
+
+1. **Android OAuth client** — Cloud Console → *Credentials → Create credentials
+   → OAuth client ID → Android*. Package `in.busydays.app`; SHA-1 from your
+   signing key:
+   - debug: `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`
+   - release: the SHA-1 of your upload keystore (and, once on Play, the
+     **Play App Signing** SHA-1 from Play Console → Setup → App integrity).
+   No code change — Android sends the *web* client ID as `webClientId` (already
+   fetched from `/api/push/config`); Google matches the request by package+SHA-1.
+2. **iOS OAuth client** — Cloud Console → *OAuth client ID → iOS*, bundle
+   `in.busydays.app`. Put the client ID in **two** places in
+   `ios/App/App/Info.plist` (replace both `YOUR_IOS_CLIENT_ID` placeholders):
+   `GIDClientID` = the client ID; and the reversed form
+   `com.googleusercontent.apps.<CLIENT_NUMBER>` as a URL scheme.
+3. **Server** — set `GOOGLE_IOS_CLIENT_ID` on the server to that iOS client ID
+   so iOS ID tokens (whose audience is the iOS client) pass verification. Android
+   tokens use the web client ID and already verify. Leave it blank and iOS simply
+   falls back to the browser flow — nothing breaks.
+
+Until steps 1–3 are done the apps build and run; sign-in transparently uses the
+browser fallback.
 
 ### iOS capabilities (in Xcode, once)
 
@@ -105,8 +132,11 @@ There is no web build step — the app content is the deployed site.
 
 ### Smoke test before every release
 
-- [ ] Fresh install → "Get started with Google" → system browser opens →
-      finish OAuth → app returns automatically and lands logged-in
+- [ ] Fresh install → "Get started with Google" → **native account sheet**
+      appears in-app (no browser) → pick account → lands logged-in. New account
+      → provisioned in-app; returning account → straight in.
+- [ ] With native client IDs NOT yet configured → same button falls back to the
+      system browser and still completes sign-in
 - [ ] Settings → enable notifications → permission prompt → "✓ Notifications are on"
 - [ ] Create a test lead (public booking page) → push arrives on the phone;
       tapping it opens the app on the dashboard
@@ -119,6 +149,8 @@ There is no web build step — the app content is the deployed site.
 |---|---|
 | Login button does nothing in app | `mobile-bridge.js` not loaded — check the `<script>` tag in `public/index.html` and that `Capacitor.isNativePlatform()` is true. |
 | OAuth finishes but app doesn't resume | Deep-link scheme not registered — `busydays` intent-filter (AndroidManifest.xml) / CFBundleURLTypes (Info.plist). |
+| Native sheet appears then errors, falls to browser | Android: SHA-1 + package not registered on the Android OAuth client (status code 10 = DEVELOPER_ERROR). iOS: `GIDClientID`/URL-scheme placeholders not replaced, or `GOOGLE_IOS_CLIENT_ID` unset on the server (token audience rejected). |
+| iOS build fails on `GoogleSignIn` | Run `pod install` in `mobile/ios/App` after `cap sync` so the new pod resolves. |
 | "Login link expired" | The one-time token is single-use with a 5-minute TTL — just sign in again. Repeated failures: check server clock and `mobile_login_tokens` table. |
 | No push on Android | `google-services.json` missing from `android/app/`, or notification permission denied (Android 13+). |
 | No push on iOS | Push capability not added in Xcode, APNs key not uploaded to Firebase, or `GoogleService-Info.plist` missing from the target. |
