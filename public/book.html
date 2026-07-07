@@ -295,8 +295,12 @@
           </div>
           <div id="time-free-wrap" class="hidden">
             <label for="eventTimeFree">Preferred start time (optional)</label>
-            <input type="time" id="eventTimeFree" />
+            <input type="time" id="eventTimeFree" step="900" />
           </div>
+          <!-- Shows the client the full block their look occupies, e.g.
+               "Your Bridal runs 9:00 AM – 1:00 PM (about 4 hours)." -->
+          <p id="time-block-note" class="hidden" style="font-size:13px;margin:8px 0 0;line-height:1.5;font-weight:600;color:var(--accent);"></p>
+          <input type="hidden" id="eventEndTime" />
           <p id="ready-by-note" class="muted hidden" style="font-size:12.5px;margin:8px 0 0;line-height:1.55;background:#F8EEEF;border:1px solid #E9D3D6;border-radius:8px;padding:9px 11px;"></p>
 
           <label for="locationText">Event location / venue <span class="muted" style="font-weight:400;">(optional — add it later if you're not sure)</span></label>
@@ -425,6 +429,33 @@
           clockLabel(readyHour) + ", start around <strong>" + clockLabel(readyHour - h) + "</strong>.";
         note.classList.remove("hidden");
       }
+
+      // Turns the chosen START into a full block the client understands —
+      // "Your Bridal runs 9:00 AM – 1:00 PM (about 4 hours)" — and stores the
+      // derived end time so the artist's calendar hold is the exact window.
+      // The end is start + the service's duration; a client never sets a block
+      // shorter than the service needs.
+      function updateTimeBlockNote() {
+        const note = el("time-block-note");
+        const endField = el("eventEndTime");
+        if (!note || !endField) return;
+        const hasSlots = !el("time-slots-wrap").classList.contains("hidden");
+        const start = hasSlots ? el("eventTime").value : el("eventTimeFree").value;
+        const type = eventTypesData.find((t) => t.key === selectedEventType);
+        const h = Number(type && type.durationHours) || 0;
+        const m = /^(\d{1,2}):(\d{2})$/.exec(String(start || ""));
+        if (!start || !m || h <= 0) { note.classList.add("hidden"); endField.value = ""; return; }
+        const startMin = Number(m[1]) * 60 + Number(m[2]);
+        const endMin = Math.min(startMin + Math.round(h * 60), 23 * 60 + 59);
+        const end = String(Math.floor(endMin / 60)).padStart(2, "0") + ":" + String(endMin % 60).padStart(2, "0");
+        endField.value = end;
+        const durTxt = h < 1 ? Math.round(h * 60) + " minutes" : "about " + (Number.isInteger(h) ? h : h.toFixed(1)) + " hours";
+        note.textContent = "⏱ Your " + (type.label || "appointment") + " runs " + formatSlotTime(start) + " – " + formatSlotTime(end) + " (" + durTxt + ").";
+        note.classList.remove("hidden");
+      }
+      // When there are no preset slots and the client types a free start time,
+      // show the block window for that too.
+      document.getElementById("eventTimeFree")?.addEventListener("input", updateTimeBlockNote);
 
       // Escape owner-controlled strings before they go into innerHTML. Owner data
       // (artist names, bios) reaches the client's browser here, so it must be
@@ -614,6 +645,8 @@
             resetPromo();
             renderServiceDetail(type);
             updateReadyByNote(type);
+            // Service changed → its duration changed → refresh the block window.
+            updateTimeBlockNote();
             // Switch to event-specific slots (e.g. Bridal only at 09:00 and 11:00)
             // or fall back to the global list when no per-event slots are set.
             if (availability) {
@@ -658,6 +691,8 @@
         if (!slotsContainer) return;
         slotsContainer.innerHTML = "";
         el("eventTime").value = "";
+        // Selection cleared — hide the block window until a new time is chosen.
+        updateTimeBlockNote();
         if (!slots || !slots.length) {
           hide("time-slots-wrap");
           show("time-free-wrap");
@@ -677,6 +712,7 @@
             btn.classList.add("selected");
             btn.setAttribute("aria-pressed", "true");
             el("eventTime").value = slot;
+            updateTimeBlockNote();
           });
           slotsContainer.appendChild(btn);
         });
@@ -1258,6 +1294,9 @@
           eventDate: el("eventDate").value,
           eventEndDate: (el("multiday-toggle")?.checked && el("eventEndDate")?.value) ? el("eventEndDate").value : undefined,
           eventTime: eventTimeValue,
+          // The block end derived from the service duration (server keeps it
+          // only when later than the start), so the calendar hold is exact.
+          eventEndTime: eventTimeValue ? (el("eventEndTime").value || undefined) : undefined,
           locationText: el("locationText").value.trim() || undefined,
           addons: checkedAddons || undefined,
           clientName: el("clientName").value.trim(),

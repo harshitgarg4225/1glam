@@ -44,6 +44,7 @@ import {
   updateLeadRecord,
   updatePaymentStatus,
   travelCostForDistance,
+  laterClockTime,
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
@@ -2644,6 +2645,9 @@ app.post("/api/bookings/quick", async (req, res, next) => {
       // same gate as the public booking page.
       eventEndDate: parsed.eventEndDate && parsed.eventEndDate > parsed.eventDate ? parsed.eventEndDate : undefined,
       eventTime: parsed.eventTime,
+      // Keep the block end only when it's genuinely after the start (compared by
+      // minutes, since "9:00" vs "13:00" can't be compared as strings).
+      eventEndTime: laterClockTime(parsed.eventTime, parsed.eventEndTime),
       locationText: parsed.locationText,
     });
 

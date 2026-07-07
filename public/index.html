@@ -3763,7 +3763,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           </div>
           <div style="display:flex;gap:10px;">
             <div class="wizard-field" style="flex:1;"><label for="qb-date">Date</label><input id="qb-date" name="eventDate" type="date" required /></div>
-            <div class="wizard-field" style="flex:1;"><label for="qb-time">Time (optional)</label><input id="qb-time" name="eventTime" type="time" /></div>
+            <div class="wizard-field" style="flex:1;"><label for="qb-time">Starts <span class="muted" style="font-weight:400;">(optional)</span></label><select id="qb-time" name="eventTime"></select></div>
+            <div class="wizard-field" style="flex:1;display:none;" id="qb-end-time-wrap"><label for="qb-end-time">Ends</label><select id="qb-end-time" name="eventEndTime"></select></div>
           </div>
           <div style="display:flex;gap:10px;">
             <div class="wizard-field" style="flex:1;"><label for="qb-end">Last day <span class="muted" style="font-weight:400;">(multi-day events)</span></label><input id="qb-end" name="eventEndDate" type="date" /></div>
@@ -9993,7 +9994,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("qb-advance-amount-wrap").style.display = "none";
         // reset() wipes our remembered suggestion too, so the next suggest is clean.
         document.getElementById("qb-price").dataset.suggested = "";
-        updateQbDurationHint();
+        initQbTimeBlocks();
         maybeSuggestQbPrice();
         quickBookingModal.classList.add("open");
         setTimeout(() => document.getElementById(prefill?.name ? "qb-date" : "qb-name").focus(), 50);
@@ -10039,21 +10040,78 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const hint = document.getElementById("qb-duration-hint");
         if (!hint) return;
         const eventType = document.getElementById("qb-event").value;
-        const time = document.getElementById("qb-time").value;
+        const startVal = document.getElementById("qb-time").value;
+        const endVal = document.getElementById("qb-end-time").value;
         const hours = durationHoursFor(eventType);
         const fmtH = hours === Math.round(hours) ? String(hours) : hours.toFixed(1);
-        if (time) {
-          const [h, m] = time.split(":").map(Number);
-          const endMin = (h * 60 + m + Math.round(hours * 60)) % (24 * 60);
-          const end = `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
-          hint.textContent = `⏱ ${eventType} blocks ~${fmtH}h on your calendar (${time}–${end}). Change in Settings → Your prices.`;
+        if (startVal && endVal) {
+          const blockH = (blockMinutes(endVal) - blockMinutes(startVal)) / 60;
+          const blockStr = blockH === Math.round(blockH) ? String(blockH) : blockH.toFixed(2).replace(/0$/, "");
+          hint.textContent = `⏱ ${blockStr}h blocked on your calendar (${fmt12(startVal)} – ${fmt12(endVal)}).`;
         } else {
-          hint.textContent = `⏱ ${eventType} blocks ~${fmtH}h on your calendar. Add a time to see the exact window.`;
+          hint.textContent = `⏱ ${eventType} usually blocks ~${fmtH}h. Pick a start time to set the exact window (adjust the end for a longer job).`;
         }
         hint.style.display = "";
       }
-      document.getElementById("qb-event")?.addEventListener("change", updateQbDurationHint);
-      document.getElementById("qb-time")?.addEventListener("input", updateQbDurationHint);
+
+      // ── 15-minute time blocks for the New-booking picker ──
+      const BLOCK_START_MIN = 6 * 60;   // 6:00 AM — first selectable start
+      const BLOCK_END_MAX = 23 * 60 + 45; // 11:45 PM — last selectable end
+      const BLOCK_STEP = 15;
+      function blockMinutes(hhmm) {
+        const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ""));
+        return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+      }
+      function minToHHMM(mins) {
+        return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+      }
+      function fmt12(hhmm) {
+        const mins = blockMinutes(hhmm);
+        if (mins === null) return hhmm;
+        let h = Math.floor(mins / 60); const m = mins % 60;
+        const ap = h < 12 ? "AM" : "PM"; h = h % 12 || 12;
+        return `${h}:${String(m).padStart(2, "0")} ${ap}`;
+      }
+      function fillBlockOptions(select, fromMin, toMin, includeBlank, blankLabel) {
+        const prev = select.value;
+        const opts = [];
+        if (includeBlank) opts.push(`<option value="">${blankLabel || "Any time"}</option>`);
+        for (let t = fromMin; t <= toMin; t += BLOCK_STEP) {
+          const v = minToHHMM(t);
+          opts.push(`<option value="${v}">${fmt12(v)}</option>`);
+        }
+        select.innerHTML = opts.join("");
+        // Restore the previous choice if it's still a valid option.
+        if (prev && select.querySelector(`option[value="${prev}"]`)) select.value = prev;
+      }
+      // Rebuild the end select so its earliest option is start + the service's
+      // defined duration — that's the "Y can't be less than the defined time"
+      // rule, enforced by simply not offering shorter options. Defaults the end
+      // to exactly start + duration; keeps a longer end the artist already chose.
+      function syncQbEndOptions(forceFloor) {
+        const startSel = document.getElementById("qb-time");
+        const endSel = document.getElementById("qb-end-time");
+        const endWrap = document.getElementById("qb-end-time-wrap");
+        if (!startSel || !endSel || !endWrap) return;
+        const startMin = blockMinutes(startSel.value);
+        if (startMin === null) { endWrap.style.display = "none"; endSel.value = ""; return; }
+        const durMin = Math.round(durationHoursFor(document.getElementById("qb-event").value) * 60);
+        const floor = Math.min(startMin + durMin, BLOCK_END_MAX);
+        const prevEnd = blockMinutes(endSel.value);
+        fillBlockOptions(endSel, floor, BLOCK_END_MAX, false);
+        // On a service change, snap the end to the new service's floor. On a
+        // start change, keep a still-valid longer end the artist deliberately set.
+        endSel.value = !forceFloor && prevEnd !== null && prevEnd >= floor ? minToHHMM(prevEnd) : minToHHMM(floor);
+        endWrap.style.display = "";
+      }
+      function initQbTimeBlocks() {
+        fillBlockOptions(document.getElementById("qb-time"), BLOCK_START_MIN, BLOCK_END_MAX, true, "Any time");
+        syncQbEndOptions();
+        updateQbDurationHint();
+      }
+      document.getElementById("qb-event")?.addEventListener("change", () => { syncQbEndOptions(true); updateQbDurationHint(); });
+      document.getElementById("qb-time")?.addEventListener("change", () => { syncQbEndOptions(false); updateQbDurationHint(); });
+      document.getElementById("qb-end-time")?.addEventListener("change", updateQbDurationHint);
 
       // Suggest a price from the artist's own base prices + month multiplier —
       // the same numbers the AI estimate uses. Only fills a blank field (or one

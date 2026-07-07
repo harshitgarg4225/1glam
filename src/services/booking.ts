@@ -246,6 +246,10 @@ export type LeadRecord = {
   // a normal single-day booking. When set, the whole span is blocked.
   eventEndDate: string;
   eventTime: string;
+  // Optional end clock-time ("HH:MM") of the appointment block on the event
+  // date. Empty means "derive the block length from the service duration".
+  // When set (and later than eventTime) it defines the exact block.
+  eventEndTime: string;
   locationText: string;
   distanceKm: number;
   travelTimeMin: number;
@@ -307,6 +311,9 @@ export type BookingRecord = {
   // Optional multi-day end date (empty for single-day). Blocks the whole span.
   eventEndDate: string;
   eventTime: string;
+  // Optional end clock-time ("HH:MM") of the appointment block; empty derives
+  // the length from the service duration.
+  eventEndTime: string;
   venue: string;
   assignedArtist: string;
   finalPrice: number;
@@ -375,6 +382,7 @@ export type CreateLeadInput = {
   eventDate: string;
   eventEndDate?: string;
   eventTime?: string;
+  eventEndTime?: string;
   locationText: string;
   distanceKm?: number;
   travelTimeMin?: number;
@@ -438,6 +446,7 @@ export async function createLeadForWorkspace(
     eventType: input.eventType,
     eventDate: input.eventDate,
     eventTime: input.eventTime ?? "",
+    eventEndTime: input.eventEndTime ?? "",
     locationText: travel.normalizedDestination || input.locationText,
     distanceKm: travel.distanceKm,
     travelTimeMin: travel.travelTimeMin,
@@ -697,6 +706,7 @@ export async function confirmLeadBooking(email: string, tokens: Credentials, lea
     eventType: lead.record.eventType,
     eventDate: lead.record.eventDate,
     eventTime: lead.record.eventTime,
+    eventEndTime: lead.record.eventEndTime || "",
     venue: lead.record.locationText,
     assignedArtist: lead.record.assignedArtist,
     finalPrice: lead.record.finalApprovedPrice,
@@ -1040,6 +1050,7 @@ function leadFromBooking(booking: BookingRecord): LeadRecord {
     leadId: booking.leadId, createdAt: booking.bookedAt, source: "Manual",
     clientName: booking.clientName, clientWhatsApp: booking.clientWhatsApp, clientInstagram: "",
     eventType: booking.eventType, eventDate: booking.eventDate, eventTime: booking.eventTime,
+    eventEndTime: booking.eventEndTime || "",
     locationText: booking.venue, distanceKm: 0, travelTimeMin: 0, outstationFlag: "No",
     profileTier: "Mid", followers: 0, clientTags: "", aiInsight: "", suggestedReply: "",
     demandCount: 0, scarcityTag: "", holdExpiresAt: "", initialAiPrice: booking.finalPrice,
@@ -1338,6 +1349,7 @@ export async function importClients(
       eventType: String(row.eventType || "Other").trim().slice(0, 40) || "Other",
       eventDate: /^\d{4}-\d{2}-\d{2}$/.test(String(row.eventDate || "")) ? String(row.eventDate) : "",
       eventTime: "",
+      eventEndTime: "",
       locationText: String(row.locationText || "").trim().slice(0, 200),
       distanceKm: 0,
       travelTimeMin: 0,
@@ -2031,7 +2043,7 @@ async function upsertTentativeCalendarEvent(
     location: lead.locationText,
     eventDate: lead.eventDate,
     eventTime: lead.eventTime,
-    durationHours: durationHoursForEvent(workspace.config.serviceDurations, lead.eventType),
+    durationHours: effectiveDurationHours(workspace.config.serviceDurations, lead.eventType, lead.eventTime, lead.eventEndTime),
   });
 
   if (lead.tentativeCalendarEventId) {
@@ -2077,7 +2089,7 @@ async function createConfirmedCalendarEvent(
       location: lead.locationText,
       eventDate: lead.eventDate,
       eventTime: lead.eventTime,
-      durationHours: durationHoursForEvent(workspace.config.serviceDurations, lead.eventType),
+      durationHours: effectiveDurationHours(workspace.config.serviceDurations, lead.eventType, lead.eventTime, lead.eventEndTime),
     }),
   });
 
@@ -2141,6 +2153,42 @@ export function durationHoursForEvent(raw: string | undefined, eventType: string
     }
   }
   return fallback;
+}
+
+// Returns the end clock-time only when it's strictly after the start (compared
+// by minutes, so "9:00" vs "13:00" doesn't misfire as a string compare);
+// otherwise "". Used to gate a booking's block end before persisting it.
+export function laterClockTime(start: string | undefined, end: string | undefined): string {
+  const s = clockMinutes(start);
+  const e = clockMinutes(end);
+  return s !== null && e !== null && e > s ? String(end).trim() : "";
+}
+
+// Minutes-of-day for an "HH:MM" string, or null if not a valid clock time.
+function clockMinutes(value: string | undefined): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(value || "").trim());
+  if (!m) return null;
+  const mins = Number(m[1]) * 60 + Number(m[2]);
+  return mins >= 0 && mins < 24 * 60 ? mins : null;
+}
+
+// The actual block length for a booking/lead. When an explicit end time is set
+// and later than the start, THAT defines the block (so an artist who extended a
+// bridal to 5h gets a 5h calendar hold); otherwise fall back to the service's
+// configured duration. Same-day only — the end time is a clock time on the
+// event date.
+export function effectiveDurationHours(
+  serviceDurations: string | undefined,
+  eventType: string,
+  eventTime: string | undefined,
+  eventEndTime: string | undefined,
+): number {
+  const start = clockMinutes(eventTime);
+  const end = clockMinutes(eventEndTime);
+  if (start !== null && end !== null && end > start) {
+    return (end - start) / 60;
+  }
+  return durationHoursForEvent(serviceDurations, eventType);
 }
 
 // Resolves the advance/deposit % for a service: a per-service override (from the
@@ -2305,6 +2353,7 @@ function leadToRow(lead: LeadRecord) {
     lead.travelCost,
     lead.eventEndDate,
     lead.clientEmail,
+    lead.eventEndTime,
   ];
 }
 
@@ -2358,6 +2407,7 @@ function rowToLead(row: string[]): LeadRecord {
     travelCost: Number(row[45] ?? 0),
     eventEndDate: row[46] ?? "",
     clientEmail: row[47] ?? "",
+    eventEndTime: row[48] ?? "",
   };
 }
 
@@ -2404,6 +2454,7 @@ export function bookingToRow(booking: BookingRecord) {
     booking.travelCost,
     booking.eventEndDate,
     booking.clientEmail,
+    booking.eventEndTime,
   ];
 }
 
@@ -2450,6 +2501,7 @@ export function rowToBooking(row: string[]): BookingRecord {
     travelCost: Number(row[38] ?? 0),
     eventEndDate: row[39] ?? "",
     clientEmail: row[40] ?? "",
+    eventEndTime: row[41] ?? "",
   };
 }
 

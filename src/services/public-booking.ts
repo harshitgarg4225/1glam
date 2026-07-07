@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { computeSlotAvailability, slotCutoffForDate, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, busySlotsForDate, dateHasMultiDayConflict, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
+import { computeSlotAvailability, slotCutoffForDate, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, busySlotsForDate, dateHasMultiDayConflict, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent, laterClockTime } from "./booking.js";
 import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -278,6 +278,7 @@ export type PublicBookingInput = {
   eventDate: string;
   eventEndDate?: string;
   eventTime?: string;
+  eventEndTime?: string;
   locationText: string;
   addons?: string;
   notes?: string;
@@ -525,6 +526,7 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
       // Only honour a multi-day end date when it's strictly after the start.
       eventEndDate: input.eventEndDate && input.eventEndDate > input.eventDate ? input.eventEndDate : "",
       eventTime: input.eventTime,
+      eventEndTime: laterClockTime(input.eventTime, input.eventEndTime),
       locationText: input.locationText,
       inboundMessage,
       preferredArtist: input.preferredArtist,
