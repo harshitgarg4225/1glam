@@ -4255,6 +4255,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const el = document.createElement("div");
         el.className = `toast ${type}`;
         el.textContent = message;
+        const dismiss = () => {
+          el.classList.add("removing");
+          el.addEventListener("animationend", () => el.remove(), { once: true });
+        };
         if (action && action.label && action.onClick) {
           const btn = document.createElement("button");
           btn.type = "button";
@@ -4262,12 +4266,27 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           btn.style.cssText = "display:block;margin-top:8px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:inherit;font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:6px 12px;cursor:pointer;";
           btn.addEventListener("click", () => { el.remove(); action.onClick(); });
           el.appendChild(btn);
+        } else {
+          // A dismiss "×" so a long error can be closed on demand (and doesn't
+          // collide with an action button when one is present). Body text stays
+          // selectable so the artist can copy a server error verbatim.
+          const close = document.createElement("button");
+          close.type = "button";
+          close.setAttribute("aria-label", "Dismiss");
+          close.textContent = "×";
+          close.style.cssText = "position:absolute;top:4px;right:6px;background:transparent;border:none;color:inherit;font:inherit;font-size:18px;line-height:1;opacity:.6;cursor:pointer;padding:2px 4px;";
+          close.addEventListener("click", dismiss);
+          el.style.position = "relative";
+          el.style.paddingRight = "26px";
+          el.appendChild(close);
         }
         shelf.appendChild(el);
-        setTimeout(() => {
-          el.classList.add("removing");
-          el.addEventListener("animationend", () => el.remove(), { once: true });
-        }, type === "error" ? 5000 : action ? 6500 : 3200);
+        let timer = setTimeout(dismiss, type === "error" ? 5000 : action ? 6500 : 3200);
+        // Errors are the ones worth reading — pause the countdown while hovering.
+        if (type === "error") {
+          el.addEventListener("pointerenter", () => { clearTimeout(timer); });
+          el.addEventListener("pointerleave", () => { timer = setTimeout(dismiss, 3000); });
+        }
       }
 
       // Her first booking is a milestone, not a row in a table. One-time
@@ -4627,12 +4646,30 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
       }
 
+      // Guards an image pick BEFORE the upload starts, so a wrong file or an
+      // oversized photo fails instantly with clear copy instead of after a long
+      // mobile upload. Clears the input on rejection. Returns true when OK.
+      function validateImagePick(file, statusEl, inputEl) {
+        if (!/^image\//.test(file.type || "")) {
+          if (statusEl) statusEl.textContent = "Please choose an image (JPG or PNG).";
+          if (inputEl) inputEl.value = "";
+          return false;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          if (statusEl) statusEl.textContent = "That image is over 10 MB — please choose a smaller one.";
+          if (inputEl) inputEl.value = "";
+          return false;
+        }
+        return true;
+      }
+
       // ─── Logo upload (no URL-pasting required) ───
       document.getElementById("logo-upload-btn")?.addEventListener("click", () => document.getElementById("logo-upload-input").click());
       document.getElementById("logo-upload-input")?.addEventListener("change", async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const statusEl = document.getElementById("logo-upload-status");
+        if (!validateImagePick(file, statusEl, e.target)) return;
         statusEl.textContent = "Uploading…";
         try {
           const fd = new FormData();
@@ -4657,6 +4694,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const file = e.target.files?.[0];
         if (!file) return;
         const statusEl = document.getElementById("cover-upload-status");
+        if (!validateImagePick(file, statusEl, e.target)) return;
         statusEl.textContent = "Uploading…";
         try {
           const fd = new FormData();
@@ -8275,10 +8313,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // auth-gated call firing on the public landing page) must NOT auto-open
       // the Google OAuth screen — that made busydays.co bounce visitors straight
       // into sign-in before they ever saw the page.
+      // Returns true when it actually acted (an authenticated session went
+      // stale), so callers can turn the 401 into a thrown error and land in
+      // their catch block instead of the success path. For logged-out landing
+      // visitors it stays silent and returns false (their callers swallow it).
+      let sessionExpiryHandled = false;
       function handleSessionExpired() {
-        if (!document.body.classList.contains("authenticated")) return;
-        toast("Your session expired — signing you back in…", "info");
-        setTimeout(() => { window.location.href = "/auth/google"; }, 1200);
+        if (!document.body.classList.contains("authenticated")) return false;
+        if (!sessionExpiryHandled) {
+          sessionExpiryHandled = true;
+          toast("Your session expired — signing you back in…", "info");
+          setTimeout(() => { window.location.href = "/auth/google"; }, 1200);
+        }
+        return true;
       }
 
       // Maps raw failures to words a non-technical user can act on.
@@ -8313,7 +8360,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       async function postJson(url, body) {
         const response = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         if (response.status === 401) {
-          handleSessionExpired();
+          // A stale authenticated session must NOT read as success — throw so the
+          // caller's catch runs (no false "Saved!" toast). Logged-out visitors
+          // (handler returns false) keep the old silent return.
+          if (handleSessionExpired()) throw new Error("Your session expired — signing you back in…");
           return;
         }
         const payload = await response.json().catch(() => ({}));
@@ -8324,7 +8374,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       async function getJson(url) {
         const response = await fetchWithTimeout(url);
         if (response.status === 401) {
-          handleSessionExpired();
+          if (handleSessionExpired()) throw new Error("Your session expired — signing you back in…");
           return null;
         }
         const payload = await response.json().catch(() => ({}));

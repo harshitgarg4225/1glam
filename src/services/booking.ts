@@ -2166,6 +2166,11 @@ export function computeSlotAvailability(input: {
   // Cleanup/buffer minutes padded around every existing job, so back-to-back
   // bookings leave the artist time to pack up, reset her kit and breathe.
   bufferMinutes?: number;
+  // Minutes-of-day cutoff for TODAY: any slot starting at or before this is
+  // already in the past (or too soon) and must not be bookable. Undefined for
+  // future dates, where every slot is fair game. Prevents a client grabbing a
+  // 9 AM slot at 2 PM on the same day.
+  cutoffMinutes?: number;
 }): SlotAvailability[] {
   const buffer = Math.max(0, Math.min(480, Math.round(input.bufferMinutes || 0)));
   const requestedMinutes = durationHoursForEvent(input.serviceDurations, input.requestedEventType) * 60;
@@ -2182,13 +2187,33 @@ export function computeSlotAvailability(input: {
     })
     .filter((w): w is { start: number; end: number } => w !== null);
 
+  const cutoff = typeof input.cutoffMinutes === "number" ? input.cutoffMinutes : null;
   return input.timeSlots.map((time) => {
     const start = minutesOfDay(time);
     if (start === null) return { time, available: false };
+    if (cutoff !== null && start <= cutoff) return { time, available: false };
     const end = start + requestedMinutes;
     const clash = busyWindows.some((w) => start < w.end && w.start < end);
     return { time, available: !clash };
   });
+}
+
+// Minutes-of-day cutoff for slots on `eventDate`, in the workspace timezone.
+// Returns null when eventDate isn't today there (so future dates are unfiltered),
+// otherwise the current minute-of-day plus a small lead buffer, so a client
+// can't grab a slot that starts in the next few minutes.
+export function slotCutoffForDate(
+  eventDate: string,
+  timezone: string,
+  leadBufferMinutes = 0,
+): number | null {
+  const tz = timezone || "Asia/Kolkata";
+  const now = new Date();
+  const todayInTz = now.toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
+  if (eventDate !== todayInTz) return null;
+  const hhmm = now.toLocaleTimeString("en-GB", { timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit" });
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m + Math.max(0, Math.round(leadBufferMinutes || 0));
 }
 
 function buildEventWindow(eventDate: string, eventTime: string | undefined, durationHours: number) {

@@ -89,6 +89,11 @@
     function escHtml(s) {
       return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
+    function netMsg(err) {
+      return err instanceof TypeError
+        ? "We couldn't reach the server. Please check your connection and try again."
+        : (err && err.message) || "Something went wrong. Please try again.";
+    }
 
     async function init() {
       const res = await fetch(`/api/public/${encodeURIComponent(workspaceId)}/cancel/${encodeURIComponent(bookingId)}${qs}`);
@@ -172,7 +177,7 @@
             : "The studio has been notified. We hope to see you another time!",
         );
       } catch (err) {
-        statusEl.textContent = err.message;
+        statusEl.textContent = netMsg(err);
         statusEl.className = "status error";
         btn.disabled = false;
         btn.textContent = "Cancel my booking";
@@ -189,7 +194,7 @@
     }
 
     init().catch((err) => {
-      document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:var(--danger);">${escHtml(err.message)}</p>`;
+      document.getElementById("main-content").innerHTML = `<p style="text-align:center;color:var(--danger);">${escHtml(netMsg(err))}</p>`;
       document.getElementById("brand-name").textContent = "BusyDays";
     });
   </script>

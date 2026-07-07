@@ -300,12 +300,12 @@
           <p id="ready-by-note" class="muted hidden" style="font-size:12.5px;margin:8px 0 0;line-height:1.55;background:#F8EEEF;border:1px solid #E9D3D6;border-radius:8px;padding:9px 11px;"></p>
 
           <label for="locationText">Event location / venue <span class="muted" style="font-weight:400;">(optional — add it later if you're not sure)</span></label>
-          <input type="text" id="locationText" placeholder="Venue name or area, city" />
+          <input type="text" id="locationText" autocomplete="off" placeholder="Venue name or area, city" />
 
           <div class="row">
             <div>
               <label for="clientName">Your name</label>
-              <input type="text" id="clientName" required />
+              <input type="text" id="clientName" autocomplete="name" required />
             </div>
             <div>
               <label for="clientWhatsApp">WhatsApp number</label>
@@ -314,7 +314,7 @@
           </div>
 
           <label for="clientInstagram">Instagram handle (optional)</label>
-          <input type="text" id="clientInstagram" placeholder="@yourhandle" />
+          <input type="text" id="clientInstagram" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="@yourhandle" />
 
           <label for="clientEmail">Email (optional — for reminders &amp; receipts)</label>
           <input type="email" id="clientEmail" inputmode="email" autocomplete="email" placeholder="you@example.com" />
@@ -707,6 +707,18 @@
       function isoOf(y, m, d) {
         return y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
       }
+      // Keep the multi-day "last day" picker consistent with the chosen start:
+      // its min tracks the start, and an end that's now earlier than (or equal
+      // to) the start is cleared so the client re-picks instead of the server
+      // silently dropping it. Called from every start-date selection path.
+      function syncMultiDayEnd() {
+        const end = el("eventEndDate");
+        const start = el("eventDate").value;
+        if (!end || !start) return;
+        end.min = start;
+        if (end.value && end.value <= start) end.value = "";
+      }
+
       function isDisabledDate(iso, avail) {
         if (avail.minDate && iso < avail.minDate) return true;
         if (avail.maxDate && iso > avail.maxDate) return true;
@@ -750,6 +762,7 @@
           if (!btn) return;
           const iso = btn.getAttribute("data-qd-iso");
           el("eventDate").value = iso;
+          syncMultiDayEnd();
           // Same human-friendly format as a calendar pick (not raw "2026-07-06").
           el("selected-date").textContent = "Selected: " + new Date(iso + "T00:00:00Z").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
           el("selected-date").classList.remove("muted");
@@ -821,6 +834,7 @@
         if (!day || day.disabled) return;
         const iso = day.getAttribute("data-iso");
         el("eventDate").value = iso;
+        syncMultiDayEnd();
         const dt = new Date(iso + "T00:00:00Z");
         el("selected-date").textContent = "Selected: " + dt.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
         el("selected-date").classList.remove("muted");
@@ -1173,6 +1187,16 @@
         if (dateReason) {
           statusEl.textContent = dateReason;
           scrollToEl("calendar");
+          return;
+        }
+
+        // Multi-day: the last day must be strictly after the first. The native
+        // min allows end == start, and the server silently drops end <= start —
+        // so catch it here and tell the client instead of quietly saving a
+        // single-day booking.
+        if (el("multiday-toggle")?.checked && el("eventEndDate")?.value && el("eventEndDate").value <= el("eventDate").value) {
+          statusEl.textContent = "The last day must be after the first day.";
+          scrollToEl("multiday-wrap");
           return;
         }
 
