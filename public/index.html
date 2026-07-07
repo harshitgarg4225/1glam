@@ -1546,7 +1546,7 @@
         <div class="panel section setup-checklist" id="setup-checklist" style="display:none;margin-bottom:20px;">
           <div class="kicker">Get set up</div>
           <h2 id="setup-checklist-title">Finish setting up your booking page</h2>
-          <p class="muted" style="margin-bottom:14px;font-size:14px;">A few quick steps and you’re ready to take bookings. Clients can’t book until these are done.</p>
+          <p class="muted" style="margin-bottom:14px;font-size:14px;">Finish these so your booking page looks its best before you share it.</p>
           <div id="setup-steps" class="setup-steps"></div>
         </div>
         <div class="panel section" id="attention-section" style="display:none;margin-bottom:20px;border-left:3px solid var(--accent);">
@@ -5399,9 +5399,20 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         } else {
           parts.push("No jobs today.");
         }
+        // A page is worth sharing only once it has the basics — a name, a
+        // contact number, and at least one photo. Otherwise the first client
+        // sees a bare page. Gate the "share it" nudges on this.
+        const minimalReady =
+          String(cfg.businessName || "").trim().length > 0 &&
+          String(cfg.ownerWhatsApp || "").replace(/\D/g, "").length >= 8 &&
+          String(cfg.portfolioImages || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length >= 1;
         if (newRequests) parts.push(`${newRequests} new request${newRequests > 1 ? "s" : ""} waiting for you.`);
-        else if (!leads.length && !bookings.length) parts.push("Share your booking link so clients can request a date — it's ready to go! 🚀");
-        else if (!todayJobs.length && peakSeason) parts.push("It's peak wedding season — a great time to share your booking link. 💪");
+        else if (!leads.length && !bookings.length) {
+          parts.push(minimalReady
+            ? "Share your booking link so clients can request a date — it's ready to go! 🚀"
+            : "Add your name, number and a photo below, then share your booking page. ✨");
+        }
+        else if (!todayJobs.length && peakSeason && minimalReady) parts.push("It's peak wedding season — a great time to share your booking link. 💪");
         document.getElementById("greeting-sub").textContent = parts.join(" ");
         wrap.style.display = "";
       }
@@ -5491,7 +5502,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           return d && d < today && (b.paymentStatus || "") === "Advance Due";
         });
         if (overdueAdvance.length) {
-          items.push({ icon: "💸", title: `${overdueAdvance.length} booking${overdueAdvance.length > 1 ? "s" : ""} with advance payment still outstanding`, sub: overdueAdvance.map((b) => b.clientName).join(", "), tab: "bookings", danger: true });
+          items.push({ icon: "💸", title: `${overdueAdvance.length} booking${overdueAdvance.length > 1 ? "s" : ""} with advance payment still outstanding`, sub: overdueAdvance.map((b) => b.clientName).join(", "), tab: "bookings", danger: true, filterPayment: "Advance Due", filterDate: "past" });
         }
 
         // Events in next 48 hours with advance not collected
@@ -5502,7 +5513,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           return daysAway >= 0 && daysAway <= 2 && (b.paymentStatus || "") === "Advance Due";
         });
         if (imminent.length) {
-          items.push({ icon: "🚨", title: `${imminent.length} upcoming event${imminent.length > 1 ? "s" : ""} in 2 days — advance not received`, sub: imminent.map((b) => `${b.clientName} (${formatDay(b.eventDate)})`).join(", "), tab: "bookings", danger: true });
+          items.push({ icon: "🚨", title: `${imminent.length} upcoming event${imminent.length > 1 ? "s" : ""} in 2 days — advance not received`, sub: imminent.map((b) => `${b.clientName} (${formatDay(b.eventDate)})`).join(", "), tab: "bookings", danger: true, filterPayment: "Advance Due", filterDate: "upcoming" });
         }
 
         // Anniversary glam: events ~1 year ago are warm re-engagement leads
@@ -5531,7 +5542,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (!items.length) { section.style.display = "none"; return; }
         section.style.display = "";
         container.innerHTML = items.map((item) => `
-          <div class="attention-item ${item.danger ? "danger" : ""}" data-attention-tab="${item.tab}">
+          <div class="attention-item ${item.danger ? "danger" : ""}" data-attention-tab="${item.tab}"${item.filterPayment ? ` data-attention-payment="${escapeHtml(item.filterPayment)}"` : ""}${item.filterDate ? ` data-attention-date="${escapeHtml(item.filterDate)}"` : ""}>
             <span class="attention-item-icon">${item.icon}</span>
             <div class="attention-item-body">
               <div class="attention-item-title">${escapeHtml(item.title)}</div>
@@ -6192,6 +6203,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 <span class="${paid}" style="font-size:11px;">${escapeHtml(b.paymentStatus || b.status)}</span>
                 ${Number(b.finalPrice || 0) > 0 ? `<span class="upcoming-amt">${formatMoney(b.finalPrice)}</span>` : ""}
                 ${b.clientWhatsApp ? `<a class="button tiny secondary" style="text-decoration:none;" href="https://wa.me/${b.clientWhatsApp.replace(/\D/g, "")}" target="_blank" rel="noreferrer">💬</a>` : ""}
+                ${Number(b.balanceDue || 0) > 0 && b.status !== "Cancelled" ? `
+                  <button class="button tiny" data-booking-action="balance-reminder" data-booking-id="${escapeHtml(b.bookingId)}">Send reminder</button>
+                  <button class="button tiny" data-booking-record-payment="${escapeHtml(b.bookingId)}" style="background:var(--sage);">💰 Record</button>` : ""}
               </div>
             </div>`;
         }).join("")}</div>`;
@@ -8643,6 +8657,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" });
             if (i) i.value = "";
             toast(`Message sent to ${who}.`, "success");
+            // Refetch so the sent message actually shows up in the thread
+            // (refreshSession only re-renders the dashboard, not conversations).
+            if (typeof loadConversations === "function") loadConversations(true);
           }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
           else if (action === "send-quote") { const r = await postJson(`/api/leads/${leadId}/send-quote`, {}); openReminderWa(r, `Quote sent to ${who}.`); }
@@ -9368,7 +9385,22 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // ─── "Needs attention" section clicks ───
       document.getElementById("attention-items")?.addEventListener("click", (e) => {
         const item = e.target.closest("[data-attention-tab]");
-        if (item) activateTab(item.getAttribute("data-attention-tab"));
+        if (item) {
+          activateTab(item.getAttribute("data-attention-tab"));
+          // Pre-apply the matching Bookings filters so she lands on the exact
+          // rows the alert named, not an unfiltered tab she has to re-search.
+          const payment = item.getAttribute("data-attention-payment");
+          const dateRange = item.getAttribute("data-attention-date");
+          if (payment !== null) {
+            const paySel = document.getElementById("booking-filter-payment");
+            const dateSel = document.getElementById("booking-filter-date");
+            if (paySel) paySel.value = payment;
+            if (dateSel && dateRange !== null) dateSel.value = dateRange;
+            // renderBookings listens on 'input' for the payment select.
+            paySel?.dispatchEvent(new Event("input", { bubbles: true }));
+            document.querySelector('[data-panel="bookings"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }
       });
 
       // ─── Automation health: plain-language view of what's live vs waiting ───
@@ -9558,8 +9590,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const booked = bookings.filter((b) => b.status !== "Cancelled").reduce((s, b) => s + Number(b.finalPrice || 0), 0);
         document.getElementById("cp-summary").textContent =
           `${c.phone || "No number"} · ${bookings.length} booking${bookings.length === 1 ? "" : "s"}, ${leads.length} request${leads.length === 1 ? "" : "s"} · ${formatMoney(booked)} booked, ${formatMoney(spent)} received`;
+        // Most recent live booking that still owes money — so "record payment"
+        // and "send a reminder" are right here on the client, not only in the
+        // Bookings tab.
+        const owing = bookings
+          .filter((b) => b.status !== "Cancelled" && Number(b.balanceDue || 0) > 0)
+          .sort((a, b) => String(b.eventDate || "").localeCompare(String(a.eventDate || "")))[0];
         document.getElementById("cp-actions").innerHTML = [
           digits ? `<a class="button small secondary" style="text-decoration:none;" href="https://wa.me/${digits}" target="_blank" rel="noreferrer">💬 WhatsApp</a>` : "",
+          owing ? `<button class="button small" type="button" data-booking-record-payment="${escapeHtml(owing.bookingId)}" style="background:var(--sage);">💰 Record payment</button>` : "",
+          owing ? `<button class="button small" type="button" data-booking-action="balance-reminder" data-booking-id="${escapeHtml(owing.bookingId)}">Send balance reminder</button>` : "",
           `<button class="button small secondary" type="button" data-book-again-name="${escapeHtml(c.name || "")}" data-book-again-phone="${escapeHtml(c.phone || "")}">🔁 Book again</button>`,
         ].filter(Boolean).join("");
 
@@ -9931,6 +9971,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const again = e.target.closest("[data-book-again-name]");
         if (again) openQuickBooking({ name: again.getAttribute("data-book-again-name"), phone: again.getAttribute("data-book-again-phone") || "" });
       });
+      // The client profile's record-payment / balance-reminder buttons reuse the
+      // Bookings delegated handlers (data-booking-* isn't handled at body level).
+      document.getElementById("cp-actions")?.addEventListener("click", handleBookingActionButtons);
+      document.getElementById("cp-actions")?.addEventListener("click", handleBookingUtilityButtons);
       document.getElementById("qb-date")?.addEventListener("change", (e) => {
         document.getElementById("qb-conflict").innerHTML = conflictWarningHtml(e.target.value);
       });
@@ -11520,6 +11564,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         };
         sheet.addEventListener("click", sheet._bkFilterHandler);
       });
+
+      // Today's cards reuse the Bookings row actions (send reminder / record
+      // payment) via the same delegated handlers — each no-ops unless its own
+      // button was clicked, so they coexist with the check-in handler below.
+      document.getElementById("upcoming-jobs")?.addEventListener("click", handleBookingActionButtons);
+      document.getElementById("upcoming-jobs")?.addEventListener("click", handleBookingUtilityButtons);
 
       // ─── Check-in handler ───
       document.getElementById("upcoming-jobs")?.addEventListener("click", async (e) => {

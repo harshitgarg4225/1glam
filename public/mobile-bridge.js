@@ -119,6 +119,27 @@
     true,
   );
 
+  // Android hardware back button: close whatever layer is on top instead of
+  // exiting the app on the first press. A synthetic Escape reuses every
+  // overlay's existing keydown handler (drawers, modals, confirm dialogs,
+  // bottom sheet, global search), so one path closes the topmost layer.
+  if (App && App.addListener) {
+    App.addListener("backButton", function (e) {
+      var open = document.querySelector(
+        ".drawer.open, .modal-overlay.open, .confirm-overlay.open, .bnav-sheet.open, #global-search-modal.open",
+      );
+      if (open) {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        return;
+      }
+      if (e && e.canGoBack) {
+        window.history.back();
+      } else if (App.exitApp) {
+        App.exitApp();
+      }
+    });
+  }
+
   // Deep-link return from Chrome Custom Tab: busydays://auth?ott=...
   // Chrome Custom Tab issues a 302 to the custom scheme; the OS routes it here.
   if (App && App.addListener) {
