@@ -1078,7 +1078,10 @@ app.post("/api/auth/google/id-token", publicWriteLimiter, async (req, res, next)
     let name: string;
     try {
       const oauthClient = new OAuth2Client(appConfig.googleClientId);
-      const ticket = await oauthClient.verifyIdToken({ idToken, audience: appConfig.googleClientId });
+      // Android tokens carry the web client ID as audience; iOS tokens carry
+      // the iOS client ID — accept whichever of the two is configured.
+      const audiences = [appConfig.googleClientId, appConfig.googleIosClientId].filter(Boolean);
+      const ticket = await oauthClient.verifyIdToken({ idToken, audience: audiences });
       const payload = ticket.getPayload();
       if (!payload?.email) throw new Error("no email in token");
       email = payload.email.toLowerCase();

@@ -33,6 +33,10 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   GOOGLE_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(""),
+  // iOS OAuth client ID (same GCP project). The iOS app's native Google
+  // Sign-In mints ID tokens with THIS audience, so token verification must
+  // accept it alongside the web client ID. Empty = iOS tokens rejected.
+  GOOGLE_IOS_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_REDIRECT_PATH: z.string().default("/auth/google/callback"),
   GOOGLE_MAPS_API_KEY: z.string().optional().default(""),
   WATI_WEBHOOK_SECRET: z.string().optional().default(""),
@@ -126,6 +130,7 @@ export const appConfig = {
   sentryDsn: parsed.SENTRY_DSN,
   logLevel: parsed.LOG_LEVEL,
   googleClientId: parsed.GOOGLE_CLIENT_ID,
+  googleIosClientId: parsed.GOOGLE_IOS_CLIENT_ID,
   googleClientSecret: parsed.GOOGLE_CLIENT_SECRET,
   googleRedirectPath: parsed.GOOGLE_REDIRECT_PATH,
   googleRedirectUrl: new URL(parsed.GOOGLE_REDIRECT_PATH, parsed.APP_BASE_URL).toString(),

@@ -45,6 +45,12 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- Native in-app Google Sign-In. Replace with the iOS OAuth client ID from
+	     Google Cloud Console → Credentials → Create credentials → OAuth client ID
+	     → iOS, bundle ID in.busydays.app. Until then the app builds fine and
+	     sign-in falls back to the browser flow. -->
+	<key>GIDClientID</key>
+	<string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
 	<!-- Deep link back from the system-browser Google sign-in:
 	     busydays://auth?ott=... completes login inside the app. -->
 	<key>CFBundleURLTypes</key>
@@ -55,6 +61,16 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>busydays</string>
+			</array>
+		</dict>
+		<!-- The same iOS client ID, REVERSED (Google's sign-in round-trip
+		     scheme): com.googleusercontent.apps.<CLIENT_NUMBER-hash> -->
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>google-signin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.YOUR_IOS_CLIENT_ID</string>
 			</array>
 		</dict>
 	</array>
