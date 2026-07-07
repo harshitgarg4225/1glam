@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { appConfig } from "../config.js";
 import { getWorkspaceCredentials } from "./auth-store.js";
-import { computeSlotAvailability, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, busySlotsForDate, dateHasMultiDayConflict, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
+import { computeSlotAvailability, slotCutoffForDate, countActiveLeadsForDate, createLeadForWorkspace, getLeadRecord, busySlotsForDate, dateHasMultiDayConflict, updateLeadRecord, roundToPremiumNumber, durationHoursForEvent, depositPercentForEvent } from "./booking.js";
 import { findWorkspaceByWorkspaceId, withSerializedLock, lockKeyFromString } from "./database.js";
 import { createGoogleClients } from "./google.js";
 import { logInteractionForWorkspace } from "./integrations.js";
@@ -490,6 +490,8 @@ export async function createPublicBookingRequest(workspaceId: string, input: Pub
         requestedEventType: input.eventType,
         busy,
         bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
+        // Server-side guard: a crafted request can't persist a past-time slot.
+        cutoffMinutes: slotCutoffForDate(input.eventDate, workspace.config.timezone, Number(workspace.config.bufferMinutes) || 0) ?? undefined,
       });
       const requested = slots.find((slot) => slot.time === input.eventTime);
       if (requested && !requested.available) {
@@ -905,6 +907,8 @@ export async function getPublicSlotsForDate(
       requestedEventType: eventType || "Other",
       busy,
       bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
+      // Grey out already-passed slots when the client is looking at today.
+      cutoffMinutes: slotCutoffForDate(eventDate, workspace.config.timezone, Number(workspace.config.bufferMinutes) || 0) ?? undefined,
     }),
   };
 }
@@ -961,6 +965,7 @@ export async function checkPublicAvailability(
       requestedEventType: eventType || "Other",
       busy,
       bufferMinutes: Number(workspace.config.bufferMinutes) || 0,
+      cutoffMinutes: slotCutoffForDate(eventDate, workspace.config.timezone, Number(workspace.config.bufferMinutes) || 0) ?? undefined,
     });
     const requested = slots.find((slot) => slot.time === eventTime);
     if (requested && !requested.available) {

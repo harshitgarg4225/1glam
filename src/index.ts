@@ -1,6 +1,7 @@
 import express from "express";
 import session from "express-session";
 import helmet from "helmet";
+import compression from "compression";
 import connectPgSimple from "connect-pg-simple";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
@@ -173,6 +174,12 @@ const LEGAL_CONTACT_EMAIL = process.env.LEGAL_CONTACT_EMAIL || "harshitgarg4225@
 // Checkout, embeds the Google Calendar iframe and the same-origin booking-page
 // preview, and renders arbitrary https logo/cover images and QR codes. HSTS,
 // nosniff, frame-ancestors (anti-clickjacking) and referrer policy come from
+// gzip every text response (the ~750 KB dashboard HTML, client pages, JS/CSS,
+// JSON APIs). Railway does no edge compression, so this is a ~78% cut to the
+// bytes on every cold load — the single biggest perceived-speed win. Runs
+// first so it wraps static assets and API routes alike.
+app.use(compression());
+
 // helmet's defaults.
 app.use(
   helmet({
@@ -2567,6 +2574,7 @@ app.post("/api/leads/:leadId/decision", async (req, res, next) => {
       parsed.approvedPrice,
       parsed.ownerNotes,
       parsed.lostReason,
+      parsed.reopenStatus,
     );
 
     res.json({ ok: true, ...result });

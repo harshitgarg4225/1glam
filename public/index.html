@@ -1292,7 +1292,10 @@
       .cc-select { flex: 0 0 auto; width: auto; min-width: 96px; padding-right: 6px; }
       .cc-row > input { flex: 1; min-width: 0; }
     </style>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- defer: this third-party script is only used by the wallet top-up flow,
+         so it must not block first paint of the dashboard. It still finishes
+         before DOMContentLoaded, long before any top-up click. -->
+    <script defer src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
   <body>
     <main class="shell">
@@ -1546,7 +1549,7 @@
         <div class="panel section setup-checklist" id="setup-checklist" style="display:none;margin-bottom:20px;">
           <div class="kicker">Get set up</div>
           <h2 id="setup-checklist-title">Finish setting up your booking page</h2>
-          <p class="muted" style="margin-bottom:14px;font-size:14px;">A few quick steps and you’re ready to take bookings. Clients can’t book until these are done.</p>
+          <p class="muted" style="margin-bottom:14px;font-size:14px;">Finish these so your booking page looks its best before you share it.</p>
           <div id="setup-steps" class="setup-steps"></div>
         </div>
         <div class="panel section" id="attention-section" style="display:none;margin-bottom:20px;border-left:3px solid var(--accent);">
@@ -4255,6 +4258,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const el = document.createElement("div");
         el.className = `toast ${type}`;
         el.textContent = message;
+        const dismiss = () => {
+          el.classList.add("removing");
+          el.addEventListener("animationend", () => el.remove(), { once: true });
+        };
         if (action && action.label && action.onClick) {
           const btn = document.createElement("button");
           btn.type = "button";
@@ -4262,12 +4269,27 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           btn.style.cssText = "display:block;margin-top:8px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:inherit;font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:6px 12px;cursor:pointer;";
           btn.addEventListener("click", () => { el.remove(); action.onClick(); });
           el.appendChild(btn);
+        } else {
+          // A dismiss "×" so a long error can be closed on demand (and doesn't
+          // collide with an action button when one is present). Body text stays
+          // selectable so the artist can copy a server error verbatim.
+          const close = document.createElement("button");
+          close.type = "button";
+          close.setAttribute("aria-label", "Dismiss");
+          close.textContent = "×";
+          close.style.cssText = "position:absolute;top:4px;right:6px;background:transparent;border:none;color:inherit;font:inherit;font-size:18px;line-height:1;opacity:.6;cursor:pointer;padding:2px 4px;";
+          close.addEventListener("click", dismiss);
+          el.style.position = "relative";
+          el.style.paddingRight = "26px";
+          el.appendChild(close);
         }
         shelf.appendChild(el);
-        setTimeout(() => {
-          el.classList.add("removing");
-          el.addEventListener("animationend", () => el.remove(), { once: true });
-        }, type === "error" ? 5000 : action ? 6500 : 3200);
+        let timer = setTimeout(dismiss, type === "error" ? 5000 : action ? 6500 : 3200);
+        // Errors are the ones worth reading — pause the countdown while hovering.
+        if (type === "error") {
+          el.addEventListener("pointerenter", () => { clearTimeout(timer); });
+          el.addEventListener("pointerleave", () => { timer = setTimeout(dismiss, 3000); });
+        }
       }
 
       // Her first booking is a milestone, not a row in a table. One-time
@@ -4627,12 +4649,30 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
       }
 
+      // Guards an image pick BEFORE the upload starts, so a wrong file or an
+      // oversized photo fails instantly with clear copy instead of after a long
+      // mobile upload. Clears the input on rejection. Returns true when OK.
+      function validateImagePick(file, statusEl, inputEl) {
+        if (!/^image\//.test(file.type || "")) {
+          if (statusEl) statusEl.textContent = "Please choose an image (JPG or PNG).";
+          if (inputEl) inputEl.value = "";
+          return false;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          if (statusEl) statusEl.textContent = "That image is over 10 MB — please choose a smaller one.";
+          if (inputEl) inputEl.value = "";
+          return false;
+        }
+        return true;
+      }
+
       // ─── Logo upload (no URL-pasting required) ───
       document.getElementById("logo-upload-btn")?.addEventListener("click", () => document.getElementById("logo-upload-input").click());
       document.getElementById("logo-upload-input")?.addEventListener("change", async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const statusEl = document.getElementById("logo-upload-status");
+        if (!validateImagePick(file, statusEl, e.target)) return;
         statusEl.textContent = "Uploading…";
         try {
           const fd = new FormData();
@@ -4657,6 +4697,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const file = e.target.files?.[0];
         if (!file) return;
         const statusEl = document.getElementById("cover-upload-status");
+        if (!validateImagePick(file, statusEl, e.target)) return;
         statusEl.textContent = "Uploading…";
         try {
           const fd = new FormData();
@@ -5361,9 +5402,20 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         } else {
           parts.push("No jobs today.");
         }
+        // A page is worth sharing only once it has the basics — a name, a
+        // contact number, and at least one photo. Otherwise the first client
+        // sees a bare page. Gate the "share it" nudges on this.
+        const minimalReady =
+          String(cfg.businessName || "").trim().length > 0 &&
+          String(cfg.ownerWhatsApp || "").replace(/\D/g, "").length >= 8 &&
+          String(cfg.portfolioImages || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean).length >= 1;
         if (newRequests) parts.push(`${newRequests} new request${newRequests > 1 ? "s" : ""} waiting for you.`);
-        else if (!leads.length && !bookings.length) parts.push("Share your booking link so clients can request a date — it's ready to go! 🚀");
-        else if (!todayJobs.length && peakSeason) parts.push("It's peak wedding season — a great time to share your booking link. 💪");
+        else if (!leads.length && !bookings.length) {
+          parts.push(minimalReady
+            ? "Share your booking link so clients can request a date — it's ready to go! 🚀"
+            : "Add your name, number and a photo below, then share your booking page. ✨");
+        }
+        else if (!todayJobs.length && peakSeason && minimalReady) parts.push("It's peak wedding season — a great time to share your booking link. 💪");
         document.getElementById("greeting-sub").textContent = parts.join(" ");
         wrap.style.display = "";
       }
@@ -5453,7 +5505,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           return d && d < today && (b.paymentStatus || "") === "Advance Due";
         });
         if (overdueAdvance.length) {
-          items.push({ icon: "💸", title: `${overdueAdvance.length} booking${overdueAdvance.length > 1 ? "s" : ""} with advance payment still outstanding`, sub: overdueAdvance.map((b) => b.clientName).join(", "), tab: "bookings", danger: true });
+          items.push({ icon: "💸", title: `${overdueAdvance.length} booking${overdueAdvance.length > 1 ? "s" : ""} with advance payment still outstanding`, sub: overdueAdvance.map((b) => b.clientName).join(", "), tab: "bookings", danger: true, filterPayment: "Advance Due", filterDate: "past" });
         }
 
         // Events in next 48 hours with advance not collected
@@ -5464,7 +5516,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           return daysAway >= 0 && daysAway <= 2 && (b.paymentStatus || "") === "Advance Due";
         });
         if (imminent.length) {
-          items.push({ icon: "🚨", title: `${imminent.length} upcoming event${imminent.length > 1 ? "s" : ""} in 2 days — advance not received`, sub: imminent.map((b) => `${b.clientName} (${formatDay(b.eventDate)})`).join(", "), tab: "bookings", danger: true });
+          items.push({ icon: "🚨", title: `${imminent.length} upcoming event${imminent.length > 1 ? "s" : ""} in 2 days — advance not received`, sub: imminent.map((b) => `${b.clientName} (${formatDay(b.eventDate)})`).join(", "), tab: "bookings", danger: true, filterPayment: "Advance Due", filterDate: "upcoming" });
         }
 
         // Anniversary glam: events ~1 year ago are warm re-engagement leads
@@ -5493,7 +5545,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (!items.length) { section.style.display = "none"; return; }
         section.style.display = "";
         container.innerHTML = items.map((item) => `
-          <div class="attention-item ${item.danger ? "danger" : ""}" data-attention-tab="${item.tab}">
+          <div class="attention-item ${item.danger ? "danger" : ""}" data-attention-tab="${item.tab}"${item.filterPayment ? ` data-attention-payment="${escapeHtml(item.filterPayment)}"` : ""}${item.filterDate ? ` data-attention-date="${escapeHtml(item.filterDate)}"` : ""}>
             <span class="attention-item-icon">${item.icon}</span>
             <div class="attention-item-body">
               <div class="attention-item-title">${escapeHtml(item.title)}</div>
@@ -6154,6 +6206,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
                 <span class="${paid}" style="font-size:11px;">${escapeHtml(b.paymentStatus || b.status)}</span>
                 ${Number(b.finalPrice || 0) > 0 ? `<span class="upcoming-amt">${formatMoney(b.finalPrice)}</span>` : ""}
                 ${b.clientWhatsApp ? `<a class="button tiny secondary" style="text-decoration:none;" href="https://wa.me/${b.clientWhatsApp.replace(/\D/g, "")}" target="_blank" rel="noreferrer">💬</a>` : ""}
+                ${Number(b.balanceDue || 0) > 0 && b.status !== "Cancelled" ? `
+                  <button class="button tiny" data-booking-action="balance-reminder" data-booking-id="${escapeHtml(b.bookingId)}">Send reminder</button>
+                  <button class="button tiny" data-booking-record-payment="${escapeHtml(b.bookingId)}" style="background:var(--sage);">💰 Record</button>` : ""}
               </div>
             </div>`;
         }).join("")}</div>`;
@@ -7960,7 +8015,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
         document.getElementById("convo-count").textContent = `${threads.length} threads`;
         if (!threads.length) {
-          list.innerHTML = `<div class="empty-state"><div class="empty-icon">💬</div><h3>No conversations yet</h3><p>WhatsApp messages and interactions with your clients will appear here as threaded conversations.</p></div>`;
+          list.innerHTML = `<div class="empty-state"><div class="empty-icon">💬</div><h3>No conversations yet</h3><p>WhatsApp messages and interactions with your clients will appear here as threaded conversations.</p><button class="button" type="button" data-share-booking-link style="margin-top:10px;">🔗 Copy my booking link</button></div>`;
           return;
         }
         const aiAutoCount = (interactionsCache || []).filter((i) => i.actor === "AI").length;
@@ -8275,10 +8330,19 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // auth-gated call firing on the public landing page) must NOT auto-open
       // the Google OAuth screen — that made busydays.co bounce visitors straight
       // into sign-in before they ever saw the page.
+      // Returns true when it actually acted (an authenticated session went
+      // stale), so callers can turn the 401 into a thrown error and land in
+      // their catch block instead of the success path. For logged-out landing
+      // visitors it stays silent and returns false (their callers swallow it).
+      let sessionExpiryHandled = false;
       function handleSessionExpired() {
-        if (!document.body.classList.contains("authenticated")) return;
-        toast("Your session expired — signing you back in…", "info");
-        setTimeout(() => { window.location.href = "/auth/google"; }, 1200);
+        if (!document.body.classList.contains("authenticated")) return false;
+        if (!sessionExpiryHandled) {
+          sessionExpiryHandled = true;
+          toast("Your session expired — signing you back in…", "info");
+          setTimeout(() => { window.location.href = "/auth/google"; }, 1200);
+        }
+        return true;
       }
 
       // Maps raw failures to words a non-technical user can act on.
@@ -8313,7 +8377,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       async function postJson(url, body) {
         const response = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         if (response.status === 401) {
-          handleSessionExpired();
+          // A stale authenticated session must NOT read as success — throw so the
+          // caller's catch runs (no false "Saved!" toast). Logged-out visitors
+          // (handler returns false) keep the old silent return.
+          if (handleSessionExpired()) throw new Error("Your session expired — signing you back in…");
           return;
         }
         const payload = await response.json().catch(() => ({}));
@@ -8324,7 +8391,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       async function getJson(url) {
         const response = await fetchWithTimeout(url);
         if (response.status === 401) {
-          handleSessionExpired();
+          if (handleSessionExpired()) throw new Error("Your session expired — signing you back in…");
           return null;
         }
         const payload = await response.json().catch(() => ({}));
@@ -8502,6 +8569,22 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }, 600);
       locationInput?.addEventListener("blur", autofillDistance);
 
+      // Undo a decline — restores the request to the status it had before it
+      // was marked Lost. Shared by the decline toast's Undo and the Lost-lead
+      // drawer's Reopen button.
+      async function reopenLead(leadId, priorStatus) {
+        try {
+          await postJson(`/api/leads/${leadId}/decision`, { decision: "REOPEN", reopenStatus: priorStatus || "New" });
+          toast("Request reopened.", "success");
+          await refreshSession();
+          const drawer = document.getElementById("lead-drawer");
+          if (drawer?.classList.contains("open") && drawer.dataset.leadId === leadId) {
+            const updated = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
+            if (updated) renderLeadDrawer(updated);
+          }
+        } catch (err) { toast(err.message, "error"); }
+      }
+
       async function runLeadAction(action, leadId, btn) {
         // Catch the two things the backend would reject anyway, but with guidance
         // instead of a raw error: a quote needs a price, and a quote can only be
@@ -8548,8 +8631,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
             const reason = await pickLostReason(who);
             if (reason === null) return; // user cancelled
+            // Remember the status it had, so Undo can put it back exactly there.
+            const priorStatus = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId)?.status || "New";
             await postJson(`/api/leads/${leadId}/decision`, { decision: "NO", lostReason: reason });
-            toast(`Marked as didn't book. You can still find ${who} in the Clients tab.`, "info");
+            toast(`Marked as didn't book. You can still find ${who} in the Clients tab.`, "info", {
+              label: "↩ Undo",
+              onClick: () => reopenLead(leadId, priorStatus),
+            });
           }
           else if (action === "flag") {
             await postJson(`/api/leads/${leadId}/flag`, {});
@@ -8593,6 +8681,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             await postJson(`/api/leads/${leadId}/reply`, { message: i?.value || "" });
             if (i) i.value = "";
             toast(`Message sent to ${who}.`, "success");
+            // Refetch so the sent message actually shows up in the thread
+            // (refreshSession only re-renders the dashboard, not conversations).
+            if (typeof loadConversations === "function") loadConversations(true);
           }
           else if (action === "quote") { await postJson(`/api/leads/${leadId}/quote`, {}); toast("Quote generated.", "success"); }
           else if (action === "send-quote") { const r = await postJson(`/api/leads/${leadId}/send-quote`, {}); openReminderWa(r, `Quote sent to ${who}.`); }
@@ -8823,6 +8914,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${lead.assignedArtist ? `<div class="drawer-row"><span class="drawer-row-label">Assigned to</span><span class="drawer-row-value">${escapeHtml(lead.assignedArtist)}</span></div>` : ""}
             ${lead.clientTags ? `<div class="drawer-row"><span class="drawer-row-label">Notes / tags</span><span class="drawer-row-value">${escapeHtml(lead.clientTags)}</span></div>` : ""}
             ${lead.lostReason ? `<div class="drawer-row"><span class="drawer-row-label">Lost reason</span><span class="drawer-row-value" style="color:var(--danger);">${escapeHtml(lead.lostReason)}</span></div>` : ""}
+            ${lead.status === "Lost" ? `<button class="button small secondary" style="margin-top:10px;" data-lead-reopen="${lead.leadId}">↩ Reopen request</button>` : ""}
           </div>
           ${lead.clientNote ? `<div class="drawer-section"><div class="drawer-section-title">Client note</div><div style="font-size:14px;line-height:1.55;color:var(--text);">${escapeHtml(lead.clientNote)}</div></div>` : ""}
           ${lead.aiInsight ? `<div class="drawer-section"><div class="drawer-section-title">AI insight</div><div class="drawer-insight">${escapeHtml(lead.aiInsight)}</div></div>` : ""}
@@ -8901,6 +8993,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (e.target.matches("[data-oi-qty], [data-oi-price]")) computeOrderTotals();
       });
       leadDrawerBody.addEventListener("click", async (e) => {
+        const reopenBtn = e.target.closest("[data-lead-reopen]");
+        if (reopenBtn) { e.preventDefault(); reopenLead(reopenBtn.getAttribute("data-lead-reopen"), "New"); return; }
         if (e.target.closest("[data-oi-add]")) {
           e.preventDefault();
           leadDrawerBody.querySelector("[data-order-grid]").insertAdjacentHTML("beforeend", orderRowHtml());
@@ -9115,10 +9209,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (action === "no") {
           const reason = await pickLostReason(lead.clientName);
           if (reason === null) { renderLeads(); return; }
+          const priorStatus = lead.status || "New";
           // Directly post with reason so runLeadAction doesn't open a second modal.
           try {
             await postJson(`/api/leads/${id}/decision`, { decision: "NO", lostReason: reason });
-            toast(`Marked as didn't book. You can still find ${lead.clientName} in the Clients tab.`, "info");
+            toast(`Marked as didn't book. You can still find ${lead.clientName} in the Clients tab.`, "info", {
+              label: "↩ Undo",
+              onClick: () => reopenLead(id, priorStatus),
+            });
             await refreshSession();
           } catch (err) { toast(err.message, "error"); renderLeads(); }
           return;
@@ -9318,7 +9416,22 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       // ─── "Needs attention" section clicks ───
       document.getElementById("attention-items")?.addEventListener("click", (e) => {
         const item = e.target.closest("[data-attention-tab]");
-        if (item) activateTab(item.getAttribute("data-attention-tab"));
+        if (item) {
+          activateTab(item.getAttribute("data-attention-tab"));
+          // Pre-apply the matching Bookings filters so she lands on the exact
+          // rows the alert named, not an unfiltered tab she has to re-search.
+          const payment = item.getAttribute("data-attention-payment");
+          const dateRange = item.getAttribute("data-attention-date");
+          if (payment !== null) {
+            const paySel = document.getElementById("booking-filter-payment");
+            const dateSel = document.getElementById("booking-filter-date");
+            if (paySel) paySel.value = payment;
+            if (dateSel && dateRange !== null) dateSel.value = dateRange;
+            // renderBookings listens on 'input' for the payment select.
+            paySel?.dispatchEvent(new Event("input", { bubbles: true }));
+            document.querySelector('[data-panel="bookings"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }
       });
 
       // ─── Automation health: plain-language view of what's live vs waiting ───
@@ -9450,7 +9563,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           // A zero-match search shouldn't read as "you have no clients."
           list.innerHTML = q
             ? `<div class="empty-state"><div class="empty-icon">🔍</div><h3>No clients match “${escapeHtml(q)}”</h3><p>Try a different name or number.</p></div>`
-            : `<div class="empty-state"><div class="empty-icon">👥</div><h3>No clients yet</h3><p>Everyone who requests a date or books with you appears here automatically.</p></div>`;
+            : `<div class="empty-state"><div class="empty-icon">👥</div><h3>No clients yet</h3><p>Everyone who requests a date or books with you appears here automatically.</p><button class="button" type="button" data-share-booking-link style="margin-top:10px;">🔗 Copy my booking link</button></div>`;
           return;
         }
         const visibleClients = clients.slice(0, LIST_PAGE_SIZE);
@@ -9508,8 +9621,16 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const booked = bookings.filter((b) => b.status !== "Cancelled").reduce((s, b) => s + Number(b.finalPrice || 0), 0);
         document.getElementById("cp-summary").textContent =
           `${c.phone || "No number"} · ${bookings.length} booking${bookings.length === 1 ? "" : "s"}, ${leads.length} request${leads.length === 1 ? "" : "s"} · ${formatMoney(booked)} booked, ${formatMoney(spent)} received`;
+        // Most recent live booking that still owes money — so "record payment"
+        // and "send a reminder" are right here on the client, not only in the
+        // Bookings tab.
+        const owing = bookings
+          .filter((b) => b.status !== "Cancelled" && Number(b.balanceDue || 0) > 0)
+          .sort((a, b) => String(b.eventDate || "").localeCompare(String(a.eventDate || "")))[0];
         document.getElementById("cp-actions").innerHTML = [
           digits ? `<a class="button small secondary" style="text-decoration:none;" href="https://wa.me/${digits}" target="_blank" rel="noreferrer">💬 WhatsApp</a>` : "",
+          owing ? `<button class="button small" type="button" data-booking-record-payment="${escapeHtml(owing.bookingId)}" style="background:var(--sage);">💰 Record payment</button>` : "",
+          owing ? `<button class="button small" type="button" data-booking-action="balance-reminder" data-booking-id="${escapeHtml(owing.bookingId)}">Send balance reminder</button>` : "",
           `<button class="button small secondary" type="button" data-book-again-name="${escapeHtml(c.name || "")}" data-book-again-phone="${escapeHtml(c.phone || "")}">🔁 Book again</button>`,
         ].filter(Boolean).join("");
 
@@ -9881,6 +10002,10 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const again = e.target.closest("[data-book-again-name]");
         if (again) openQuickBooking({ name: again.getAttribute("data-book-again-name"), phone: again.getAttribute("data-book-again-phone") || "" });
       });
+      // The client profile's record-payment / balance-reminder buttons reuse the
+      // Bookings delegated handlers (data-booking-* isn't handled at body level).
+      document.getElementById("cp-actions")?.addEventListener("click", handleBookingActionButtons);
+      document.getElementById("cp-actions")?.addEventListener("click", handleBookingUtilityButtons);
       document.getElementById("qb-date")?.addEventListener("change", (e) => {
         document.getElementById("qb-conflict").innerHTML = conflictWarningHtml(e.target.value);
       });
@@ -11470,6 +11595,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         };
         sheet.addEventListener("click", sheet._bkFilterHandler);
       });
+
+      // Today's cards reuse the Bookings row actions (send reminder / record
+      // payment) via the same delegated handlers — each no-ops unless its own
+      // button was clicked, so they coexist with the check-in handler below.
+      document.getElementById("upcoming-jobs")?.addEventListener("click", handleBookingActionButtons);
+      document.getElementById("upcoming-jobs")?.addEventListener("click", handleBookingUtilityButtons);
 
       // ─── Check-in handler ───
       document.getElementById("upcoming-jobs")?.addEventListener("click", async (e) => {

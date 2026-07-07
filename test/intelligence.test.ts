@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // modules that transitively pull it in.
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
-const { computeSlotAvailability, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
+const { computeSlotAvailability, slotCutoffForDate, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
 const { parseQuotePackages, parseDocumentAdjustments } = await import("../src/services/documents.ts");
 const { computeInsights, buildDigestSummary, buildServicesContext } = await import("../src/services/insights.ts");
 const { matchSelectedAddons, parseBlockedDates, parseWeekdaySlots } = await import("../src/services/public-booking.ts");
@@ -27,6 +27,36 @@ test("a 4-hour bridal at 09:00 blocks the 11:00 slot but not 14:00", () => {
     slots.map((s) => [s.time, s.available]),
     [["09:00", false], ["11:00", false], ["14:00", true], ["16:00", true]],
   );
+});
+
+test("a cutoff greys out slots at or before the current minute-of-day", () => {
+  // Cutoff 660 = 11:00. Slots at/under 11:00 are gone; later ones stay.
+  const slots = computeSlotAvailability({
+    timeSlots: ["09:00", "11:00", "14:00"],
+    serviceDurations: "",
+    requestedEventType: "Party",
+    busy: [],
+    cutoffMinutes: 660,
+  });
+  assert.deepEqual(
+    slots.map((s) => [s.time, s.available]),
+    [["09:00", false], ["11:00", false], ["14:00", true]],
+  );
+});
+
+test("no cutoff (future date) leaves every free slot bookable", () => {
+  const slots = computeSlotAvailability({
+    timeSlots: ["09:00", "11:00"],
+    serviceDurations: "",
+    requestedEventType: "Party",
+    busy: [],
+  });
+  assert.deepEqual(slots.map((s) => s.available), [true, true]);
+});
+
+test("slotCutoffForDate returns null for a date that isn't today in the tz", () => {
+  // A clearly-past date is never 'today', so no cutoff regardless of clock.
+  assert.equal(slotCutoffForDate("2000-01-01", "Asia/Kolkata"), null);
 });
 
 test("a long requested service is blocked when it would run into an existing job", () => {

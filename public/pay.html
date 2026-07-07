@@ -185,7 +185,7 @@
         if (!res.ok || !data.ok) throw new Error(data.error || "Not found");
         render(data.details);
       } catch (err) {
-        showError(err.message || "Payment details not found.");
+        showError(err instanceof TypeError ? netMsg(err) : (err.message || "Payment details not found."));
       }
     }
 
@@ -349,6 +349,14 @@
       document.getElementById("loading").classList.add("hidden");
       document.getElementById("error-msg").textContent = msg;
       document.getElementById("error-card").classList.remove("hidden");
+    }
+
+    // A dropped connection surfaces as a TypeError ("Failed to fetch") — turn
+    // that into human copy instead of dumping the raw browser string.
+    function netMsg(err) {
+      return err instanceof TypeError
+        ? "We couldn't reach the server. Please check your connection and try again."
+        : (err && err.message) || "Something went wrong. Please try again.";
     }
 
     // Inline, persistent payment error (never an alert() that can be dismissed

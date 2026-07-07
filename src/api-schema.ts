@@ -79,10 +79,14 @@ export const editLeadDetailsSchema = z.object({
 });
 
 export const ownerDecisionSchema = z.object({
-  decision: z.enum(["YES", "NO", "EDIT"]),
+  decision: z.enum(["YES", "NO", "EDIT", "REOPEN"]),
   approvedPrice: z.coerce.number().optional(),
   ownerNotes: z.string().optional(),
   lostReason: z.string().max(100).optional(),
+  // For REOPEN (undo a decline): the status to restore. Whitelisted to the
+  // open states so a reopen can't fabricate an arbitrary status; defaults to
+  // "New" server-side when absent or not in the list.
+  reopenStatus: z.enum(["New", "Awaiting Client", "Confirmed"]).optional(),
 });
 
 export const paymentStatusSchema = z.object({
