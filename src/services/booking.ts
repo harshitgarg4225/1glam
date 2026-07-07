@@ -545,15 +545,33 @@ export async function applyOwnerDecision(
   email: string,
   tokens: Credentials,
   leadId: string,
-  decision: "YES" | "NO" | "EDIT",
+  decision: "YES" | "NO" | "EDIT" | "REOPEN",
   approvedPrice?: number,
   ownerNotes?: string,
   lostReason?: string,
+  reopenStatus?: string,
 ) {
   const workspace = await getRequiredWorkspace(email);
   const lead = await findLeadById(workspace, tokens, leadId);
   if (!lead) {
     throw new Error("Lead not found");
+  }
+
+  // Undo a decline: clear the NO decision and lost reason and restore the
+  // request to an open status (the one it held before, passed by the client;
+  // defaults to "New"). Only meaningful on a Lost lead.
+  if (decision === "REOPEN") {
+    const allowed = new Set(["New", "Awaiting Client", "Confirmed"]);
+    const restore = reopenStatus && allowed.has(reopenStatus) ? reopenStatus : "New";
+    const updated: LeadRecord = {
+      ...lead.record,
+      ownerDecision: "",
+      lostReason: "",
+      status: restore as LeadRecord["status"],
+      lastContactedAt: new Date().toISOString(),
+    };
+    await updateLeadRow(workspace, tokens, lead.rowNumber, updated);
+    return { lead: updated };
   }
 
   if (decision === "NO") {

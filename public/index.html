@@ -1292,7 +1292,10 @@
       .cc-select { flex: 0 0 auto; width: auto; min-width: 96px; padding-right: 6px; }
       .cc-row > input { flex: 1; min-width: 0; }
     </style>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- defer: this third-party script is only used by the wallet top-up flow,
+         so it must not block first paint of the dashboard. It still finishes
+         before DOMContentLoaded, long before any top-up click. -->
+    <script defer src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
   <body>
     <main class="shell">
@@ -8012,7 +8015,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
         document.getElementById("convo-count").textContent = `${threads.length} threads`;
         if (!threads.length) {
-          list.innerHTML = `<div class="empty-state"><div class="empty-icon">💬</div><h3>No conversations yet</h3><p>WhatsApp messages and interactions with your clients will appear here as threaded conversations.</p></div>`;
+          list.innerHTML = `<div class="empty-state"><div class="empty-icon">💬</div><h3>No conversations yet</h3><p>WhatsApp messages and interactions with your clients will appear here as threaded conversations.</p><button class="button" type="button" data-share-booking-link style="margin-top:10px;">🔗 Copy my booking link</button></div>`;
           return;
         }
         const aiAutoCount = (interactionsCache || []).filter((i) => i.actor === "AI").length;
@@ -8566,6 +8569,22 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }, 600);
       locationInput?.addEventListener("blur", autofillDistance);
 
+      // Undo a decline — restores the request to the status it had before it
+      // was marked Lost. Shared by the decline toast's Undo and the Lost-lead
+      // drawer's Reopen button.
+      async function reopenLead(leadId, priorStatus) {
+        try {
+          await postJson(`/api/leads/${leadId}/decision`, { decision: "REOPEN", reopenStatus: priorStatus || "New" });
+          toast("Request reopened.", "success");
+          await refreshSession();
+          const drawer = document.getElementById("lead-drawer");
+          if (drawer?.classList.contains("open") && drawer.dataset.leadId === leadId) {
+            const updated = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId);
+            if (updated) renderLeadDrawer(updated);
+          }
+        } catch (err) { toast(err.message, "error"); }
+      }
+
       async function runLeadAction(action, leadId, btn) {
         // Catch the two things the backend would reject anyway, but with guidance
         // instead of a raw error: a quote needs a price, and a quote can only be
@@ -8612,8 +8631,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
             const reason = await pickLostReason(who);
             if (reason === null) return; // user cancelled
+            // Remember the status it had, so Undo can put it back exactly there.
+            const priorStatus = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadId)?.status || "New";
             await postJson(`/api/leads/${leadId}/decision`, { decision: "NO", lostReason: reason });
-            toast(`Marked as didn't book. You can still find ${who} in the Clients tab.`, "info");
+            toast(`Marked as didn't book. You can still find ${who} in the Clients tab.`, "info", {
+              label: "↩ Undo",
+              onClick: () => reopenLead(leadId, priorStatus),
+            });
           }
           else if (action === "flag") {
             await postJson(`/api/leads/${leadId}/flag`, {});
@@ -8890,6 +8914,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${lead.assignedArtist ? `<div class="drawer-row"><span class="drawer-row-label">Assigned to</span><span class="drawer-row-value">${escapeHtml(lead.assignedArtist)}</span></div>` : ""}
             ${lead.clientTags ? `<div class="drawer-row"><span class="drawer-row-label">Notes / tags</span><span class="drawer-row-value">${escapeHtml(lead.clientTags)}</span></div>` : ""}
             ${lead.lostReason ? `<div class="drawer-row"><span class="drawer-row-label">Lost reason</span><span class="drawer-row-value" style="color:var(--danger);">${escapeHtml(lead.lostReason)}</span></div>` : ""}
+            ${lead.status === "Lost" ? `<button class="button small secondary" style="margin-top:10px;" data-lead-reopen="${lead.leadId}">↩ Reopen request</button>` : ""}
           </div>
           ${lead.clientNote ? `<div class="drawer-section"><div class="drawer-section-title">Client note</div><div style="font-size:14px;line-height:1.55;color:var(--text);">${escapeHtml(lead.clientNote)}</div></div>` : ""}
           ${lead.aiInsight ? `<div class="drawer-section"><div class="drawer-section-title">AI insight</div><div class="drawer-insight">${escapeHtml(lead.aiInsight)}</div></div>` : ""}
@@ -8968,6 +8993,8 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (e.target.matches("[data-oi-qty], [data-oi-price]")) computeOrderTotals();
       });
       leadDrawerBody.addEventListener("click", async (e) => {
+        const reopenBtn = e.target.closest("[data-lead-reopen]");
+        if (reopenBtn) { e.preventDefault(); reopenLead(reopenBtn.getAttribute("data-lead-reopen"), "New"); return; }
         if (e.target.closest("[data-oi-add]")) {
           e.preventDefault();
           leadDrawerBody.querySelector("[data-order-grid]").insertAdjacentHTML("beforeend", orderRowHtml());
@@ -9182,10 +9209,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (action === "no") {
           const reason = await pickLostReason(lead.clientName);
           if (reason === null) { renderLeads(); return; }
+          const priorStatus = lead.status || "New";
           // Directly post with reason so runLeadAction doesn't open a second modal.
           try {
             await postJson(`/api/leads/${id}/decision`, { decision: "NO", lostReason: reason });
-            toast(`Marked as didn't book. You can still find ${lead.clientName} in the Clients tab.`, "info");
+            toast(`Marked as didn't book. You can still find ${lead.clientName} in the Clients tab.`, "info", {
+              label: "↩ Undo",
+              onClick: () => reopenLead(id, priorStatus),
+            });
             await refreshSession();
           } catch (err) { toast(err.message, "error"); renderLeads(); }
           return;
@@ -9532,7 +9563,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           // A zero-match search shouldn't read as "you have no clients."
           list.innerHTML = q
             ? `<div class="empty-state"><div class="empty-icon">🔍</div><h3>No clients match “${escapeHtml(q)}”</h3><p>Try a different name or number.</p></div>`
-            : `<div class="empty-state"><div class="empty-icon">👥</div><h3>No clients yet</h3><p>Everyone who requests a date or books with you appears here automatically.</p></div>`;
+            : `<div class="empty-state"><div class="empty-icon">👥</div><h3>No clients yet</h3><p>Everyone who requests a date or books with you appears here automatically.</p><button class="button" type="button" data-share-booking-link style="margin-top:10px;">🔗 Copy my booking link</button></div>`;
           return;
         }
         const visibleClients = clients.slice(0, LIST_PAGE_SIZE);

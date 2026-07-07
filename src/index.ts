@@ -2574,6 +2574,7 @@ app.post("/api/leads/:leadId/decision", async (req, res, next) => {
       parsed.approvedPrice,
       parsed.ownerNotes,
       parsed.lostReason,
+      parsed.reopenStatus,
     );
 
     res.json({ ok: true, ...result });

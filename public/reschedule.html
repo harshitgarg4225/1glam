@@ -193,9 +193,20 @@
           fetch(`/api/public/${encodeURIComponent(workspaceId)}/slots?date=${encodeURIComponent(e.target.value)}&eventType=${encodeURIComponent(b.eventType || "")}`)
             .then((r) => r.json())
             .then((data) => {
-              hint.textContent = "";
-              const taken = (data.slots || []).filter((s) => !s.available).map((s) => s.time);
+              const slots = data.slots || [];
+              const taken = slots.filter((s) => !s.available).map((s) => s.time);
               renderSlots(taken);
+              // When every slot is gone, say so and block submit — don't leave
+              // the client staring at a wall of struck-through times.
+              const allTaken = slots.length > 0 && slots.every((s) => !s.available);
+              if (allTaken) {
+                hint.textContent = "That date is fully booked — please choose another day.";
+                hint.className = "status error";
+                document.getElementById("submit-btn").disabled = true;
+              } else {
+                hint.textContent = "";
+                document.getElementById("submit-btn").disabled = false;
+              }
             })
             .catch(() => { hint.textContent = ""; renderSlots(null); });
         }
