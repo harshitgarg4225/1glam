@@ -30,6 +30,9 @@ export const publicBookingSchema = z.object({
   // handler ignores it unless it's strictly after eventDate.
   eventEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD").optional(),
   eventTime: z.string().max(20).optional(),
+  // Optional block end clock-time ("HH:MM"). The handler keeps it only when it's
+  // later than eventTime; otherwise the block falls back to the service length.
+  eventEndTime: z.string().regex(/^\d{1,2}:\d{2}$/, "Time must be HH:MM").optional().or(z.literal("")),
   // Venue is often unknown when a bride first requests a date; the artist
   // confirms it on WhatsApp anyway. Accept a blank and default to a clear
   // placeholder rather than blocking the request.
@@ -53,6 +56,7 @@ export const quickBookingSchema = z.object({
   eventEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD").optional().or(z.literal("")),
   clientEmail: z.string().trim().email().max(160).optional().or(z.literal("")),
   eventTime: z.string().max(20).optional(),
+  eventEndTime: z.string().regex(/^\d{1,2}:\d{2}$/, "Time must be HH:MM").optional().or(z.literal("")),
   // Venue and price are optional — artists often block the date first and
   // settle details after a trial or a call.
   locationText: z.string().max(200).optional().default("To be decided"),

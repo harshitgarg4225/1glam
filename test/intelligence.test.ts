@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // modules that transitively pull it in.
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
-const { computeSlotAvailability, slotCutoffForDate, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
+const { computeSlotAvailability, slotCutoffForDate, effectiveDurationHours, laterClockTime, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
 const { parseQuotePackages, parseDocumentAdjustments } = await import("../src/services/documents.ts");
 const { computeInsights, buildDigestSummary, buildServicesContext } = await import("../src/services/insights.ts");
 const { matchSelectedAddons, parseBlockedDates, parseWeekdaySlots } = await import("../src/services/public-booking.ts");
@@ -57,6 +57,32 @@ test("no cutoff (future date) leaves every free slot bookable", () => {
 test("slotCutoffForDate returns null for a date that isn't today in the tz", () => {
   // A clearly-past date is never 'today', so no cutoff regardless of clock.
   assert.equal(slotCutoffForDate("2000-01-01", "Asia/Kolkata"), null);
+});
+
+// --- Appointment block: effective duration + end-time gating -------------------
+
+test("effectiveDurationHours: an explicit later end time defines the block", () => {
+  // Start 09:00, end 14:00 → a 5-hour block even though Bridal=4.
+  assert.equal(effectiveDurationHours("Bridal=4", "Bridal", "09:00", "14:00"), 5);
+});
+
+test("effectiveDurationHours: falls back to the service duration when no valid end", () => {
+  assert.equal(effectiveDurationHours("Bridal=4", "Bridal", "09:00", ""), 4);
+  // End not after start → ignore it, use the service length.
+  assert.equal(effectiveDurationHours("Bridal=4", "Bridal", "09:00", "09:00"), 4);
+  assert.equal(effectiveDurationHours("Bridal=4", "Bridal", "09:00", "08:00"), 4);
+  // No start at all → service length.
+  assert.equal(effectiveDurationHours("Bridal=4", "Bridal", "", "14:00"), 4);
+});
+
+test("laterClockTime keeps an end only when it's strictly after the start", () => {
+  assert.equal(laterClockTime("09:00", "13:00"), "13:00");
+  // String compare would wrongly reject "9:00" vs "13:00"; minutes compare wins.
+  assert.equal(laterClockTime("9:00", "13:00"), "13:00");
+  assert.equal(laterClockTime("13:00", "09:00"), "");
+  assert.equal(laterClockTime("09:00", "09:00"), "");
+  assert.equal(laterClockTime("", "13:00"), "");
+  assert.equal(laterClockTime("09:00", ""), "");
 });
 
 test("a long requested service is blocked when it would run into an existing job", () => {
