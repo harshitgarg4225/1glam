@@ -2134,9 +2134,12 @@
               <input type="text" id="gmb-query" class="grow" placeholder="Your business name and city, e.g. Glow by Aisha, Mumbai" />
               <button class="button secondary" type="button" id="gmb-search-btn">Find my business</button>
             </div>
-            <div id="gmb-results"></div>
-            <div class="status" id="gmb-status"></div>
-            <button class="button small secondary" type="button" id="gmb-create-toggle" style="margin-top:10px;">Don't have a Google listing yet? Create one →</button>
+            <!-- Above the results on purpose: the artist who needs this is the
+                 one whose search finds nothing that's hers — the results list
+                 must never push her only option off-screen. -->
+            <p style="text-align:center;margin:0 0 10px;">
+              <button class="button small secondary" type="button" id="gmb-create-toggle">✨ Don't have a Google listing yet? Create one free →</button>
+            </p>
             <div id="gmb-create-guide" class="mini-card" style="display:none;margin-top:12px;">
               <div class="kicker">Create your Google Business Profile — right here, free</div>
               <p class="muted" style="margin:8px 0 12px;font-size:13.5px;">A Google listing is how clients find you on Google and Maps, and where your reviews live. You don't need a shop — travelling artists register as a <strong>service-area business</strong> with no address shown. Fill this in and we'll create the listing on Google for you.</p>
@@ -2182,6 +2185,8 @@
                 <p class="muted" style="margin:10px 0 0;font-size:12px;">New listings can take a little while to appear in search after verification. If we can't find you right away, try again later — we'll keep this guide here.</p>
               </details>
             </div>
+            <div id="gmb-results"></div>
+            <div class="status" id="gmb-status"></div>
           </div>
         </div>
 
