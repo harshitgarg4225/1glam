@@ -289,14 +289,17 @@
           </div>
 
           <div id="time-slots-wrap" class="hidden">
-            <label>Preferred start time</label>
+            <label id="time-slots-label">Preferred start time</label>
             <div class="slots" id="time-slots"></div>
             <input type="hidden" id="eventTime" />
           </div>
           <div id="time-free-wrap" class="hidden">
-            <label for="eventTimeFree">Preferred start time (optional)</label>
+            <label for="eventTimeFree" id="time-free-label">Preferred start time (optional)</label>
             <input type="time" id="eventTimeFree" step="900" />
           </div>
+          <!-- The artist's start time, computed from the client's ready-by pick
+               (ready-by minus the service duration). This is what's submitted. -->
+          <input type="hidden" id="computedStart" />
           <!-- Shows the client the full block their look occupies, e.g.
                "Your Bridal runs 9:00 AM – 1:00 PM (about 4 hours)." -->
           <p id="time-block-note" class="hidden" style="font-size:13px;margin:8px 0 0;line-height:1.5;font-weight:600;color:var(--accent);"></p>
@@ -405,56 +408,109 @@
         return "approx " + (Number.isInteger(h) ? h : h.toFixed(1)) + "h";
       }
 
-      // 12-hour clock label for an hour-of-day that may be fractional (e.g. 14.5).
-      function clockLabel(hourOfDay) {
-        let hr = ((Math.floor(hourOfDay) % 24) + 24) % 24;
-        const mm = Math.round((hourOfDay - Math.floor(hourOfDay)) * 60);
-        const ap = hr >= 12 ? "PM" : "AM";
-        let h12 = hr % 12; if (h12 === 0) h12 = 12;
-        return h12 + (mm ? ":" + String(mm).padStart(2, "0") : "") + " " + ap;
-      }
 
-      // "Book X hours before you need to be ready" guidance. Makeup takes time;
-      // the chosen time is the START, so we spell out the ready-by maths with a
-      // concrete example using the service's own duration.
+      // The time question asks when the client needs to be READY — the maths
+      // (artist start = ready-by − duration) happens for her. This note just
+      // sets that expectation using the service's own duration.
       function updateReadyByNote(type) {
         const note = el("ready-by-note");
         if (!note) return;
         const h = Number(type && type.durationHours) || 0;
         if (h <= 0) { note.classList.add("hidden"); return; }
         const durTxt = h < 1 ? Math.round(h * 60) + " minutes" : (Number.isInteger(h) ? h : h.toFixed(1)) + " hours";
-        const readyHour = 18; // 6 PM, a common "ready by" target for events
         note.innerHTML = "💄 <strong>" + esc(type.label || "This look") + "</strong> takes about " + durTxt +
-          ". The time you pick is when your artist <strong>starts</strong>, so choose it early enough — e.g. to be ready by " +
-          clockLabel(readyHour) + ", start around <strong>" + clockLabel(readyHour - h) + "</strong>.";
+          ". Just pick the time you want to be <strong>ready by</strong> — we'll schedule your artist to start early enough.";
         note.classList.remove("hidden");
       }
 
-      // Turns the chosen START into a full block the client understands —
-      // "Your Bridal runs 9:00 AM – 1:00 PM (about 4 hours)" — and stores the
-      // derived end time so the artist's calendar hold is the exact window.
-      // The end is start + the service's duration; a client never sets a block
-      // shorter than the service needs.
+      // Duration (hours) of the currently selected service — 0 when no service
+      // is picked yet, which keeps the time UI in plain start-time mode.
+      function currentDurationHours() {
+        const type = eventTypesData.find((t) => t.key === selectedEventType);
+        return Number(type && type.durationHours) || 0;
+      }
+      function minsOf(hhmm) {
+        const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ""));
+        return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+      }
+      function hhmmOf(mins) {
+        return String(Math.floor(mins / 60)).padStart(2, "0") + ":" + String(mins % 60).padStart(2, "0");
+      }
+      function durationText(h) {
+        return h < 1 ? Math.round(h * 60) + " minutes" : "about " + (Number.isInteger(h) ? h : h.toFixed(1)) + " hours";
+      }
+
+      // Clients think "I need to be ready by 4", not "when should the artist
+      // start" — so once a service (and its duration) is known, the time
+      // question flips to ready-by and we do the maths for the artist:
+      // start = ready-by − duration, submitted exactly like before.
+      function updateTimeLabels() {
+        const readyMode = currentDurationHours() > 0;
+        const slotsLabel = el("time-slots-label");
+        const freeLabel = el("time-free-label");
+        if (slotsLabel) slotsLabel.textContent = readyMode ? "When do you need to be ready?" : "Preferred start time";
+        if (freeLabel) freeLabel.textContent = readyMode ? "What time do you need to be ready by? (optional)" : "Preferred start time (optional)";
+      }
+
+      // Explains the block to the client and fills the hidden fields the form
+      // actually submits: eventTime (the artist's start) + eventEndTime (the
+      // ready-by moment). A client can never book a block shorter than the
+      // service needs — the end is always start + duration.
       function updateTimeBlockNote() {
         const note = el("time-block-note");
         const endField = el("eventEndTime");
+        const startField = el("computedStart");
         if (!note || !endField) return;
         const hasSlots = !el("time-slots-wrap").classList.contains("hidden");
-        const start = hasSlots ? el("eventTime").value : el("eventTimeFree").value;
         const type = eventTypesData.find((t) => t.key === selectedEventType);
-        const h = Number(type && type.durationHours) || 0;
-        const m = /^(\d{1,2}):(\d{2})$/.exec(String(start || ""));
-        if (!start || !m || h <= 0) { note.classList.add("hidden"); endField.value = ""; return; }
-        const startMin = Number(m[1]) * 60 + Number(m[2]);
-        const endMin = Math.min(startMin + Math.round(h * 60), 23 * 60 + 59);
-        const end = String(Math.floor(endMin / 60)).padStart(2, "0") + ":" + String(endMin % 60).padStart(2, "0");
-        endField.value = end;
-        const durTxt = h < 1 ? Math.round(h * 60) + " minutes" : "about " + (Number.isInteger(h) ? h : h.toFixed(1)) + " hours";
-        note.textContent = "⏱ Your " + (type.label || "appointment") + " runs " + formatSlotTime(start) + " – " + formatSlotTime(end) + " (" + durTxt + ").";
+        const h = currentDurationHours();
+        const durMin = Math.round(h * 60);
+
+        if (hasSlots) {
+          // Slot buttons carry the artist's START underneath; the label shows
+          // ready-by. eventTime is already the start — just derive the end.
+          const start = el("eventTime").value;
+          const startMin = minsOf(start);
+          if (!start || startMin === null || h <= 0) { note.classList.add("hidden"); endField.value = ""; return; }
+          const end = hhmmOf(Math.min(startMin + durMin, 23 * 60 + 59));
+          endField.value = end;
+          note.style.color = "var(--accent)";
+          note.textContent = "⏱ Your artist starts at " + formatSlotTime(start) + " — you'll be ready by " + formatSlotTime(end) + " (" + durTxt(h, type) + ").";
+          note.classList.remove("hidden");
+          return;
+        }
+
+        // Free-time mode: the field asks for READY-BY; we compute the start.
+        const readyBy = el("eventTimeFree").value;
+        const readyMin = minsOf(readyBy);
+        if (!readyBy || readyMin === null) { note.classList.add("hidden"); endField.value = ""; if (startField) startField.value = ""; return; }
+        if (h <= 0) {
+          // No service picked yet — treat the entered time as a plain start.
+          if (startField) startField.value = readyBy;
+          endField.value = "";
+          note.classList.add("hidden");
+          return;
+        }
+        const startMin = readyMin - durMin;
+        if (startMin < 0) {
+          if (startField) startField.value = "";
+          endField.value = "";
+          note.style.color = "var(--danger)";
+          note.textContent = "⏱ " + (type && type.label ? type.label : "This look") + " takes " + durationText(h) + " — that doesn't fit before " + formatSlotTime(readyBy) + " the same morning. Pick a later ready-by time.";
+          note.classList.remove("hidden");
+          return;
+        }
+        const start = hhmmOf(startMin);
+        if (startField) startField.value = start;
+        endField.value = readyBy;
+        note.style.color = "var(--accent)";
+        note.textContent = "⏱ Your artist will start at " + formatSlotTime(start) + " so you're ready by " + formatSlotTime(readyBy) + " (" + durTxt(h, type) + ").";
         note.classList.remove("hidden");
       }
-      // When there are no preset slots and the client types a free start time,
-      // show the block window for that too.
+      function durTxt(h, type) {
+        return (type && type.label ? type.label + ", " : "") + durationText(h);
+      }
+      // The free field asks for ready-by; recompute the artist start on input.
       document.getElementById("eventTimeFree")?.addEventListener("input", updateTimeBlockNote);
 
       // Escape owner-controlled strings before they go into innerHTML. Owner data
@@ -693,6 +749,7 @@
         el("eventTime").value = "";
         // Selection cleared — hide the block window until a new time is chosen.
         updateTimeBlockNote();
+        updateTimeLabels();
         if (!slots || !slots.length) {
           hide("time-slots-wrap");
           show("time-free-wrap");
@@ -700,11 +757,18 @@
         }
         show("time-slots-wrap");
         hide("time-free-wrap");
+        // With a service picked, each button SHOWS the ready-by moment (start +
+        // duration) while carrying the artist's start underneath — the client
+        // chooses when she's done, the artist's diary gets the right start.
+        const durMin = Math.round(currentDurationHours() * 60);
         slots.forEach((slot) => {
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className = "slot";
-          btn.textContent = formatSlotTime(slot);
+          const startMin = minsOf(slot);
+          btn.textContent = durMin > 0 && startMin !== null
+            ? formatSlotTime(hhmmOf(Math.min(startMin + durMin, 23 * 60 + 59)))
+            : formatSlotTime(slot);
           btn.dataset.value = slot;
           btn.setAttribute("aria-pressed", "false");
           btn.addEventListener("click", () => {
@@ -1242,13 +1306,23 @@
         // silently dropped: a client picks a Bridal slot but the booking saved
         // with no time because the global timeSlots list was empty.
         const hasSlots = !el("time-slots-wrap").classList.contains("hidden");
+        // Free mode asks for READY-BY; what the server needs is the artist's
+        // START, computed as ready-by − service duration (#computedStart).
+        // Falls back to the raw value only when no service duration exists.
         const eventTimeValue = hasSlots
           ? el("eventTime").value || undefined
-          : el("eventTimeFree").value || undefined;
+          : el("computedStart").value || el("eventTimeFree").value || undefined;
 
         if (hasSlots && !eventTimeValue) {
           statusEl.textContent = "Please choose a time slot above.";
           scrollToEl("time-slots-wrap");
+          return;
+        }
+        // A ready-by so early the work can't fit before it — the note already
+        // explains; block submit rather than quietly booking with no time.
+        if (!hasSlots && el("eventTimeFree").value && !el("computedStart").value && currentDurationHours() > 0) {
+          statusEl.textContent = "That ready-by time is too early for the artist to finish — pick a later one.";
+          scrollToEl("time-free-wrap");
           return;
         }
 
