@@ -4259,7 +4259,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
       }
 
+      // Declared BEFORE toast() so no call during init can hit a TDZ error.
+      const SESSION_EXPIRED_MSG = "Your session expired — signing you back in…";
       function toast(message, type = "info", action) {
+        // handleSessionExpired already showed this exact message — every
+        // caller's catch re-toasting the thrown 401 error would stack
+        // duplicates on top of it.
+        if (message === SESSION_EXPIRED_MSG && type !== "info") return;
         const shelf = document.getElementById("toast-shelf");
         const el = document.createElement("div");
         el.className = `toast ${type}`;
@@ -8233,7 +8239,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
         // 401 is the ONLY response that genuinely means "not signed in". A
         // transient 5xx must not masquerade as a logout for a live session.
-        if (response.status === 401) return setSignedOut();
+        // For a LIVE session this must route through the friendly expiry path
+        // (toast + re-login) BEFORE stripping the authenticated class —
+        // otherwise the artist is silently signed out and her next actions
+        // fall into the logged-out "silent 401" branch, reading as success.
+        if (response.status === 401) {
+          if (document.body.classList.contains("authenticated")) handleSessionExpired();
+          return setSignedOut();
+        }
         if (!response.ok) {
           if (document.body.classList.contains("authenticated")) return;
           return setSignedOut();
@@ -8345,8 +8358,14 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (!document.body.classList.contains("authenticated")) return false;
         if (!sessionExpiryHandled) {
           sessionExpiryHandled = true;
-          toast("Your session expired — signing you back in…", "info");
-          setTimeout(() => { window.location.href = "/auth/google"; }, 1200);
+          toast(SESSION_EXPIRED_MSG, "info");
+          setTimeout(() => {
+            window.location.href = "/auth/google";
+            // If the navigation was blocked (popup blocker, webview quirk),
+            // re-arm so the next 401 can retry instead of leaving the app
+            // permanently stuck in "signing you back in…".
+            setTimeout(() => { sessionExpiryHandled = false; }, 8000);
+          }, 1200);
         }
         return true;
       }
@@ -8386,7 +8405,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           // A stale authenticated session must NOT read as success — throw so the
           // caller's catch runs (no false "Saved!" toast). Logged-out visitors
           // (handler returns false) keep the old silent return.
-          if (handleSessionExpired()) throw new Error("Your session expired — signing you back in…");
+          if (handleSessionExpired()) throw new Error(SESSION_EXPIRED_MSG);
           return;
         }
         const payload = await response.json().catch(() => ({}));
@@ -8397,7 +8416,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       async function getJson(url) {
         const response = await fetchWithTimeout(url);
         if (response.status === 401) {
-          if (handleSessionExpired()) throw new Error("Your session expired — signing you back in…");
+          if (handleSessionExpired()) throw new Error(SESSION_EXPIRED_MSG);
           return null;
         }
         const payload = await response.json().catch(() => ({}));
@@ -10060,7 +10079,9 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       // ── 15-minute time blocks for the New-booking picker ──
-      const BLOCK_START_MIN = 6 * 60;   // 6:00 AM — first selectable start
+      // Midnight start — muhurat weddings genuinely put artists to work at
+      // 3-4 AM, so no arbitrary morning floor on the Starts select.
+      const BLOCK_START_MIN = 0;
       const BLOCK_END_MAX = 23 * 60 + 45; // 11:45 PM — last selectable end
       const BLOCK_STEP = 15;
       function blockMinutes(hhmm) {

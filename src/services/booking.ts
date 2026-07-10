@@ -895,11 +895,18 @@ export async function rescheduleBooking(
   const lead = await findLeadById(workspace, tokens, booking.record.leadId);
 
   const eventTime = input.eventTime ?? booking.record.eventTime;
+  // The block end is a CLOCK time on the event date — moving the start without
+  // moving the end would silently shrink the block (or invert it, reverting an
+  // extended job to its default length). Preserve the block's LENGTH instead.
+  const eventEndTime = eventTime === booking.record.eventTime
+    ? booking.record.eventEndTime
+    : shiftedEndTime(booking.record.eventTime, booking.record.eventEndTime, eventTime);
   const venue = input.venue ?? booking.record.venue;
   const leadForEvent: LeadRecord & { bookingId: string } = {
     ...(lead?.record ?? leadFromBooking(booking.record)),
     eventDate: input.eventDate,
     eventTime,
+    eventEndTime,
     locationText: venue,
     bookingId,
   };
@@ -915,6 +922,7 @@ export async function rescheduleBooking(
     ...booking.record,
     eventDate: input.eventDate,
     eventTime,
+    eventEndTime,
     venue,
     confirmedCalendarEventId: newEventId,
     // Re-arm event-date-relative reminders for the new date.
@@ -927,12 +935,25 @@ export async function rescheduleBooking(
       ...lead.record,
       eventDate: input.eventDate,
       eventTime,
+      eventEndTime,
       locationText: venue,
       confirmedCalendarEventId: newEventId,
       lastContactedAt: new Date().toISOString(),
     });
   }
   return updatedBooking;
+}
+
+// Preserves an extended block's length when its start moves: newEnd = newStart
+// + (oldEnd − oldStart), clamped to the same day. Returns "" when there was no
+// valid extended block — the service-duration fallback then applies as before.
+export function shiftedEndTime(oldStart: string, oldEnd: string, newStart: string): string {
+  const os = clockMinutes(oldStart);
+  const oe = clockMinutes(oldEnd);
+  const ns = clockMinutes(newStart);
+  if (os === null || oe === null || ns === null || oe <= os) return "";
+  const end = Math.min(ns + (oe - os), 23 * 60 + 59);
+  return `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
 }
 
 // The job's done: mark both rows Completed so the list stays clean and the
@@ -1462,25 +1483,35 @@ export async function busySlotsForDate(
   email: string,
   tokens: Credentials,
   eventDate: string,
-): Promise<{ eventTime: string; eventType: string }[]> {
+  // A reschedule must not conflict against the very booking being moved —
+  // exclude it (and its lead twin) so same-day time changes aren't refused
+  // as "no longer free" by the artist's own job.
+  exclude?: { bookingId?: string; leadId?: string },
+): Promise<{ eventTime: string; eventType: string; eventEndTime?: string }[]> {
   const workspace = await getRequiredWorkspace(email);
   const [leads, bookings] = await Promise.all([
     listLeadRows(workspace, tokens),
     listBookingRows(workspace, tokens),
   ]);
-  const windows: { eventTime: string; eventType: string }[] = [];
+  const windows: { eventTime: string; eventType: string; eventEndTime?: string }[] = [];
   for (const lead of leads) {
+    if (exclude?.leadId && lead.leadId === exclude.leadId) continue;
     if (
       lead.eventDate === eventDate &&
       !["Lost", "Completed"].includes(lead.status) &&
       lead.source !== "Waitlist"
     ) {
-      windows.push({ eventTime: lead.eventTime, eventType: lead.eventType });
+      // eventEndTime rides along so the conflict math sees the REAL block —
+      // an extended job must block its whole window, not just the service's
+      // default length (the calendar hold already honours it; the slot
+      // engine must agree or clients can book inside the extension).
+      windows.push({ eventTime: lead.eventTime, eventType: lead.eventType, eventEndTime: lead.eventEndTime });
     }
   }
   for (const booking of bookings) {
+    if (exclude?.bookingId && booking.bookingId === exclude.bookingId) continue;
     if (booking.eventDate === eventDate && !["Completed", "Cancelled"].includes(booking.status)) {
-      windows.push({ eventTime: booking.eventTime, eventType: booking.eventType });
+      windows.push({ eventTime: booking.eventTime, eventType: booking.eventType, eventEndTime: booking.eventEndTime });
     }
   }
   return windows;
@@ -2228,7 +2259,7 @@ export function computeSlotAvailability(input: {
   timeSlots: string[];
   serviceDurations: string;
   requestedEventType: string;
-  busy: { eventTime: string; eventType: string; travelMinutes?: number }[];
+  busy: { eventTime: string; eventType: string; eventEndTime?: string; travelMinutes?: number }[];
   // Cleanup/buffer minutes padded around every existing job, so back-to-back
   // bookings leave the artist time to pack up, reset her kit and breathe.
   bufferMinutes?: number;
@@ -2244,7 +2275,10 @@ export function computeSlotAvailability(input: {
     .map((job) => {
       const start = minutesOfDay(job.eventTime);
       if (start === null) return null;
-      const duration = durationHoursForEvent(input.serviceDurations, job.eventType) * 60;
+      // An explicit end time (an extended job) defines the real block; falls
+      // back to the service's configured length — same rule the calendar hold
+      // uses, so the slot engine can never free time the calendar shows busy.
+      const duration = effectiveDurationHours(input.serviceDurations, job.eventType, job.eventTime, job.eventEndTime) * 60;
       // Pad each job by the buffer on both sides, plus any travel time it needs
       // afterwards (a mobile artist must reach the next venue before she can
       // start there). Both default to 0, so the math is unchanged when unset.

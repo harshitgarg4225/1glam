@@ -924,6 +924,9 @@ export async function checkPublicAvailability(
   eventType: string,
   eventDate: string,
   eventTime: string | undefined,
+  // For reschedules: the booking being moved must not conflict against ITSELF
+  // (a same-day time change would otherwise be refused as "no longer free").
+  exclude?: { bookingId?: string; leadId?: string },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const workspace = await findWorkspaceByWorkspaceId(workspaceId);
   if (!workspace) return { ok: false, error: "Not found" };
@@ -960,7 +963,7 @@ export async function checkPublicAvailability(
     if (!timeSlots.includes(eventTime)) {
       return { ok: false, error: "Please choose one of the available time slots." };
     }
-    const busy = await busySlotsForDate(workspace.email, tokens, eventDate).catch(() => []);
+    const busy = await busySlotsForDate(workspace.email, tokens, eventDate, exclude).catch(() => []);
     const slots = computeSlotAvailability({
       timeSlots,
       serviceDurations: workspace.config.serviceDurations,

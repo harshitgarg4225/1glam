@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // modules that transitively pull it in.
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
-const { computeSlotAvailability, slotCutoffForDate, effectiveDurationHours, laterClockTime, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
+const { computeSlotAvailability, slotCutoffForDate, effectiveDurationHours, laterClockTime, shiftedEndTime, travelCostForDistance, computeAdvanceAmount, depositPercentForEvent, paymentsTotal, tipsTotal, parsePaymentsLog } = await import("../src/services/booking.ts");
 const { parseQuotePackages, parseDocumentAdjustments } = await import("../src/services/documents.ts");
 const { computeInsights, buildDigestSummary, buildServicesContext } = await import("../src/services/insights.ts");
 const { matchSelectedAddons, parseBlockedDates, parseWeekdaySlots } = await import("../src/services/public-booking.ts");
@@ -73,6 +73,39 @@ test("effectiveDurationHours: falls back to the service duration when no valid e
   assert.equal(effectiveDurationHours("Bridal=4", "Bridal", "09:00", "08:00"), 4);
   // No start at all → service length.
   assert.equal(effectiveDurationHours("Bridal=4", "Bridal", "", "14:00"), 4);
+});
+
+test("an EXTENDED busy job blocks its whole window, not just the service default", () => {
+  // Bridal configured 4h but this job runs 09:00–16:00. A 14:00 slot sits
+  // inside the extension and must be unavailable — this is the double-booking
+  // regression: the calendar held 7h while the slot engine only blocked 4h.
+  const extended = computeSlotAvailability({
+    timeSlots: ["14:00", "17:00"],
+    serviceDurations: "Bridal=4, Party=2",
+    requestedEventType: "Party",
+    busy: [{ eventTime: "09:00", eventType: "Bridal", eventEndTime: "16:00" }],
+  });
+  assert.equal(extended.find((s) => s.time === "14:00")?.available, false);
+  assert.equal(extended.find((s) => s.time === "17:00")?.available, true);
+  // Without the end time the same job frees 14:00 (default 4h → done by 13:00).
+  const plain = computeSlotAvailability({
+    timeSlots: ["14:00"],
+    serviceDurations: "Bridal=4, Party=2",
+    requestedEventType: "Party",
+    busy: [{ eventTime: "09:00", eventType: "Bridal" }],
+  });
+  assert.equal(plain[0].available, true);
+});
+
+test("shiftedEndTime preserves the block length across a reschedule", () => {
+  // 09:00–16:00 (7h) moved to start 11:00 → 18:00.
+  assert.equal(shiftedEndTime("09:00", "16:00", "11:00"), "18:00");
+  // Clamped to the same day.
+  assert.equal(shiftedEndTime("09:00", "16:00", "20:00"), "23:59");
+  // No valid extended block → "" (service-duration fallback applies).
+  assert.equal(shiftedEndTime("09:00", "", "11:00"), "");
+  assert.equal(shiftedEndTime("09:00", "09:00", "11:00"), "");
+  assert.equal(shiftedEndTime("", "16:00", "11:00"), "");
 });
 
 test("laterClockTime keeps an end only when it's strictly after the start", () => {
