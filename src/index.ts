@@ -45,6 +45,7 @@ import {
   updatePaymentStatus,
   travelCostForDistance,
   laterClockTime,
+  effectiveDurationHours,
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
@@ -3790,6 +3791,14 @@ app.get("/api/public/:workspaceId/reschedule/:bookingId", async (req, res, next)
         eventDate: booking.eventDate,
         eventTime: booking.eventTime,
         venue: booking.venue,
+        // Lets the reschedule page speak the same "ready by" language as the
+        // booking page — slots relabel as start + this duration.
+        durationHours: effectiveDurationHours(
+          workspace.config.serviceDurations,
+          booking.eventType,
+          booking.eventTime,
+          booking.eventEndTime,
+        ),
       },
       availability: buildAvailability(workspace.config),
     });
@@ -3821,7 +3830,11 @@ app.post("/api/public/:workspaceId/reschedule/:bookingId", publicWriteLimiter, a
     // letting clients land on blocked, off, or already-full days.
     const existing = await getBookingRecord(workspace.email, tokens, bookingId);
     if (!existing) return res.status(404).json({ error: "Booking not found" });
-    const check = await checkPublicAvailability(workspaceId, existing.eventType, eventDate, eventTime);
+    const check = await checkPublicAvailability(workspaceId, existing.eventType, eventDate, eventTime, {
+      // The booking being moved must not block its own reschedule.
+      bookingId,
+      leadId: existing.leadId || undefined,
+    });
     if (!check.ok) return res.status(409).json({ error: check.error });
 
     await rescheduleBooking(workspace.email, tokens, bookingId, { eventDate, eventTime });

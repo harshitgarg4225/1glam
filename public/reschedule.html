@@ -139,15 +139,26 @@
         <input type="date" id="new-date" min="${minDate}" ${maxDate ? `max="${maxDate}"` : ""} required />
         <div class="status" id="date-hint" style="margin-top:-8px;margin-bottom:10px;"></div>
         ${hasSlots
-          ? `<label>Preferred time</label>
+          ? `<label>${Number(b.durationHours) > 0 ? "When do you need to be ready?" : "Preferred time"}</label>
              <div class="slots" id="time-slots" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px;"></div>
              <input type="hidden" id="new-time" />`
           : `<label for="new-time">Preferred time (optional)</label>
-             <input type="time" id="new-time" value="${b.eventTime ? b.eventTime.slice(0,5) : ""}" />`
+             <input type="time" id="new-time" step="900" value="${b.eventTime ? b.eventTime.slice(0,5) : ""}" />`
         }
         <button class="btn" id="submit-btn" type="button">Confirm new date</button>
         <div class="status" id="status" role="alert" aria-live="assertive"></div>
       `;
+
+      // Same "ready by" language as the booking page: with a known duration,
+      // slot buttons show start + duration (when she'll be DONE) while the
+      // submitted value stays the artist's start underneath.
+      const durMin = Math.round((Number(b.durationHours) || 0) * 60);
+      function readyByLabel(slot) {
+        const m = /^(\d{1,2}):(\d{2})$/.exec(slot);
+        if (!m || durMin <= 0) return formatSlot(slot);
+        const end = Math.min(Number(m[1]) * 60 + Number(m[2]) + durMin, 23 * 60 + 59);
+        return formatSlot(String(Math.floor(end / 60)).padStart(2, "0") + ":" + String(end % 60).padStart(2, "0"));
+      }
 
       let renderSlots = null;
       if (hasSlots) {
@@ -162,7 +173,7 @@
             const preSelected = !selectedSlotTime && b.eventTime && b.eventTime.slice(0, 5) === slot;
             const isSelected = selectedSlotTime === slot || preSelected;
             btn.className = "slot" + (isSelected && !isTaken ? " slot-selected" : "") + (isTaken ? " slot-taken" : "");
-            btn.textContent = formatSlot(slot) + (isTaken ? " — taken" : "");
+            btn.textContent = readyByLabel(slot) + (isTaken ? " — taken" : "");
             btn.disabled = isTaken;
             if (preSelected && !isTaken) {
               selectedSlotTime = slot;
