@@ -1326,6 +1326,10 @@ app.get("/api/session", async (req, res, next) => {
       profile: req.session.profile,
       workspace: scrubWorkspaceTokens(workspace),
       dashboard,
+      // Pilot support channel: lets the app route "I need access" requests
+      // (e.g. Instagram tester invites while Meta review is pending) to the
+      // platform owner as a one-tap WhatsApp instead of a support dead-end.
+      supportWhatsApp: appConfig.supportWhatsApp || "",
     });
   } catch (error) {
     next(error);
