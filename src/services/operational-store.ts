@@ -59,6 +59,39 @@ export async function findLead(workspaceId: string, leadId: string): Promise<Lea
   return res.rows[0]?.data ?? null;
 }
 
+// Cross-workspace inbound routing: which workspace (and lead) does a WhatsApp
+// message FROM this client phone belong to? Used by the shared-number Gupshup
+// webhook, where — unlike per-workspace Meta numbers — the sender's phone is
+// the only routing key. Digit-normalized compare so "+91 98765 43210" matches
+// "919876543210". Prefers the most recently touched lead; falls back to a
+// booking's lead. Postgres-only (the Gupshup pipe is a production feature);
+// returns null in sheets/file mode.
+export async function findLeadRouteByClientPhone(
+  phoneDigits: string,
+): Promise<{ workspaceId: string; leadId: string } | null> {
+  if (!pgActive()) return null;
+  const digits = phoneDigits.replace(/\D/g, "");
+  if (digits.length < 8) return null;
+  await ensurePostgres();
+  const lead = await getPool().query<{ workspace_id: string; lead_id: string }>(
+    `SELECT workspace_id, lead_id FROM op_leads
+     WHERE regexp_replace(COALESCE(data->>'clientWhatsApp', ''), '\\D', '', 'g') = $1
+     ORDER BY COALESCE(NULLIF(data->>'lastContactedAt', ''), data->>'createdAt') DESC NULLS LAST
+     LIMIT 1`,
+    [digits],
+  );
+  if (lead.rows[0]) return { workspaceId: lead.rows[0].workspace_id, leadId: lead.rows[0].lead_id };
+  const booking = await getPool().query<{ workspace_id: string; lead_id: string }>(
+    `SELECT workspace_id, data->>'leadId' AS lead_id FROM op_bookings
+     WHERE regexp_replace(COALESCE(data->>'clientWhatsApp', ''), '\\D', '', 'g') = $1
+       AND COALESCE(data->>'leadId', '') <> ''
+     ORDER BY data->>'bookedAt' DESC NULLS LAST
+     LIMIT 1`,
+    [digits],
+  );
+  return booking.rows[0] ? { workspaceId: booking.rows[0].workspace_id, leadId: booking.rows[0].lead_id } : null;
+}
+
 export async function listBookings(workspaceId: string): Promise<BookingRecord[]> {
   await ensurePostgres();
   const res = await getPool().query<{ data: BookingRecord }>(

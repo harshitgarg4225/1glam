@@ -110,7 +110,8 @@ import {
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
 import { generateConversationReply, deriveToneProfile, draftCampaignMessage } from "./services/grok.js";
-import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate } from "./services/messaging.js";
+import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate, parseGupshupInbound } from "./services/messaging.js";
+import { findLeadRouteByClientPhone } from "./services/operational-store.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
 import { fetchWithTimeout, isPublicHttpUrlResolved } from "./services/http.js";
@@ -7436,6 +7437,141 @@ app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
 
     const workspace = await disconnectMetaConnection(req.session.profile.email, channel);
     res.json({ ok: true, workspace });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Inbound WhatsApp via the shared Gupshup number. Outbound reminders and
+// confirmations go out through Gupshup; when a client REPLIES, Gupshup posts
+// the message here (callback URL set in their dashboard:
+// /webhooks/gupshup?token=GUPSHUP_WEBHOOK_SECRET). Because the number is
+// shared by every workspace, the sender's phone is the routing key — we find
+// the lead whose clientWhatsApp matches and process the reply exactly like the
+// per-workspace Meta webhook: opt-outs honoured, conversation logged, AI reply
+// drafted, and (opt-in, guarded) auto-sent back through Gupshup.
+app.post("/webhooks/gupshup", async (req, res, next) => {
+  try {
+    const token = String(req.query.token ?? "");
+    if (!appConfig.gupshupWebhookSecret || !secretsMatch(token, appConfig.gupshupWebhookSecret)) {
+      return res.status(401).json({ error: "Invalid webhook token" });
+    }
+    const inbound = parseGupshupInbound(req.body);
+    // Delivery receipts, opt-in events, media without captions… — ack and move on.
+    if (!inbound) return res.json({ ok: true, ignored: true });
+
+    const route = await findLeadRouteByClientPhone(inbound.senderPhone);
+    if (!route) {
+      // Unknown number (or sheets-mode deployment): nothing to attach it to.
+      logger.info("gupshup_inbound_unrouted", { phone: inbound.senderPhone.slice(-4) });
+      return res.json({ ok: true, unrouted: true });
+    }
+    const workspace = await findWorkspaceByWorkspaceId(route.workspaceId);
+    if (!workspace) return res.json({ ok: true, unrouted: true });
+    const tokens = await getWorkspaceCredentials(workspace.email);
+
+    // STOP / UNSUBSCRIBE — process immediately and silently (policy + law).
+    if (/^\s*(stop|unsubscribe|opt.?out|end|quit|cancel)\s*$/i.test(inbound.text)) {
+      await markPhoneOptedOut(workspace.workspaceId, inbound.senderPhone).catch(() => null);
+      logger.info("whatsapp_optout", { workspaceId: workspace.workspaceId, via: "gupshup" });
+      return res.json({ ok: true });
+    }
+
+    const lead = await getLeadRecord(workspace.email, tokens, route.leadId);
+    if (!lead) return res.json({ ok: true, unrouted: true });
+
+    await logInteractionForWorkspace(workspace.email, tokens, {
+      leadId: lead.leadId,
+      direction: "Inbound",
+      channel: "WhatsApp",
+      actor: inbound.senderPhone,
+      message: inbound.text,
+      aiSummary: "Client replied on WhatsApp (Gupshup)",
+    });
+
+    const memory = await loadConversationMemory(workspace.workspaceId, lead.leadId);
+    const conversation = await generateConversationReply({
+      ownerName: workspace.config.ownerName,
+      brandName: workspace.config.businessName,
+      city: workspace.config.city,
+      channel: "WhatsApp",
+      clientName: lead.clientName || inbound.senderName,
+      leadStatus: lead.status,
+      eventType: lead.eventType,
+      eventDate: lead.eventDate,
+      eventTime: lead.eventTime,
+      locationText: lead.locationText,
+      suggestedReply: lead.suggestedReply,
+      currentPrice: lead.finalApprovedPrice || lead.initialAiPrice,
+      ownerDecision: lead.ownerDecision,
+      paymentStatus: lead.paymentStatus,
+      quoteUrl: lead.quoteUrl,
+      holdExpiresAt: lead.holdExpiresAt,
+      latestMessage: inbound.text,
+      memorySummary: extractSummaryFromMemory(memory),
+      language: workspace.config.aiLanguage,
+      signOff: workspace.config.aiSignOff,
+      toneProfile: workspace.config.aiToneProfile,
+      servicesContext: buildServicesContext(workspace.config),
+      personaName: workspace.config.aiPersonaName,
+    });
+    if (appConfig.xaiApiKey) {
+      await meterUsage(workspace.email, "aiReply");
+    }
+
+    // Same guardrails as the Meta path: owner opted in, no price/commitment
+    // language without approval, and billing (if enforced) allows the send.
+    let autoSentReply = "";
+    if (
+      workspace.config.autoReplyEnabled === "Yes" &&
+      conversation.reply &&
+      replyIsSafeToAutoSend(conversation.reply, lead.ownerDecision)
+    ) {
+      const ctx = resolveLeadMessagingContext(workspace, { ...lead, clientWhatsApp: lead.clientWhatsApp || inbound.senderPhone });
+      if (ctx && canAfford(workspace, "whatsappMessage")) {
+        try {
+          await sendBusinessMessage({
+            workspace,
+            connection: ctx.connection,
+            channel: ctx.channel,
+            actorId: ctx.actorId,
+            message: conversation.reply,
+          });
+          autoSentReply = conversation.reply;
+          await logInteractionForWorkspace(workspace.email, tokens, {
+            leadId: lead.leadId,
+            direction: "Outbound",
+            channel: "WhatsApp",
+            actor: "AI",
+            message: conversation.reply,
+            aiSummary: "AI auto-reply sent",
+          });
+        } catch (sendError) {
+          captureException(sendError, { scope: "gupshup-auto-reply", leadId: lead.leadId });
+        }
+      }
+    }
+
+    await updateLeadRecord(workspace.email, tokens, lead.leadId, (current) => ({
+      ...current,
+      aiInsight: conversation.ownerSummary || current.aiInsight,
+      suggestedReply: conversation.reply || current.suggestedReply,
+      lastContactedAt: new Date().toISOString(),
+    }));
+
+    await saveConversationMemory({
+      workspaceId: workspace.workspaceId,
+      leadId: lead.leadId,
+      clientName: lead.clientName || inbound.senderName,
+      channel: "WhatsApp",
+      summary: conversation.memorySummary || conversation.ownerSummary || buildLeadSummary(lead),
+      knownDetails: buildKnownDetails(lead),
+      openQuestions: conversation.openQuestions.length ? conversation.openQuestions : inferOpenQuestions(lead),
+      lastInboundMessage: inbound.text,
+      lastOutboundMessage: autoSentReply,
+    });
+
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }

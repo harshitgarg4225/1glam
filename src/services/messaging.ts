@@ -212,6 +212,24 @@ function sendGupshupSessionMessage(recipientPhone: string, message: string, imag
   });
 }
 
+// Parses a Gupshup inbound-callback body (version 2 app callback) into the
+// bits we route on. Returns null for anything that isn't a client message
+// (delivery receipts, opt-ins, system events…). Pure for testability.
+export function parseGupshupInbound(body: unknown): { senderPhone: string; senderName: string; text: string } | null {
+  const b = body as { type?: unknown; payload?: Record<string, unknown> } | null;
+  if (!b || b.type !== "message" || !b.payload) return null;
+  const payload = b.payload;
+  const inner = (payload.payload ?? {}) as Record<string, unknown>;
+  const msgType = String(payload.type ?? "");
+  // Text messages carry text; media messages carry an optional caption.
+  const text = msgType === "text" ? String(inner.text ?? "").trim() : String(inner.caption ?? "").trim();
+  const sender = (payload.sender ?? {}) as Record<string, unknown>;
+  const senderPhone = String(sender.phone ?? payload.source ?? "").replace(/\D/g, "");
+  const senderName = String(sender.name ?? "").trim();
+  if (!senderPhone || !text) return null;
+  return { senderPhone, senderName, text };
+}
+
 export async function sendWhatsAppTemplate(
   connection: { accessToken?: string; phoneNumberId?: string },
   recipientPhone: string,

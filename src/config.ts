@@ -47,6 +47,10 @@ const envSchema = z.object({
   GUPSHUP_API_KEY: z.string().optional().default(""),
   GUPSHUP_APP_NAME: z.string().optional().default(""),
   GUPSHUP_SOURCE_NUMBER: z.string().optional().default(""),
+  // Shared secret for Gupshup's inbound message callback — set the callback URL
+  // in the Gupshup dashboard to /webhooks/gupshup?token=<this>. Empty disables
+  // the inbound webhook entirely.
+  GUPSHUP_WEBHOOK_SECRET: z.string().optional().default(""),
   MANYCHAT_WEBHOOK_SECRET: z.string().optional().default(""),
   XAI_API_KEY: z.string().optional().default(""),
   XAI_MODEL: z.string().default("grok-4.20-reasoning"),
@@ -139,6 +143,7 @@ export const appConfig = {
   gupshupApiKey: parsed.GUPSHUP_API_KEY,
   gupshupAppName: parsed.GUPSHUP_APP_NAME,
   gupshupSourceNumber: parsed.GUPSHUP_SOURCE_NUMBER.replace(/\D/g, ""),
+  gupshupWebhookSecret: parsed.GUPSHUP_WEBHOOK_SECRET,
   manychatWebhookSecret: parsed.MANYCHAT_WEBHOOK_SECRET,
   xaiApiKey: parsed.XAI_API_KEY,
   xaiModel: parsed.XAI_MODEL,
