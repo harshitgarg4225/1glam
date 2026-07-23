@@ -279,6 +279,16 @@ export type WorkspaceRecord = {
   sheetProtected?: boolean;
   googleTokens?: StoredGoogleTokens;
   metaConnections?: Partial<Record<MetaChannel, MetaChannelConnection>>;
+  // Pilot-mode Instagram tester-invite pipeline: the artist requests access
+  // in-app, the owner sends the Meta invite from /admin and marks it, and the
+  // artist's Settings card walks her through accepting. Removed from the flow
+  // entirely once Meta app review clears (connect just works then).
+  igAccessRequest?: {
+    handle: string;
+    requestedAt: string;
+    status: "requested" | "invited";
+    invitedAt?: string;
+  };
   wallet?: Wallet;
   // Web-push subscriptions for the owner's devices (PWA notifications).
   pushSubscriptions?: Array<{ endpoint: string; keys: { p256dh: string; auth: string } }>;

@@ -46,6 +46,14 @@
       <div id="status"></div>
     </div>
 
+    <div class="panel" id="ig-panel" style="display:none;">
+      <div class="muted" style="margin-bottom:8px;"><strong style="color:var(--text);">Instagram access requests</strong> — send the tester invite in the Meta dashboard, then mark it. The artist's app updates with accept instructions automatically.</div>
+      <table>
+        <thead><tr><th>Business</th><th>Instagram</th><th>Requested</th><th></th></tr></thead>
+        <tbody id="ig-body"></tbody>
+      </table>
+    </div>
+
     <div class="panel">
       <div class="muted" style="margin-bottom:8px;"><span id="ws-count">…</span> workspaces — click a row to fill the form</div>
       <table>
@@ -75,10 +83,63 @@
             <td class="bal ${Number(w.balanceCredits) <= 50 ? "low" : ""}">${Number(w.balanceCredits).toLocaleString("en-IN")}</td>
             <td class="muted">${w.createdAt ? esc(String(w.createdAt).slice(0, 10)) : "—"}</td>
           </tr>`).join("") || `<tr><td colspan="5" class="muted">No workspaces yet.</td></tr>`;
+        renderIgQueue(data);
       } catch (e) {
         body.innerHTML = `<tr><td colspan="5" class="muted">${esc(e.message)}</td></tr>`;
       }
     }
+
+    // Instagram tester-invite queue. Pending requests need YOUR one manual
+    // click in the Meta dashboard (there's no API for tester invites); this
+    // keeps everything around that click automated and tracked.
+    function renderIgQueue(data) {
+      const panel = document.getElementById("ig-panel");
+      const body = document.getElementById("ig-body");
+      const rows = (data.workspaces || []).filter((w) => w.igAccessRequest && !w.instagramConnected);
+      if (!rows.length) { panel.style.display = "none"; return; }
+      const rolesUrl = data.metaAppId
+        ? `https://developers.facebook.com/apps/${encodeURIComponent(data.metaAppId)}/roles/roles/`
+        : "https://developers.facebook.com/apps/";
+      panel.style.display = "";
+      body.innerHTML = rows.map((w) => {
+        const r = w.igAccessRequest;
+        const invited = r.status === "invited";
+        return `<tr>
+          <td><strong>${esc(w.businessName || w.name || "—")}</strong><br><span class="muted">${esc(w.email)}</span></td>
+          <td>${r.handle ? `@${esc(r.handle)} <button type="button" style="padding:3px 9px;font-size:12px;background:#eee;color:var(--text);" data-copy-handle="${esc(r.handle)}">Copy</button>` : '<span class="muted">no handle given</span>'}</td>
+          <td class="muted">${esc(String(r.requestedAt || "").slice(0, 10))}${invited ? `<br><span style="color:var(--success);">invited ${esc(String(r.invitedAt || "").slice(0, 10))} — awaiting her accept</span>` : ""}</td>
+          <td style="white-space:nowrap;">
+            ${invited ? "" : `<a href="${rolesUrl}" target="_blank" rel="noreferrer" style="color:var(--accent);font-weight:600;text-decoration:none;">Open Meta roles ↗</a>
+            <button type="button" style="margin-left:8px;padding:6px 12px;font-size:13px;" data-mark-invited="${esc(w.email)}">Mark invited</button>`}
+          </td>
+        </tr>`;
+      }).join("");
+    }
+
+    document.getElementById("ig-body").addEventListener("click", async (e) => {
+      const copy = e.target.closest("[data-copy-handle]");
+      if (copy) {
+        try { await navigator.clipboard.writeText(copy.getAttribute("data-copy-handle")); copy.textContent = "✓"; } catch {}
+        return;
+      }
+      const mark = e.target.closest("[data-mark-invited]");
+      if (!mark) return;
+      mark.disabled = true;
+      try {
+        const r = await fetch("/api/admin/instagram-access/mark-invited", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: mark.getAttribute("data-mark-invited") }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) throw new Error(data.error || "Failed");
+        setStatus("Marked invited — her app now shows the accept steps.", true);
+        loadWorkspaces();
+      } catch (err) {
+        setStatus(err.message, false);
+        mark.disabled = false;
+      }
+    });
 
     document.getElementById("ws-body").addEventListener("click", (e) => {
       const row = e.target.closest("tr.pick");
