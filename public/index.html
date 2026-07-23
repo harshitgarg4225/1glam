@@ -8186,6 +8186,27 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       function renderMetaConnections(workspace, profile) {
         const instagram = workspace?.metaConnections?.instagram;
         const whatsapp = workspace?.metaConnections?.whatsapp;
+        // During the invite-only pilot, Instagram OAuth only works for accounts
+        // we've invited as testers — so an unconnected Instagram card offers a
+        // ONE-TAP request to the support WhatsApp instead of a dead-end error.
+        const supportWa = String(sessionState?.supportWhatsApp || "").replace(/\D/g, "");
+        function pilotHelp(channel, connection) {
+          if (connection?.status === "connected") return "";
+          if (channel === "instagram" && supportWa) {
+            const igHandle = sessionState?.workspace?.config?.instagramHandle || "";
+            const msg = encodeURIComponent(
+              `Hi! Please enable Instagram access for my BusyDays account so I can connect it.` +
+              (igHandle ? ` My Instagram: @${igHandle}.` : " My Instagram: @") +
+              ` My sign-in email: ${profile?.email || ""}`,
+            );
+            return `<p class="muted" style="margin:10px 0 8px;font-size:12.5px;line-height:1.5;">We're in an invite-only pilot — Instagram needs a quick access invite from us first (takes a day). Request it, accept the invite in your Instagram settings, then tap Connect.</p>
+              <a class="button small secondary" style="text-decoration:none;" href="https://wa.me/${supportWa}?text=${msg}" target="_blank" rel="noreferrer">💬 Request Instagram access</a>`;
+          }
+          if (channel === "whatsapp") {
+            return `<p class="muted" style="margin:10px 0 0;font-size:12.5px;line-height:1.5;">✓ Nothing to set up — booking confirmations and reminders already send automatically from the BusyDays number. Connecting your <strong>own</strong> number (so replies come from you) unlocks after Meta's approval.</p>`;
+          }
+          return "";
+        }
         function block(label, channel, connection) {
           const status = connection?.status || "not connected";
           const handle = channel === "instagram"
@@ -8199,6 +8220,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <p style="margin:8px 0 6px;"><span class="${status === "connected" ? "pill success" : "pill warning"}">${status}</span></p>
             <p class="muted" style="margin:0 0 10px;">${escapeHtml(handle)}</p>
             <div class="action-row">${oauthButton}<button class="button small secondary" type="button" data-meta-disconnect="${channel}">Disconnect</button></div>
+            ${pilotHelp(channel, connection)}
             ${extraControl}</div>`;
         }
         metaSummary.innerHTML = `<div class="mini-grid">${block("Instagram", "instagram", instagram)}${block("WhatsApp", "whatsapp", whatsapp)}</div>
