@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || "test-session-secret-32chars-xxxxx";
 
-const { sendBusinessMessage, resolveWaTransport } = await import("../src/services/messaging.ts");
+const { sendBusinessMessage, resolveWaTransport, parseGupshupInbound } = await import("../src/services/messaging.ts");
 
 type Captured = { url: string; body: any };
 
@@ -100,4 +100,31 @@ test("resolveWaTransport: nothing configured → null (wa.me fallback)", () => {
   assert.equal(resolveWaTransport({}), null);
   // A token without a phone id is not a usable Meta pair — falls through.
   assert.equal(resolveWaTransport({ envToken: "T", gupshupKey: "K", gupshupApp: "A", gupshupSource: "9" }), "gupshup");
+});
+
+test("parseGupshupInbound extracts sender + text from a v2 message callback", () => {
+  const parsed = parseGupshupInbound({
+    app: "busydays", version: 2, type: "message",
+    payload: {
+      id: "m1", source: "919876543210", type: "text",
+      payload: { text: "  Yes, 4 PM works!  " },
+      sender: { phone: "919876543210", name: "Priya" },
+    },
+  });
+  assert.deepEqual(parsed, { senderPhone: "919876543210", senderName: "Priya", text: "Yes, 4 PM works!" });
+});
+
+test("parseGupshupInbound uses a media caption and falls back to source for phone", () => {
+  const parsed = parseGupshupInbound({
+    type: "message",
+    payload: { id: "m2", source: "+91 98765 43210", type: "image", payload: { caption: "my reference look" }, sender: {} },
+  });
+  assert.deepEqual(parsed, { senderPhone: "919876543210", senderName: "", text: "my reference look" });
+});
+
+test("parseGupshupInbound ignores non-message events and empty payloads", () => {
+  assert.equal(parseGupshupInbound({ type: "message-event", payload: { type: "delivered" } }), null);
+  assert.equal(parseGupshupInbound({ type: "message", payload: { type: "text", payload: {}, sender: { phone: "919876543210" } } }), null);
+  assert.equal(parseGupshupInbound(null), null);
+  assert.equal(parseGupshupInbound({}), null);
 });
