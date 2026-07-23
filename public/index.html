@@ -8192,15 +8192,29 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         const supportWa = String(sessionState?.supportWhatsApp || "").replace(/\D/g, "");
         function pilotHelp(channel, connection) {
           if (connection?.status === "connected") return "";
-          if (channel === "instagram" && supportWa) {
-            const igHandle = sessionState?.workspace?.config?.instagramHandle || "";
-            const msg = encodeURIComponent(
-              `Hi! Please enable Instagram access for my BusyDays account so I can connect it.` +
-              (igHandle ? ` My Instagram: @${igHandle}.` : " My Instagram: @") +
-              ` My sign-in email: ${profile?.email || ""}`,
-            );
-            return `<p class="muted" style="margin:10px 0 8px;font-size:12.5px;line-height:1.5;">We're in an invite-only pilot — Instagram needs a quick access invite from us first (takes a day). Request it, accept the invite in your Instagram settings, then tap Connect.</p>
-              <a class="button small secondary" style="text-decoration:none;" href="https://wa.me/${supportWa}?text=${msg}" target="_blank" rel="noreferrer">💬 Request Instagram access</a>`;
+          if (channel === "instagram") {
+            const request = sessionState?.workspace?.igAccessRequest;
+            // Invite sent from /admin → walk her through accepting it.
+            if (request?.status === "invited") {
+              return `<div style="margin:10px 0 0;background:var(--success-soft);border:1px solid #BFE6CD;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.6;">
+                ✅ <strong>Your access invite is live!</strong> Accept it in Instagram:
+                <strong>Settings → Website permissions → Apps and websites → Tester invites → Accept</strong> — then tap Connect via Facebook above.</div>`;
+            }
+            // Request logged → set the expectation, no dead-end.
+            if (request?.status === "requested") {
+              return `<p class="muted" style="margin:10px 0 0;font-size:12.5px;line-height:1.5;">⏳ Access request sent — we usually enable it within a day. Your next step will appear right here.</p>`;
+            }
+            if (supportWa) {
+              const igHandle = sessionState?.workspace?.config?.instagramHandle || "";
+              const msg = encodeURIComponent(
+                `Hi! Please enable Instagram access for my BusyDays account so I can connect it.` +
+                (igHandle ? ` My Instagram: @${igHandle}.` : " My Instagram: @") +
+                ` My sign-in email: ${profile?.email || ""}`,
+              );
+              return `<p class="muted" style="margin:10px 0 8px;font-size:12.5px;line-height:1.5;">We're in an invite-only pilot — Instagram needs a quick access invite from us first (takes a day). Request it, and the next step appears here.</p>
+                <a class="button small secondary" style="text-decoration:none;" href="https://wa.me/${supportWa}?text=${msg}" target="_blank" rel="noreferrer" data-ig-access-request="${escapeHtml(igHandle)}">💬 Request Instagram access</a>`;
+            }
+            return "";
           }
           if (channel === "whatsapp") {
             return `<p class="muted" style="margin:10px 0 0;font-size:12.5px;line-height:1.5;">✓ Nothing to set up — booking confirmations and reminders already send automatically from the BusyDays number. Connecting your <strong>own</strong> number (so replies come from you) unlocks after Meta's approval.</p>`;
@@ -8226,6 +8240,17 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         metaSummary.innerHTML = `<div class="mini-grid">${block("Instagram", "instagram", instagram)}${block("WhatsApp", "whatsapp", whatsapp)}</div>
           <p class="muted" style="margin-top:14px;">Connecting Instagram and WhatsApp lets new enquiries flow in automatically and lets you reply right from here. Only you can see your own account — your data stays private to you.</p>`;
       }
+
+      // Tapping "Request Instagram access" records the request server-side (it
+      // lands in the owner's /admin queue with the handle) while the wa.me tab
+      // opens naturally. Best-effort — the WhatsApp message alone still works.
+      document.body.addEventListener("click", (e) => {
+        const req = e.target.closest("[data-ig-access-request]");
+        if (!req) return;
+        postJson("/api/instagram-access/request", { handle: req.getAttribute("data-ig-access-request") || "" })
+          .then(() => refreshSession())
+          .catch(() => {});
+      });
 
       // Coalesced: actions often fire refreshSession in quick succession
       // (action handler + tab activation + focus). Concurrent callers share

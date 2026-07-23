@@ -49,7 +49,7 @@ import {
 } from "./services/booking.js";
 import { getWorkspaceCredentials } from "./services/auth-store.js";
 import { buildOutboundReplyPayload, normalizeManychatPayload, normalizeWatiPayload } from "./services/channel-adapters.js";
-import { cleanupOldWebhookEvents, closePool, countWorkspaces, deleteWorkspace, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, isPhoneOptedOut, listOptedOutPhones, listWorkspaces, markPhoneOptedOut, markWebhookEventProcessed, pingDatabase, removePhoneOptOut, saveWorkspace } from "./services/database.js";
+import { cleanupOldWebhookEvents, closePool, countWorkspaces, deleteWorkspace, findWorkspaceByMetaAsset, findWorkspaceByMetaUserId, findWorkspaceByWorkspaceId, isPhoneOptedOut, listOptedOutPhones, listWorkspaces, markPhoneOptedOut, markWebhookEventProcessed, pingDatabase, removePhoneOptOut, saveWorkspace, updateWorkspaceByEmail } from "./services/database.js";
 import {
   createOrderWithKeys,
   createRazorpayOrder,
@@ -2229,10 +2229,62 @@ app.get("/api/admin/workspaces", async (req, res, next) => {
         city: w.config?.city || "",
         balanceCredits: wallet.balanceCredits,
         createdAt: w.createdAt || "",
+        igAccessRequest: w.igAccessRequest || null,
+        instagramConnected: w.metaConnections?.instagram?.status === "connected",
       };
     });
     rows.sort((a, b) => (a.businessName || a.email).localeCompare(b.businessName || b.email));
-    res.json({ ok: true, workspaces: rows });
+    // metaAppId lets the admin page deep-link straight to the Meta dashboard's
+    // App Roles page for tester invites.
+    res.json({ ok: true, workspaces: rows, metaAppId: appConfig.metaAppId || "" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Artist-side: records her Instagram tester-access request so it lands in the
+// /admin queue with her handle — no chat back-and-forth needed. Requested from
+// the Settings connect card while Meta app review is pending.
+app.post("/api/instagram-access/request", async (req, res, next) => {
+  try {
+    if (!req.session.profile) return res.status(401).json({ error: "Unauthorized" });
+    const handle = String(req.body?.handle || "").trim().replace(/^@+/, "").slice(0, 60);
+    const updated = await updateWorkspaceByEmail(req.session.profile.email, (workspace) => ({
+      ...workspace,
+      // Never demote an already-sent invite back to "requested" on a re-tap.
+      igAccessRequest: workspace.igAccessRequest?.status === "invited"
+        ? { ...workspace.igAccessRequest, handle: handle || workspace.igAccessRequest.handle }
+        : { handle, requestedAt: new Date().toISOString(), status: "requested" as const },
+      updatedAt: new Date().toISOString(),
+    }));
+    if (!updated) return res.status(404).json({ error: "Workspace not found" });
+    logger.info("ig_access_requested", { email: req.session.profile.email, handle });
+    res.json({ ok: true, igAccessRequest: updated.igAccessRequest });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Owner-side: after sending the tester invite in the Meta dashboard, one tap
+// marks it — the artist's Settings card flips to accept-the-invite guidance.
+app.post("/api/admin/instagram-access/mark-invited", async (req, res, next) => {
+  try {
+    if (!isAdminSession(req)) return res.status(404).json({ error: "Not found" });
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: "Workspace email required" });
+    const updated = await updateWorkspaceByEmail(email, (workspace) => ({
+      ...workspace,
+      igAccessRequest: {
+        handle: workspace.igAccessRequest?.handle || "",
+        requestedAt: workspace.igAccessRequest?.requestedAt || new Date().toISOString(),
+        status: "invited" as const,
+        invitedAt: new Date().toISOString(),
+      },
+      updatedAt: new Date().toISOString(),
+    }));
+    if (!updated) return res.status(404).json({ error: "No workspace found for that email." });
+    logger.info("ig_access_invited", { by: req.session.profile?.email, target: email });
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
