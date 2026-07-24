@@ -7452,6 +7452,13 @@ app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
 // we find the lead whose clientWhatsApp matches and process the reply exactly
 // like the per-workspace Meta webhook: opt-outs honoured, conversation logged,
 // AI reply drafted, and (opt-in, guarded) auto-sent back through Gupshup.
+// Gupshup's dashboard verifies a new callback URL by probing it (GET) and
+// rejects the URL as "invalid" unless it answers 2xx. A liveness 200 here
+// leaks nothing — inbound processing stays POST-only and token-checked.
+app.get(["/webhooks/gupshup", "/webhooks/gupshup/:token"], (_req, res) => {
+  res.json({ ok: true });
+});
+
 app.post(["/webhooks/gupshup", "/webhooks/gupshup/:token"], async (req, res, next) => {
   try {
     const token = String(req.params.token ?? req.query.token ?? req.get("x-webhook-token") ?? "");
