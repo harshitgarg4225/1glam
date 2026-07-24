@@ -212,6 +212,30 @@ function sendGupshupSessionMessage(recipientPhone: string, message: string, imag
   });
 }
 
+// Platform-level test send for the admin config-health panel: proves the
+// env-configured WhatsApp pipe (Gupshup or direct Meta) end-to-end without
+// creating a booking or metering anyone's wallet. Throws with a clear message
+// when no pipe is configured.
+export async function sendPlatformTestWhatsApp(phoneDigits: string) {
+  const transport = resolveWaTransport({
+    envToken: appConfig.waAccessToken,
+    envPhoneId: appConfig.waPhoneNumberId,
+    ...gupshupTransportInput(),
+  });
+  const message = "✅ BusyDays test — your WhatsApp pipe is live. Reply to this message to test the inbound webhook too.";
+  if (transport === "gupshup") {
+    return sendGupshupSessionMessage(phoneDigits, message);
+  }
+  if (transport === "meta") {
+    return sendWhatsAppMessage(
+      { channel: "whatsapp", status: "connected" } as MetaChannelConnection,
+      phoneDigits,
+      message,
+    );
+  }
+  throw new Error("No WhatsApp pipe configured — set the GUPSHUP_* env vars (or WA_ACCESS_TOKEN + WA_PHONE_NUMBER_ID).");
+}
+
 // Parses a Gupshup inbound-callback body (version 2 app callback) into the
 // bits we route on. Returns null for anything that isn't a client message
 // (delivery receipts, opt-ins, system events…). Pure for testability.

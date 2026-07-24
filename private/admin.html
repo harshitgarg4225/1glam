@@ -46,6 +46,18 @@
       <div id="status"></div>
     </div>
 
+    <div class="panel">
+      <div class="muted" style="margin-bottom:8px;"><strong style="color:var(--text);">Configuration health</strong> — live view of what's wired. Paste keys in Railway → Variables, wait for the redeploy, refresh this page.</div>
+      <table>
+        <tbody id="health-body"><tr><td class="muted">Loading…</td></tr></tbody>
+      </table>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div><label for="tw-phone">Prove the WhatsApp pipe — your number</label><input id="tw-phone" placeholder="919812345678" style="min-width:200px;" /></div>
+        <button type="button" id="tw-send">Send me a test WhatsApp</button>
+      </div>
+      <div id="tw-status" class="muted" style="margin-top:8px;min-height:18px;"></div>
+    </div>
+
     <div class="panel" id="ig-panel" style="display:none;">
       <div class="muted" style="margin-bottom:8px;"><strong style="color:var(--text);">Instagram access requests</strong> — send the tester invite in the Meta dashboard, then mark it. The artist's app updates with accept instructions automatically.</div>
       <table>
@@ -185,7 +197,49 @@
       }
     });
 
+    // Config health: green/red per key, secrets never shown — just wired or not.
+    async function loadHealth() {
+      const body = document.getElementById("health-body");
+      try {
+        const r = await fetch("/api/admin/config-health");
+        const data = await r.json();
+        if (!r.ok || !data.ok) throw new Error(data.error || "Failed");
+        body.innerHTML = data.checks.map((c) => `
+          <tr>
+            <td style="width:30px;font-size:16px;">${c.ok ? "✅" : c.optional ? "▫️" : "❌"}</td>
+            <td><strong>${esc(c.key)}</strong>${c.value ? ` <span class="muted">= ${esc(c.value)}</span>` : ""}${c.optional && !c.ok ? ' <span class="muted">(optional)</span>' : ""}</td>
+            <td class="muted">${esc(c.hint || "")}</td>
+          </tr>`).join("");
+      } catch (e) {
+        body.innerHTML = `<tr><td class="muted">${esc(e.message)}</td></tr>`;
+      }
+    }
+
+    document.getElementById("tw-send").addEventListener("click", async () => {
+      const btn = document.getElementById("tw-send");
+      const status = document.getElementById("tw-status");
+      btn.disabled = true;
+      status.textContent = "Sending…";
+      try {
+        const r = await fetch("/api/admin/test-whatsapp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: document.getElementById("tw-phone").value }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) throw new Error(data.error || "Send failed");
+        status.textContent = "✅ Sent — check your WhatsApp. Reply to it to test the inbound webhook too.";
+        status.style.color = "var(--success)";
+      } catch (e) {
+        status.textContent = "❌ " + e.message + " (Sandbox tip: your number must have opted in to the sandbox number first.)";
+        status.style.color = "var(--danger)";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     loadWorkspaces();
+    loadHealth();
   </script>
 </body>
 </html>

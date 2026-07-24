@@ -110,8 +110,8 @@ import {
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
 import { generateConversationReply, deriveToneProfile, draftCampaignMessage } from "./services/grok.js";
-import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate, parseGupshupInbound } from "./services/messaging.js";
-import { findLeadRouteByClientPhone } from "./services/operational-store.js";
+import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate, parseGupshupInbound, sendPlatformTestWhatsApp } from "./services/messaging.js";
+import { findLeadRouteByClientPhone, storeMode } from "./services/operational-store.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
 import { fetchWithTimeout, isPublicHttpUrlResolved } from "./services/http.js";
@@ -2263,6 +2263,58 @@ app.post("/api/instagram-access/request", async (req, res, next) => {
     res.json({ ok: true, igAccessRequest: updated.igAccessRequest });
   } catch (error) {
     next(error);
+  }
+});
+
+// Live configuration health for the /admin panel: which env keys are wired,
+// as booleans only — no secret values ever leave the server. Lets the owner
+// paste credentials into Railway and instantly SEE what's live and what's
+// missing, instead of debugging blind.
+app.get("/api/admin/config-health", async (req, res, next) => {
+  try {
+    if (!isAdminSession(req)) return res.status(404).json({ error: "Not found" });
+    let dbOk = false;
+    try { dbOk = await pingDatabase(2000); } catch { dbOk = false; }
+    const gupshupSend = Boolean(appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber);
+    const checks = [
+      { key: "APP_BASE_URL", ok: appConfig.baseUrl === "https://www.busydays.co", value: appConfig.baseUrl, hint: "Should be https://www.busydays.co" },
+      { key: "DATABASE_URL + connection", ok: dbOk, hint: "Railway Postgres reachable" },
+      { key: "OPERATIONAL_STORE", ok: storeMode() !== "sheets", value: storeMode(), hint: "Set OPERATIONAL_STORE=dual — payments/leads on Postgres" },
+      { key: "GOOGLE_CLIENT_ID/SECRET", ok: Boolean(appConfig.googleClientId && appConfig.googleClientSecret), hint: "Google sign-in" },
+      { key: "XAI_API_KEY", ok: Boolean(appConfig.xaiApiKey), hint: "All AI features (console.x.ai)" },
+      { key: "GUPSHUP send (key+app+number)", ok: gupshupSend, hint: "Automated WhatsApp sends" },
+      { key: "GUPSHUP_WEBHOOK_SECRET", ok: Boolean(appConfig.gupshupWebhookSecret), hint: "Inbound client replies" },
+      { key: "SUPPORT_WHATSAPP", ok: Boolean(appConfig.supportWhatsApp), hint: "Top-up + Instagram-access request buttons" },
+      { key: "MAX_WORKSPACES", ok: appConfig.maxWorkspaces > 0, value: String(appConfig.maxWorkspaces), hint: "Pilot signup cap (35 recommended)" },
+      { key: "GOOGLE_MAPS_API_KEY", ok: Boolean(appConfig.googleMapsApiKey), optional: true, hint: "Travel distance + city autocomplete" },
+      { key: "RAZORPAY keys", ok: Boolean(appConfig.razorpayKeyId), optional: true, hint: "Online top-ups (manual /admin credit works without)" },
+      { key: "META app (Instagram connect)", ok: Boolean(appConfig.metaAppId), optional: true, hint: "Instagram DM capture" },
+      { key: "VAPID keys (web push)", ok: Boolean(appConfig.vapidPublicKey), optional: true, hint: "npx web-push generate-vapid-keys" },
+      { key: "SENTRY_DSN", ok: Boolean(appConfig.sentryDsn), optional: true, hint: "Error alerting (logs work without)" },
+    ];
+    res.json({ ok: true, checks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One-tap proof that the env-configured WhatsApp pipe works: sends a test
+// message to the given number (e.g. the owner's own phone). Admin-only.
+app.post("/api/admin/test-whatsapp", async (req, res, next) => {
+  try {
+    if (!isAdminSession(req)) return res.status(404).json({ error: "Not found" });
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    if (phone.length < 8 || phone.length > 15) {
+      return res.status(400).json({ error: "Enter the full number with country code, e.g. 919812345678." });
+    }
+    await sendPlatformTestWhatsApp(phone);
+    logger.info("admin_test_whatsapp_sent", { by: req.session.profile?.email });
+    res.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Send failed";
+    // Surface the transport's own error (e.g. Gupshup "not opted in") — that
+    // IS the diagnostic the owner needs here.
+    res.status(502).json({ error: message.slice(0, 300) });
   }
 });
 
