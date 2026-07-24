@@ -7463,7 +7463,13 @@ app.post(["/webhooks/gupshup", "/webhooks/gupshup/:token"], async (req, res, nex
   try {
     const token = String(req.params.token ?? req.query.token ?? req.get("x-webhook-token") ?? "");
     if (!appConfig.gupshupWebhookSecret || !secretsMatch(token, appConfig.gupshupWebhookSecret)) {
-      return res.status(401).json({ error: "Invalid webhook token" });
+      // 200, not 401: Gupshup's dashboard fires an unauthenticated test POST
+      // when a webhook is added and rejects the URL unless it gets a 2xx.
+      // Ack-and-ignore is safe — nothing below runs without a valid token, so
+      // a forged post can't inject anything; it just gets a polite nod. The
+      // warn keeps a misconfigured token from passing silently forever.
+      logger.warn("gupshup_webhook_bad_token", { hasToken: token.length > 0 });
+      return res.json({ ok: true });
     }
     const inbound = parseGupshupInbound(req.body);
     // Delivery receipts, opt-in events, media without captions… — ack and move on.
