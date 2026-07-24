@@ -21,18 +21,27 @@ a controlled pilot, because:
 | `OPERATIONAL_STORE` | `dual` | Payments/leads/bookings on Postgres — **the payment-failure fix goes live with this flag** |
 | `MAX_WORKSPACES` | `35` | Only your invitees get in, even if the link leaks |
 | `XAI_API_KEY` | your xAI key | Enables all AI features (replies, assistant, drafting) |
+| `ADMIN_EMAILS` | your Gmail | Unlocks the `/admin` dashboard (manual recharges, IG-access queue) |
+| `SUPPORT_WHATSAPP` | `91XXXXXXXXXX` | One-tap "request top-up" + "request Instagram access" buttons route to you |
+| `GUPSHUP_API_KEY` | from gupshup.io | Automated WhatsApp sends (templates, reminders) — per-message pricing, no Meta review needed |
+| `GUPSHUP_APP_NAME` | your Gupshup app | — |
+| `GUPSHUP_SOURCE_NUMBER` | `91XXXXXXXXXX` | Your registered WhatsApp business number, digits only |
+| `GUPSHUP_WEBHOOK_SECRET` | `openssl rand -hex 24` | Inbound client replies. Set Gupshup's callback URL to `https://www.busydays.co/webhooks/gupshup?token=<secret>` |
 | `BILLING_ENFORCED` | *(leave unset)* | Usage tracked, nothing ever blocks — right for a pilot |
 | `DATABASE_CA_CERT` | *(optional)* | PEM CA → DB certificate verification on |
 
 Already set and unchanged: `DATABASE_URL`, `SESSION_SECRET` (32+ chars), `TOKEN_ENCRYPTION_KEY`.
 
 ### Google Cloud (console.cloud.google.com)
-1. **OAuth consent screen** → keep **Publishing status = Testing**.
-2. **Test users → Add users** → paste each pilot artist's Google email.
-   ⚠️ *An artist CANNOT sign in until her email is on this list — collect emails first.*
-3. **Credentials → your OAuth client → Authorized redirect URIs** → add
-   `https://www.busydays.co/auth/google/callback`.
-4. Don't publish to Production until verification is approved.
+1. **OAuth consent screen → Publishing status → PUBLISH APP** ("In production").
+   This stops the 7-day refresh-token expiry that keeps signing everyone out,
+   and removes the test-user list requirement. Until verification is approved,
+   artists see an "unverified app" warning at sign-in — walk them through
+   **Advanced → Go to busydays.co** (sensitive-scope cap: 100 users, fine for the pilot).
+2. **Credentials → your OAuth client → Authorized redirect URIs** → confirm
+   `https://www.busydays.co/auth/google/callback` is present.
+3. **Resubmit verification** (privacy URL `https://www.busydays.co/legal/privacy`)
+   and reply to Google's email with the scope-justification draft.
 
 ### Smoke test (60 seconds, before inviting anyone)
 `https://www.busydays.co/api/health` → `{"ok":true}` → sign in with a test-user
@@ -43,9 +52,22 @@ working)** → send an invoice (wa.me opens) → check the Google Sheet mirrored
 
 ## 2. Instagram + WhatsApp setup & testing the AI replies
 
-### While Meta review is pending (Development Mode)
-Only accounts with a **role on your Meta app** can complete the Business Login.
-That's fine for testing and for a hand-picked artist or two:
+### WhatsApp — zero per-artist setup (Gupshup)
+With the `GUPSHUP_*` env set (§1), confirmations, reminders and payment nudges
+send automatically from the platform number, and client **replies** flow back
+into the right artist's Messages tab (routed by the client's phone) with an
+AI-drafted response — auto-sent if she's enabled auto-reply. Artists connect
+nothing. Connecting an artist's *own* number unlocks after Meta app review.
+
+### Instagram — the in-app access pipeline (while Meta review is pending)
+Only invited tester accounts can connect in Development Mode. The product runs
+the whole dance: artist taps **Request Instagram access** on her Settings card →
+it appears in your **/admin → Instagram access requests** queue with her @handle
+→ tap **Open Meta roles ↗** (deep link), paste the handle, send the invite (your
+one manual click — Meta has no API for this) → tap **Mark invited** → her card
+shows exactly where to accept in Instagram, then she connects.
+
+### Meta app plumbing (one-time, if not already set)
 
 1. **Meta env on Railway** (if not already set): `META_APP_ID`, `META_APP_SECRET`,
    `META_WEBHOOK_VERIFY_TOKEN` (any random string you choose),
@@ -91,7 +113,7 @@ batch instead of 30 people hitting the same rock.
 
 ### Before day 1
 - [ ] Railway env set (§1), smoke test passed.
-- [ ] Collect each artist's **Google email** and add all 30 to Google **Test users**.
+- [ ] Gupshup templates approved and their IDs pasted into Settings (template fields).
 - [ ] Create a WhatsApp group (you + pilot artists) as the support channel.
 
 ### Per artist (~20-min concierge call / screen share)

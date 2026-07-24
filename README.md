@@ -1,6 +1,8 @@
-# 1Glam Booking OS
+# BusyDays (1Glam Booking OS)
 
-Private-code booking infrastructure for luxury makeup artists. The app keeps platform code on your side, while provisioning Google Sheets and Google Calendar assets inside the artist's own Google account through OAuth.
+Booking + client-communication platform for makeup artists and beauty professionals — live at **www.busydays.co**. Postgres is the operational system of record (leads/bookings/payments, `OPERATIONAL_STORE=dual`), with a Google Sheet the artist owns kept as a best-effort mirror; Google Calendar holds every booking's real time block. WhatsApp automation rides Gupshup (per-message BSP, inbound + outbound); Instagram DMs connect via Meta. AI (xAI Grok) enriches leads, drafts replies in the artist's voice, and can auto-reply behind price/commitment guardrails.
+
+Operational docs: `PILOT.md` (launch runbook) · `DEPLOYMENT.md` · `mobile/README.md` (iOS/Android shells).
 
 ## What this MVP includes
 
@@ -40,7 +42,9 @@ Private-code booking infrastructure for luxury makeup artists. The app keeps pla
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_CLIENT_SECRET`
    - `GOOGLE_MAPS_API_KEY` for automatic travel intelligence
-   - `WATI_WEBHOOK_SECRET` and `MANYCHAT_WEBHOOK_SECRET` if you want signed webhooks
+   - `GUPSHUP_API_KEY`, `GUPSHUP_APP_NAME`, `GUPSHUP_SOURCE_NUMBER`, `GUPSHUP_WEBHOOK_SECRET` for automated WhatsApp (see `.env.example`)
+   - `ADMIN_EMAILS` (the `/admin` dashboard) and `SUPPORT_WHATSAPP` (in-app support/request buttons)
+   - `WATI_WEBHOOK_SECRET` and `MANYCHAT_WEBHOOK_SECRET` if you want signed webhooks from those vendors
    - `XAI_API_KEY` and optional `XAI_MODEL` for Grok enrichment
    - `META_APP_ID`
    - `META_APP_SECRET`
@@ -95,6 +99,7 @@ Authenticated routes use the signed-in owner's Google session and operate on tha
 - `GET /auth/meta/callback`
 - `POST /api/meta/connections/:channel/assets`
 - `POST /api/meta/disconnect/:channel`
+- `POST /webhooks/gupshup` (inbound WhatsApp replies, `?token=GUPSHUP_WEBHOOK_SECRET`)
 - `POST /webhooks/wati`
 - `POST /webhooks/manychat`
 - `GET /webhooks/meta`
