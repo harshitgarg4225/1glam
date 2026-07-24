@@ -7444,15 +7444,17 @@ app.post("/api/meta/disconnect/:channel", async (req, res, next) => {
 
 // Inbound WhatsApp via the shared Gupshup number. Outbound reminders and
 // confirmations go out through Gupshup; when a client REPLIES, Gupshup posts
-// the message here (callback URL set in their dashboard:
-// /webhooks/gupshup?token=GUPSHUP_WEBHOOK_SECRET). Because the number is
-// shared by every workspace, the sender's phone is the routing key — we find
-// the lead whose clientWhatsApp matches and process the reply exactly like the
-// per-workspace Meta webhook: opt-outs honoured, conversation logged, AI reply
-// drafted, and (opt-in, guarded) auto-sent back through Gupshup.
-app.post("/webhooks/gupshup", async (req, res, next) => {
+// the message here. Set the dashboard callback URL to
+// /webhooks/gupshup/GUPSHUP_WEBHOOK_SECRET — a PATH segment, because Gupshup's
+// URL validator rejects query strings ("Invalid URL Passed"). The query-param
+// and x-webhook-token header forms also work for other setups. Because the
+// number is shared by every workspace, the sender's phone is the routing key —
+// we find the lead whose clientWhatsApp matches and process the reply exactly
+// like the per-workspace Meta webhook: opt-outs honoured, conversation logged,
+// AI reply drafted, and (opt-in, guarded) auto-sent back through Gupshup.
+app.post(["/webhooks/gupshup", "/webhooks/gupshup/:token"], async (req, res, next) => {
   try {
-    const token = String(req.query.token ?? "");
+    const token = String(req.params.token ?? req.query.token ?? req.get("x-webhook-token") ?? "");
     if (!appConfig.gupshupWebhookSecret || !secretsMatch(token, appConfig.gupshupWebhookSecret)) {
       return res.status(401).json({ error: "Invalid webhook token" });
     }
