@@ -123,6 +123,20 @@
       }
       .sgroup-chip:hover { border-color: var(--accent); color: var(--text); }
       .sgroup-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+      /* Channel-connect journey stepper */
+      .chan-step { display: flex; gap: 14px; padding: 14px 0; }
+      .chan-step + .chan-step { border-top: 1px dashed var(--line); }
+      .chan-step-dot {
+        flex: 0 0 30px; width: 30px; height: 30px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 14px; font-weight: 700; border: 2px solid var(--line); color: var(--muted); background: var(--card);
+      }
+      .chan-step.done .chan-step-dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .chan-step.current .chan-step-dot { border-color: var(--accent); color: var(--accent); }
+      .chan-step.upcoming { opacity: 0.55; }
+      .chan-step-body { flex: 1; min-width: 0; }
+      .chan-step-title { font-weight: 700; font-size: 14.5px; margin-bottom: 2px; }
+      .chan-step-sub { font-size: 13px; color: var(--muted); line-height: 1.55; }
       .credits-pill.low { border-color: #E0A23C; background: #FDF4E3; color: #9A6516; }
 
       .tabs {
@@ -1332,6 +1346,7 @@
         <button class="tab-button" type="button" data-tab="documents">Documents</button>
         <button class="tab-button" type="button" data-tab="calendar">Calendar</button>
         <button class="tab-button" type="button" data-tab="conversations">Messages<span class="tab-badge" id="badge-messages" style="display:none;"></span></button>
+        <button class="tab-button" type="button" data-tab="channels">Insta &amp; WhatsApp</button>
         <button class="tab-button" type="button" data-tab="reviews">Reviews</button>
         <button class="tab-button" type="button" data-tab="mypage">My Page</button>
         <button class="tab-button" type="button" data-tab="myai">My AI</button>
@@ -1345,7 +1360,6 @@
             <button class="tab-more-item" type="button" data-tab="shop">🛍️ Shop &amp; inventory</button>
             <button class="tab-more-item" type="button" data-tab="team">👥 Team</button>
             <div class="tab-more-head">Setup</div>
-            <button class="tab-more-item" type="button" data-tab="channels">🔗 WhatsApp &amp; Instagram</button>
             <button class="tab-more-item" type="button" data-tab="setup">⚙️ Settings</button>
           </div>
         </div>
@@ -4387,7 +4401,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       const tabMoreTrigger = document.getElementById("tab-more-trigger");
       // Every tab that lives inside the "More" dropdown — keep in sync with the
       // #tab-more-menu markup, or selecting that tab won't light the trigger.
-      const MORE_TABS = ["wallet", "analytics", "shop", "team", "channels", "setup"];
+      const MORE_TABS = ["wallet", "analytics", "shop", "team", "setup"];
 
       function activateTab(name) {
         tabNav.querySelectorAll(".tab-button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === name));
@@ -8241,59 +8255,91 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       function renderMetaConnections(workspace, profile) {
         const instagram = workspace?.metaConnections?.instagram;
         const whatsapp = workspace?.metaConnections?.whatsapp;
-        // During the invite-only pilot, Instagram OAuth only works for accounts
-        // we've invited as testers — so an unconnected Instagram card offers a
-        // ONE-TAP request to the support WhatsApp instead of a dead-end error.
+        // Designed for a makeup artist doing this for the FIRST time: no Meta
+        // jargon, one visible next step, and a clear "you're done" state.
         const supportWa = String(sessionState?.supportWhatsApp || "").replace(/\D/g, "");
-        function pilotHelp(channel, connection) {
-          if (connection?.status === "connected") return "";
-          if (channel === "instagram") {
-            const request = sessionState?.workspace?.igAccessRequest;
-            // Invite sent from /admin → walk her through accepting it.
-            if (request?.status === "invited") {
-              return `<div style="margin:10px 0 0;background:var(--success-soft);border:1px solid #BFE6CD;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.6;">
-                ✅ <strong>Your access invite is live!</strong> Accept it in Instagram:
-                <strong>Settings → Website permissions → Apps and websites → Tester invites → Accept</strong> — then tap Connect via Facebook above.</div>`;
-            }
-            // Request logged → set the expectation, no dead-end.
-            if (request?.status === "requested") {
-              return `<p class="muted" style="margin:10px 0 0;font-size:12.5px;line-height:1.5;">⏳ Access request sent — we usually enable it within a day. Your next step will appear right here.</p>`;
-            }
-            if (supportWa) {
-              const igHandle = sessionState?.workspace?.config?.instagramHandle || "";
-              const msg = encodeURIComponent(
-                `Hi! Please enable Instagram access for my BusyDays account so I can connect it.` +
-                (igHandle ? ` My Instagram: @${igHandle}.` : " My Instagram: @") +
-                ` My sign-in email: ${profile?.email || ""}`,
-              );
-              return `<p class="muted" style="margin:10px 0 8px;font-size:12.5px;line-height:1.5;">We're in an invite-only pilot — Instagram needs a quick access invite from us first (takes a day). Request it, and the next step appears here.</p>
-                <a class="button small secondary" style="text-decoration:none;" href="https://wa.me/${supportWa}?text=${msg}" target="_blank" rel="noreferrer" data-ig-access-request="${escapeHtml(igHandle)}">💬 Request Instagram access</a>`;
-            }
-            return "";
-          }
-          if (channel === "whatsapp") {
-            return `<p class="muted" style="margin:10px 0 0;font-size:12.5px;line-height:1.5;">✓ Nothing to set up — booking confirmations and reminders already send automatically from the BusyDays number. Connecting your <strong>own</strong> number (so replies come from you) unlocks after Meta's approval.</p>`;
-          }
-          return "";
+        const igRequest = sessionState?.workspace?.igAccessRequest;
+        const igHandle = sessionState?.workspace?.config?.instagramHandle || "";
+
+        function connectedCard(label, handle, channel, advanced) {
+          return `<div class="mini-card">
+            <div class="kicker">${label}</div>
+            <p style="margin:10px 0 4px;font-size:16px;font-weight:700;">✅ Connected</p>
+            <p class="muted" style="margin:0 0 12px;">${escapeHtml(handle)} — enquiries flow in and you can reply from Messages.</p>
+            <div class="action-row"><button class="button small secondary" type="button" data-meta-disconnect="${channel}">Disconnect</button></div>
+            ${advanced || ""}</div>`;
         }
-        function block(label, channel, connection) {
-          const status = connection?.status || "not connected";
-          const handle = channel === "instagram"
-            ? (connection?.instagramUsername || connection?.pageName || "No asset selected yet")
-            : (connection?.businessAccountName || connection?.phoneNumberId || "No phone number linked yet");
-          const oauthButton = `<a class="button small" href="/auth/meta/start?channel=${channel}">Connect via Facebook</a>`;
-          const extraControl = channel === "instagram"
-            ? `<details class="collapse" style="margin-top:12px;padding:2px 14px;"><summary style="font-size:14px;padding:12px 0;">Advanced: paste token</summary><div class="collapse-body" style="padding-bottom:14px;"><input type="password" placeholder="Paste Instagram token" data-instagram-token-input style="width:100%;margin-bottom:8px;" /><button class="button small secondary" type="button" data-instagram-token-save>Save Token</button></div></details>`
-            : `<div style="margin-top:10px;"><button class="button small secondary" type="button" data-whatsapp-test-connect>Use Test Number</button></div>`;
-          return `<div class="mini-card"><div class="kicker">${label}</div>
-            <p style="margin:8px 0 6px;"><span class="${status === "connected" ? "pill success" : "pill warning"}">${status}</span></p>
-            <p class="muted" style="margin:0 0 10px;">${escapeHtml(handle)}</p>
-            <div class="action-row">${oauthButton}<button class="button small secondary" type="button" data-meta-disconnect="${channel}">Disconnect</button></div>
-            ${pilotHelp(channel, connection)}
-            ${extraControl}</div>`;
+
+        // ── WhatsApp: for the artist there is genuinely NOTHING to do. ──
+        function whatsappCard() {
+          const advanced = `<details class="collapse" style="margin-top:12px;padding:2px 14px;"><summary style="font-size:13.5px;padding:10px 0;color:var(--muted);">Advanced — connect your own number</summary><div class="collapse-body" style="padding-bottom:14px;"><p class="muted" style="font-size:12.5px;margin:0 0 10px;line-height:1.55;">After Meta approves our app, you can link your own WhatsApp Business number so replies come from you. Until then, everything already works via BusyDays.</p><div class="action-row"><a class="button small secondary" href="/auth/meta/start?channel=whatsapp">Connect via Facebook</a><button class="button small secondary" type="button" data-whatsapp-test-connect>Use Test Number</button></div></div></details>`;
+          if (whatsapp?.status === "connected") {
+            return connectedCard("WhatsApp", whatsapp.businessAccountName || whatsapp.phoneNumberId || "Your number", "whatsapp", "");
+          }
+          return `<div class="mini-card">
+            <div class="kicker">WhatsApp</div>
+            <p style="margin:10px 0 4px;font-size:16px;font-weight:700;">✅ Already working</p>
+            <p class="muted" style="margin:0;line-height:1.55;">Booking confirmations, reminders and payment nudges send automatically, and client replies land in your <strong>Messages</strong> tab. Nothing to set up.</p>
+            ${advanced}</div>`;
         }
-        metaSummary.innerHTML = `<div class="mini-grid">${block("Instagram", "instagram", instagram)}${block("WhatsApp", "whatsapp", whatsapp)}</div>
-          <p class="muted" style="margin-top:14px;">Connecting Instagram and WhatsApp lets new enquiries flow in automatically and lets you reply right from here. Only you can see your own account — your data stays private to you.</p>`;
+
+        // ── Instagram: a 3-step journey with ONE lit-up step at a time. ──
+        function instagramCard() {
+          const advanced = `<details class="collapse" style="margin-top:12px;padding:2px 14px;"><summary style="font-size:13.5px;padding:10px 0;color:var(--muted);">Advanced: paste token</summary><div class="collapse-body" style="padding-bottom:14px;"><input type="password" placeholder="Paste Instagram token" data-instagram-token-input style="width:100%;margin-bottom:8px;" /><button class="button small secondary" type="button" data-instagram-token-save>Save Token</button></div></details>`;
+          if (instagram?.status === "connected") {
+            return connectedCard("Instagram", "@" + (instagram.instagramUsername || instagram.pageName || "your account"), "instagram", advanced);
+          }
+          const stage = igRequest?.status === "invited" ? 2 : igRequest?.status === "requested" ? 1 : 0;
+          // At "invited", BOTH remaining steps are hers to do right now (accept
+          // in Instagram, then connect) — showing accept as ✓-done before she
+          // did it would be a lie.
+          const states = stage === 2 ? ["done", "current", "current"]
+            : stage === 1 ? ["done", "current", "upcoming"]
+            : ["current", "upcoming", "upcoming"];
+          const cls = (n) => states[n];
+          const dot = (n) => (states[n] === "done" ? "✓" : String(n + 1));
+
+          const msg = encodeURIComponent(
+            `Hi! Please enable Instagram access for my BusyDays account so I can connect it.` +
+            (igHandle ? ` My Instagram: @${igHandle}.` : " My Instagram: @") +
+            ` My sign-in email: ${profile?.email || ""}`,
+          );
+          const step1Action = stage === 0
+            ? (supportWa
+                ? `<a class="button small" style="text-decoration:none;margin-top:8px;display:inline-block;" href="https://wa.me/${supportWa}?text=${msg}" target="_blank" rel="noreferrer" data-ig-access-request="${escapeHtml(igHandle)}">💬 Request access</a>`
+                : `<p class="muted" style="margin:6px 0 0;font-size:12.5px;">Message your BusyDays contact to enable access.</p>`)
+            : "";
+          const step2Sub = stage < 1
+            ? "We enable your account — usually within a day."
+            : stage === 1
+              ? "We're on it — usually within a day. The next step appears here automatically."
+              : `Open Instagram → <strong>Settings → Website permissions → Apps and websites → Tester invites</strong> → Accept.`;
+          const step3Action = stage === 2
+            ? `<a class="button small" style="text-decoration:none;margin-top:8px;display:inline-block;" href="/auth/meta/start?channel=instagram">Connect Instagram</a>`
+            : "";
+
+          return `<div class="mini-card">
+            <div class="kicker">Instagram</div>
+            <p class="muted" style="margin:8px 0 4px;line-height:1.55;">Three quick steps and your DMs flow in with AI-drafted replies.</p>
+            <div class="chan-step ${cls(0)}"><div class="chan-step-dot">${dot(0)}</div><div class="chan-step-body">
+              <div class="chan-step-title">Request access</div>
+              <div class="chan-step-sub">${stage === 0 ? "One tap — we get a note with your handle." : "Requested ✓"}</div>
+              ${step1Action}
+            </div></div>
+            <div class="chan-step ${cls(1)}"><div class="chan-step-dot">${dot(1)}</div><div class="chan-step-body">
+              <div class="chan-step-title">${stage === 2 ? "Accept the invite in Instagram" : "We enable your account"}</div>
+              <div class="chan-step-sub">${step2Sub}</div>
+            </div></div>
+            <div class="chan-step ${cls(2)}"><div class="chan-step-dot">${dot(2)}</div><div class="chan-step-body">
+              <div class="chan-step-title">Connect</div>
+              <div class="chan-step-sub">${stage === 2 ? "Accepted the invite? Tap below and approve — takes 30 seconds." : "The final tap — unlocks after step 2."}</div>
+              ${step3Action}
+            </div></div>
+            ${advanced}</div>`;
+        }
+
+        metaSummary.innerHTML = `<div class="mini-grid">${instagramCard()}${whatsappCard()}</div>
+          <p class="muted" style="margin-top:14px;">Only you can see your own account — your data stays private to you.</p>`;
       }
 
       // Tapping "Request Instagram access" records the request server-side (it
