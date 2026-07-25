@@ -3354,9 +3354,12 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
 
 Thank you so much love, that date is open! I'll keep it tentatively held for you."></textarea>
           <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <button type="button" id="tone-screenshot-btn" class="button secondary">📸 Upload chat screenshots instead</button>
+            <input type="file" id="tone-screenshot-input" accept="image/*" multiple style="display:none;" />
             <button type="button" id="train-tone-btn" class="button secondary">✨ Learn my tone</button>
             <span id="train-tone-status" class="muted" style="font-size:12.5px;"></span>
           </div>
+          <p class="muted" style="margin:6px 0 0;font-size:12px;">Screenshots of your WhatsApp or Instagram chats work — we pull out just <em>your</em> replies and drop them in the box above for you to check. Nothing is learned until you tap ✨ Learn my tone.</p>
           <div id="tone-profile-wrap" style="display:none;margin-top:12px;">
             <label for="aiToneProfile">Your AI voice profile (editable)</label>
             <p class="muted" style="margin:2px 0 6px;font-size:12.5px;">This is how the AI now understands your style. Learning it saves automatically — but if you tweak it by hand, hit <strong>Save AI settings</strong> below to keep your edits.</p>
@@ -7791,6 +7794,43 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       document.getElementById("train-tone-btn")?.addEventListener("click", async () => {
+        // Screenshots → her replies, extracted by vision into the samples box
+        // for review. Deliberately does NOT auto-train: she stays in control.
+        document.getElementById("tone-screenshot-btn")?.addEventListener("click", () =>
+          document.getElementById("tone-screenshot-input").click());
+        document.getElementById("tone-screenshot-input")?.addEventListener("change", async (e) => {
+          const files = [...(e.target.files || [])].slice(0, 5);
+          if (!files.length) return;
+          const statusEl = document.getElementById("train-tone-status");
+          for (const f of files) {
+            if (!/^image\//.test(f.type || "") || f.size > 10 * 1024 * 1024) {
+              statusEl.textContent = "Please choose image screenshots under 10 MB each.";
+              e.target.value = "";
+              return;
+            }
+          }
+          const btn = document.getElementById("tone-screenshot-btn");
+          setLoading(btn, "Reading your chats…");
+          statusEl.textContent = files.length > 1 ? `Reading ${files.length} screenshots…` : "Reading your screenshot…";
+          try {
+            const fd = new FormData();
+            files.forEach((f) => fd.append("screenshots", f));
+            const res = await fetch("/api/ai/tone-from-screenshots", { method: "POST", body: fd });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) throw new Error(data.error || "Couldn't read those screenshots — try clearer ones.");
+            const box = document.getElementById("aiToneSamples");
+            const existing = box.value.trim();
+            box.value = (existing ? existing + "\n\n" : "") + data.messages.join("\n\n");
+            statusEl.textContent = `✓ Found ${data.messages.length} of your replies — check them above, then tap ✨ Learn my tone.`;
+            box.scrollIntoView({ behavior: "smooth", block: "center" });
+          } catch (err) {
+            statusEl.textContent = err.message;
+          } finally {
+            clearLoading(btn, "📸 Upload chat screenshots instead");
+            e.target.value = "";
+          }
+        });
+
         const samplesEl = document.getElementById("aiToneSamples");
         const statusEl = document.getElementById("train-tone-status");
         const btn = document.getElementById("train-tone-btn");

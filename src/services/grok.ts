@@ -237,6 +237,62 @@ export async function deriveToneProfile(input: {
   }
 }
 
+// Reads chat screenshots (WhatsApp/Instagram) and extracts ONLY the messages
+// the account owner sent — the outgoing bubbles — so an artist can teach the
+// AI her voice by uploading screenshots instead of copy-typing old replies.
+// Returns [] on any failure or when no key is configured (callers surface a
+// friendly message).
+export async function extractOwnMessagesFromScreenshots(
+  images: { mimeType: string; base64: string }[],
+): Promise<string[]> {
+  if (!appConfig.xaiApiKey || images.length === 0) return [];
+
+  const systemPrompt =
+    "You are reading chat screenshots (WhatsApp or Instagram DMs) uploaded by a business owner. " +
+    "Extract ONLY the messages SENT BY THE OWNER — the outgoing bubbles (usually right-aligned, " +
+    "often green in WhatsApp or blue/violet in Instagram). Ignore the other person's messages, " +
+    "timestamps, dates, and system text. Return strict JSON only: {\"messages\": [\"...\"]} " +
+    "with each owner message verbatim as its own string, in reading order. If you cannot tell " +
+    "which side is the owner, prefer the right-aligned bubbles. Return {\"messages\": []} if none.";
+
+  const content: Array<Record<string, unknown>> = [
+    { type: "input_text", text: "Extract my (the owner's) messages from these chat screenshots." },
+    ...images.map((img) => ({
+      type: "input_image",
+      image_url: `data:${img.mimeType};base64,${img.base64}`,
+    })),
+  ];
+
+  try {
+    const response = await fetchWithTimeout("https://api.x.ai/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${appConfig.xaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: appConfig.xaiModel,
+        input: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content },
+        ],
+      }),
+    }, 90000);
+    if (!response.ok) return [];
+    const payload = (await response.json()) as { output_text?: string };
+    const parsed = payload.output_text ? safeParseJson(payload.output_text) : null;
+    const messages = Array.isArray((parsed as { messages?: unknown })?.messages)
+      ? ((parsed as { messages: unknown[] }).messages)
+      : [];
+    return messages
+      .map((m) => String(m ?? "").trim())
+      .filter((m) => m.length > 1 && m.length < 1200)
+      .slice(0, 30);
+  } catch {
+    return [];
+  }
+}
+
 export type GrokReviewReplies = {
   sentiment: "positive" | "neutral" | "negative";
   replies: string[];
