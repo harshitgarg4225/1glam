@@ -95,7 +95,11 @@ const envSchema = z.object({
       [
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile",
-        "https://www.googleapis.com/auth/spreadsheets",
+        // No auth/spreadsheets: the Sheets API accepts drive.file for files
+        // the app itself created — which is our only Sheets usage (the one
+        // workspace sheet we provision). Dropping the sensitive scope was
+        // requested by Google verification and leaves calendar as the only
+        // sensitive scope. Tokens granted earlier keep their wider scopes.
         "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/drive.file",
       ].join(","),

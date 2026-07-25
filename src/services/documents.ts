@@ -281,9 +281,9 @@ export async function buildQuotePdfBytes(
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   const logo = await embedLogo(pdf, workspace.config.logoUrl);
-  drawDocumentFrame(page, workspace, theme);
+  drawDocumentFrame(page, workspace, theme, bold);
   drawHeader(page, {
-    title: "Luxury Quote",
+    title: "Quote",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: quoteNumber,
     docDate: new Date().toLocaleDateString("en-IN", { timeZone: workspace.config.timezone || "Asia/Kolkata" }),
@@ -380,9 +380,9 @@ export async function buildInvoicePdfBytes(
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   const logo = await embedLogo(pdf, workspace.config.logoUrl);
-  drawDocumentFrame(page, workspace, theme);
+  drawDocumentFrame(page, workspace, theme, bold);
   drawHeader(page, {
-    title: "Booking Invoice",
+    title: "Invoice",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
     docNumber: invoiceNumber,
     docDate: new Date().toLocaleDateString("en-IN", { timeZone: workspace.config.timezone || "Asia/Kolkata" }),
@@ -505,7 +505,7 @@ export async function generateContractPdfBytes(
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   const logo = await embedLogo(pdf, workspace.config.logoUrl);
-  drawDocumentFrame(page, workspace, theme);
+  drawDocumentFrame(page, workspace, theme, bold);
   drawHeader(page, {
     title: "Booking Agreement",
     subtitle: workspace.config.businessName || workspace.config.ownerName,
@@ -590,28 +590,37 @@ function resolveInvoiceStage(booking: BookingRecord): InvoiceStage {
   };
 }
 
-function drawDocumentFrame(page: PDFDocument["addPage"] extends (...args: any[]) => infer T ? T : never, workspace: WorkspaceRecord, theme: DocumentTheme) {
-  page.drawRectangle({
-    x: 24,
-    y: 24,
-    width: 547,
-    height: 794,
-    borderColor: theme.frameBorder,
-    borderWidth: 1,
+// Wide-tracked caps (the fashion-masthead treatment): letters separated by
+// spaces, sized down until the line fits the given width.
+function trackedCaps(font: PDFFont, text: string, maxWidth: number, preferredSize: number) {
+  const tracked = text.toUpperCase().split("").join(" ");
+  for (const size of [preferredSize, preferredSize - 2, preferredSize - 4, 9]) {
+    if (font.widthOfTextAtSize(tracked, size) <= maxWidth) return { text: tracked, size };
+  }
+  return { text: tracked, size: 8 };
+}
+
+function drawDocumentFrame(
+  page: PDFDocument["addPage"] extends (...args: any[]) => infer T ? T : never,
+  workspace: WorkspaceRecord,
+  theme: DocumentTheme,
+  bold: PDFFont,
+) {
+  // Masthead: a full-bleed band in the brand colour with the studio's name in
+  // wide-tracked caps — the document should feel like the artist's stationery,
+  // not a system printout.
+  page.drawRectangle({ x: 0, y: 776, width: 595, height: 66, color: theme.title });
+  const name = trackedCaps(bold, workspace.config.businessName || workspace.name, 483, 15);
+  const nameWidth = bold.widthOfTextAtSize(name.text, name.size);
+  page.drawText(name.text, {
+    x: (595 - nameWidth) / 2,
+    y: 776 + 33 - name.size / 2 + 1,
+    size: name.size,
+    font: bold,
+    color: rgb(1, 1, 1),
   });
-  page.drawRectangle({
-    x: 0,
-    y: 770,
-    width: 595,
-    height: 72,
-    color: theme.bandBg,
-  });
-  page.drawText((workspace.config.businessName || workspace.name).toUpperCase(), {
-    x: 56,
-    y: 790,
-    size: 12,
-    color: theme.bandText,
-  });
+  // Hairline above the footer keeps the page grounded without a dated border box.
+  page.drawLine({ start: { x: 56, y: 62 }, end: { x: 539, y: 62 }, thickness: 0.75, color: theme.frameBorder });
 }
 
 function drawHeader(
@@ -622,40 +631,60 @@ function drawHeader(
   theme: DocumentTheme,
   logo?: { image: PdfImage; width: number; height: number } | null,
 ) {
-  page.drawText(input.title, {
+  // Kicker: the studio line, quiet and tracked; the document type carries the
+  // visual weight below it.
+  page.drawText(input.subtitle.toUpperCase(), {
     x: 56,
-    y: 720,
-    size: 28,
-    font: bold,
-    color: theme.title,
-  });
-  page.drawText(input.subtitle, {
-    x: 56,
-    y: 690,
-    size: 13,
+    y: 736,
+    size: 9.5,
     font: regular,
     color: theme.subtitle,
   });
+  page.drawText(input.title, {
+    x: 56,
+    y: 704,
+    size: 30,
+    font: bold,
+    color: theme.title,
+  });
   if (input.gstNumber) {
-    page.drawText(`GSTIN: ${input.gstNumber}`, {
+    page.drawText(`GSTIN ${input.gstNumber}`, {
       x: 56,
-      y: 674,
-      size: 10,
+      y: 686,
+      size: 9,
       font: regular,
       color: theme.meta,
     });
   }
-  // Logo sits in the top-right, vertically aligned with the title.
+
+  // Right column: meta right-aligned by MEASURED width (the old fixed x=400
+  // ran the quote number underneath the monogram badge), with the logo or a
+  // monogram badge sitting above it.
+  const right = 539;
+  const numberText = `No. ${input.docNumber}`;
+  page.drawText(numberText, {
+    x: right - bold.widthOfTextAtSize(numberText, 9.5),
+    y: 700,
+    size: 9.5,
+    font: bold,
+    color: theme.meta,
+  });
+  page.drawText(input.docDate, {
+    x: right - regular.widthOfTextAtSize(input.docDate, 9.5),
+    y: 686,
+    size: 9.5,
+    font: regular,
+    color: theme.meta,
+  });
+
   if (logo) {
     page.drawImage(logo.image, {
-      x: 595 - 56 - logo.width,
-      y: 690,
+      x: right - logo.width,
+      y: 712,
       width: logo.width,
-      height: logo.height,
+      height: Math.min(logo.height, 44),
     });
   } else {
-    // No logo: a monogram badge with the brand's initials so the header never
-    // looks unfinished. Built from the subtitle (business or owner name).
     const initials = input.subtitle
       .split(/\s+/)
       .filter(Boolean)
@@ -663,49 +692,19 @@ function drawHeader(
       .map((word) => word[0].toUpperCase())
       .join("");
     if (initials) {
-      const cx = 595 - 56 - 22;
-      const cy = 716;
-      page.drawEllipse({ x: cx, y: cy, xScale: 22, yScale: 22, color: theme.title });
-      const textWidth = bold.widthOfTextAtSize(initials, 16);
+      const cx = right - 18;
+      const cy = 730;
+      page.drawEllipse({ x: cx, y: cy, xScale: 18, yScale: 18, borderColor: theme.title, borderWidth: 1.25 });
+      const textWidth = bold.widthOfTextAtSize(initials, 13);
       page.drawText(initials, {
         x: cx - textWidth / 2,
-        y: cy - 6,
-        size: 16,
+        y: cy - 4.5,
+        size: 13,
         font: bold,
-        color: rgb(1, 1, 1),
+        color: theme.title,
       });
     }
-    page.drawText(`No. ${input.docNumber}`, {
-      x: 400,
-      y: 720,
-      size: 11,
-      font: bold,
-      color: theme.meta,
-    });
-    page.drawText(input.docDate, {
-      x: 400,
-      y: 702,
-      size: 11,
-      font: regular,
-      color: theme.meta,
-    });
-    return;
   }
-  // With a logo present, put the doc number/date just under it.
-  page.drawText(`No. ${input.docNumber}`, {
-    x: 595 - 56 - logo.width,
-    y: 678,
-    size: 10,
-    font: bold,
-    color: theme.meta,
-  });
-  page.drawText(input.docDate, {
-    x: 595 - 56 - logo.width,
-    y: 664,
-    size: 10,
-    font: regular,
-    color: theme.meta,
-  });
 }
 
 type PdfImage = Awaited<ReturnType<PDFDocument["embedPng"]>>;
@@ -760,13 +759,15 @@ function drawSection(
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   theme: DocumentTheme,
 ) {
-  page.drawText(heading, {
+  // Tracked uppercase label over a hairline rule — editorial, not form-like.
+  page.drawText(heading.toUpperCase().split("").join(" "), {
     x: 56,
     y: startY,
-    size: 12,
+    size: 9,
     font: bold,
     color: theme.sectionHeading,
   });
+  page.drawLine({ start: { x: 56, y: startY - 6 }, end: { x: 539, y: startY - 6 }, thickness: 0.5, color: theme.frameBorder });
 
   let y = startY - 24;
   for (const line of lines) {
@@ -777,7 +778,7 @@ function drawSection(
       font: regular,
       color: theme.bodyText,
     });
-    y -= 18;
+    y -= 19;
   }
 
   return y;
@@ -790,8 +791,12 @@ function drawPricingBlock(
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   theme: DocumentTheme,
 ) {
-  // Height adapts to the number of rows so GST/extra lines never overflow.
-  const blockHeight = 34 + input.lines.length * 20 + 10;
+  // Rows the client's eye should land on first get the brand colour and a
+  // larger size; amounts are RIGHT-aligned by measured width like any real
+  // financial document (the old fixed x=400 left values floating mid-page).
+  const emphasized = (label: string) => /^(quoted amount|estimated range|total|grand total|amount due|balance due)/i.test(label);
+  const rowH = (label: string) => (emphasized(label) ? 26 : 20);
+  const blockHeight = 40 + input.lines.reduce((h, [label]) => h + rowH(label), 0);
   page.drawRectangle({
     x: 56,
     y: input.y - blockHeight + 10,
@@ -799,35 +804,43 @@ function drawPricingBlock(
     height: blockHeight,
     color: theme.blockBg,
     borderColor: theme.blockBorder,
-    borderWidth: 1,
+    borderWidth: 0.75,
   });
 
-  page.drawText(input.heading, {
+  page.drawText(input.heading.toUpperCase().split("").join(" "), {
     x: 72,
-    y: input.y - 18,
-    size: 12,
+    y: input.y - 20,
+    size: 9,
     font: bold,
     color: theme.blockHeading,
   });
 
-  let y = input.y - 42;
-  for (const [label, value] of input.lines) {
+  const valueRight = 523;
+  let y = input.y - 46;
+  input.lines.forEach(([label, value], index) => {
+    const strong = emphasized(label);
+    if (strong && index > 0) {
+      // Rule above the total-style row separates it from the itemisation.
+      page.drawLine({ start: { x: 72, y: y + 14 }, end: { x: valueRight, y: y + 14 }, thickness: 0.75, color: theme.blockBorder });
+      y -= 4;
+    }
+    const size = strong ? 13 : 10.5;
     page.drawText(label, {
       x: 72,
       y,
-      size: 11,
-      font: regular,
-      color: theme.blockLabel,
+      size,
+      font: strong ? bold : regular,
+      color: strong ? theme.blockHeading : theme.blockLabel,
     });
     page.drawText(value, {
-      x: 400,
+      x: valueRight - bold.widthOfTextAtSize(value, size),
       y,
-      size: 11,
+      size,
       font: bold,
-      color: theme.blockValue,
+      color: strong ? theme.blockHeading : theme.blockValue,
     });
-    y -= 20;
-  }
+    y -= rowH(label) - (strong ? 4 : 0);
+  });
 
   return input.y - blockHeight + 10;
 }
@@ -841,13 +854,13 @@ function drawFooter(
   const footer = [
     workspace.config.businessName || workspace.name,
     workspace.config.ownerWhatsApp ? `WhatsApp ${workspace.config.ownerWhatsApp}` : "",
-    workspace.config.instagramHandle ? `Instagram @${workspace.config.instagramHandle}` : "",
-  ].filter(Boolean).join("  •  ");
+    workspace.config.instagramHandle ? `@${workspace.config.instagramHandle}` : "",
+  ].filter(Boolean).join("   ·   ");
 
   page.drawText(footer, {
-    x: 56,
+    x: (595 - regular.widthOfTextAtSize(footer, 9.5)) / 2,
     y: 44,
-    size: 10,
+    size: 9.5,
     font: regular,
     color: theme.footer,
   });
