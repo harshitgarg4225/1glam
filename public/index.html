@@ -5158,12 +5158,22 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         document.getElementById("doc-edit-kind").value = kind;
         document.getElementById("doc-edit-recordid").value = id;
         document.getElementById("doc-edit-title").textContent = `Edit ${DOC_LABELS[kind].toLowerCase()}${doc ? " · " + doc.client : ""}`;
-        document.getElementById("doc-edit-amount").value = "";
-        document.getElementById("doc-edit-discount").value = "";
-        document.getElementById("doc-edit-note").value = "";
+        // Prefill the edits already on the document — reopening should show
+        // what she changed, not a blank form that hides the current state.
+        let existing = {};
+        try {
+          const raw = kind === "quote"
+            ? (sessionState?.dashboard?.leads || []).find((l) => l.leadId === id)?.quoteAdjustments
+            : (sessionState?.dashboard?.bookings || []).find((b) => b.bookingId === id)?.[kind === "invoice" ? "invoiceAdjustments" : "contractAdjustments"];
+          existing = raw ? JSON.parse(raw) : {};
+        } catch { existing = {}; }
+        document.getElementById("doc-edit-amount").value = existing.amountOverride > 0 ? existing.amountOverride : "";
+        document.getElementById("doc-edit-discount").value = existing.discountPercent > 0 ? existing.discountPercent : "";
+        document.getElementById("doc-edit-note").value = existing.note || "";
         document.getElementById("doc-edit-lineitems").innerHTML = "";
-        document.getElementById("doc-edit-range-low").value = "";
-        document.getElementById("doc-edit-range-high").value = "";
+        (Array.isArray(existing.lineItems) ? existing.lineItems : []).forEach((it) => addLineItemRow(it.label, it.amount));
+        document.getElementById("doc-edit-range-low").value = existing.priceRangeLow > 0 ? existing.priceRangeLow : "";
+        document.getElementById("doc-edit-range-high").value = existing.priceRangeHigh > 0 ? existing.priceRangeHigh : "";
         // Estimate modes (range, saved packages) only make sense on quotes.
         document.getElementById("doc-edit-quote-extras").style.display = kind === "quote" ? "" : "none";
         if (kind === "quote") loadQuotePackagesPicker();
@@ -5232,7 +5242,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         };
         const saveBtn = document.getElementById("doc-edit-save");
         setLoading(saveBtn, "Saving…");
-        try { await postJson(docActionUrl(kind, id, "edit"), payload); toast("Document updated.", "success"); closeDocEdit(); await loadDocuments(); }
+        try {
+          await postJson(docActionUrl(kind, id, "edit"), payload);
+          toast("Document updated.", "success", { label: "👁 Preview it", onClick: () => openDocModal(docPreviewUrl(kind, id), `${DOC_LABELS[kind]} preview`, true) });
+          closeDocEdit();
+          await refreshSession();
+          await loadDocuments();
+        }
         catch (err) { toast(err.message || "Couldn't save.", "error"); }
         finally { clearLoading(saveBtn, "Save changes"); }
       });
@@ -9096,6 +9112,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${primary ? `<button class="button" style="flex:1;" data-drawer-action="${primary.action}" data-drawer-lead-id="${lead.leadId}">${primary.label}</button>` : ""}
             ${lead.quoteUrl ? `<button class="button secondary" data-doc-url="${escapeHtml(lead.quoteUrl)}" data-doc-title="Quote" data-doc-pdf="0">Open quote</button>` : ""}
             <button class="button secondary" data-doc-url="/api/leads/${lead.leadId}/quote/preview" data-doc-title="Quote preview" data-doc-pdf="1">👁 Preview quote</button>
+            <button class="button secondary" type="button" data-doc-edit="quote" data-doc-edit-id="${lead.leadId}">✏️ Edit quote</button>
             <button class="button secondary" type="button" data-open-doc-design title="Pick the design, colours and logo of your documents">🎨 Change the look</button>
           </div>
           <div class="drawer-actions-row">
@@ -10149,6 +10166,13 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         quickBookingModal.classList.add("open");
         setTimeout(() => document.getElementById(prefill?.name ? "qb-date" : "qb-name").focus(), 50);
       }
+      // "Edit quote/invoice/contract" from wherever the artist actually is —
+      // the drawers — not only the Documents tab.
+      document.body.addEventListener("click", (e) => {
+        const edit = e.target.closest("[data-doc-edit]");
+        if (edit) openDocEdit(edit.getAttribute("data-doc-edit"), edit.getAttribute("data-doc-edit-id"));
+      });
+
       document.body.addEventListener("click", (e) => {
         const again = e.target.closest("[data-book-again-name]");
         if (again) openQuickBooking({ name: again.getAttribute("data-book-again-name"), phone: again.getAttribute("data-book-again-phone") || "" });
@@ -10784,12 +10808,12 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="action-row" style="flex-wrap:wrap;gap:6px;">
               ${booking.invoiceUrl
                 ? btn(`data-doc-url="${escapeHtml(booking.invoiceUrl)}" data-doc-title="Invoice" data-doc-pdf="${booking.invoiceUrl.startsWith('/d/') ? '1' : '0'}"`, "🧾 View invoice") + btn(`data-booking-action="send-invoice" data-booking-id="${id}"`, "Resend invoice")
-                : btn(`data-booking-action="send-invoice" data-booking-id="${id}"`, "📤 Send invoice", "button small") + btn(`data-doc-url="/api/bookings/${id}/invoice/preview" data-doc-title="Invoice preview" data-doc-pdf="1"`, "👁 Preview")}
+                : btn(`data-booking-action="send-invoice" data-booking-id="${id}"`, "📤 Send invoice", "button small") + btn(`data-doc-url="/api/bookings/${id}/invoice/preview" data-doc-title="Invoice preview" data-doc-pdf="1"`, "👁 Preview") + btn(`data-doc-edit="invoice" data-doc-edit-id="${id}"`, "✏️ Edit")}
             </div>
             <div class="action-row" style="flex-wrap:wrap;gap:6px;margin-top:6px;">
               ${booking.contractUrl
                 ? btn(`data-doc-url="${escapeHtml(booking.contractUrl)}" data-doc-title="Contract" data-doc-pdf="1"`, "📄 View contract") + btn(`data-booking-action="send-contract" data-booking-id="${id}"`, "Resend contract")
-                : btn(`data-booking-action="send-contract" data-booking-id="${id}"`, "✍️ Send contract", "button small") + btn(`data-doc-url="/api/bookings/${id}/contract/preview" data-doc-title="Contract preview" data-doc-pdf="1"`, "👁 Preview")}
+                : btn(`data-booking-action="send-contract" data-booking-id="${id}"`, "✍️ Send contract", "button small") + btn(`data-doc-url="/api/bookings/${id}/contract/preview" data-doc-title="Contract preview" data-doc-pdf="1"`, "👁 Preview") + btn(`data-doc-edit="contract" data-doc-edit-id="${id}"`, "✏️ Edit")}
               ${sessionState?.workspace?.config?.contractTemplateUrl ? btn(`data-booking-action="sync-contract" data-booking-id="${id}"`, "Sync status") : ""}
             </div>
           </div>
