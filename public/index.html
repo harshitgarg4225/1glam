@@ -115,6 +115,14 @@
       .account-id { font-size: 13px; line-height: 1.5; color: var(--muted); }
       .credits-pill { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 13px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
       .credits-pill:hover { background: var(--line); }
+      .sgroup-chip {
+        appearance: none; border: 1px solid var(--line); background: var(--card);
+        color: var(--muted); font: inherit; font-size: 13.5px; font-weight: 600;
+        border-radius: 999px; padding: 8px 16px; cursor: pointer;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+      }
+      .sgroup-chip:hover { border-color: var(--accent); color: var(--text); }
+      .sgroup-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
       .credits-pill.low { border-color: #E0A23C; background: #FDF4E3; color: #9A6516; }
 
       .tabs {
@@ -2724,10 +2732,18 @@
         <form id="config-form" class="panel section">
           <div class="kicker">Manage your account</div>
           <h2>Settings</h2>
-          <p class="muted" style="margin:-4px 0 12px;font-size:14px;">Just fill in the first three sections to start taking bookings. The rest is optional and already set up with sensible defaults.</p>
-          <input type="search" id="settings-search" placeholder="🔍 Find a setting… (e.g. travel, GST, colour)" style="width:100%;box-sizing:border-box;margin:0 0 16px;" autocomplete="off" />
+          <p class="muted" style="margin:-4px 0 12px;font-size:14px;">Everything you need to start lives under <strong>The basics</strong>. The other tabs are optional extras — already set up with sensible defaults.</p>
+          <input type="search" id="settings-search" placeholder="🔍 Find a setting… (e.g. travel, GST, colour)" style="width:100%;box-sizing:border-box;margin:0 0 12px;" autocomplete="off" />
+          <!-- Simple grouping so a makeup artist is never facing 18 sections at
+               once: one group on screen at a time, search cuts across all. -->
+          <div id="settings-groups" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px;">
+            <button type="button" class="sgroup-chip active" data-sgroup="basics">💄 The basics</button>
+            <button type="button" class="sgroup-chip" data-sgroup="services">✨ Services &amp; offers</button>
+            <button type="button" class="sgroup-chip" data-sgroup="messages">💬 Messages &amp; documents</button>
+            <button type="button" class="sgroup-chip" data-sgroup="advanced">⚙️ Advanced</button>
+          </div>
 
-          <details class="collapse" open>
+          <details class="collapse" data-sgroup="basics" open>
             <summary>Your business</summary>
             <div class="collapse-body">
               <div class="section-grid">
@@ -2742,7 +2758,7 @@
             </div>
           </details>
 
-          <details class="collapse" open>
+          <details class="collapse" data-sgroup="basics" open>
             <summary>Your prices</summary>
             <div class="collapse-body">
               <p class="muted" style="margin:0 0 14px;font-size:13px;">Your starting price for each occasion. You can always adjust the final price for any client before sending a quote.</p>
@@ -2815,7 +2831,7 @@
             </div>
           </details>
 
-          <details class="collapse" open>
+          <details class="collapse" data-sgroup="basics" open>
             <summary>Your booking page</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -2925,7 +2941,7 @@
             </div>
           </details>
 
-          <details class="collapse">
+          <details class="collapse" data-sgroup="messages">
             <summary>🤖 AI assistant &amp; auto-reply</summary>
             <div class="collapse-body">
               <p class="muted" style="margin:0 0 10px;font-size:13.5px;">Your AI assistant has its own home now — teach it your voice, test how it replies, and switch auto-reply on or off from the <strong>My AI</strong> tab.</p>
@@ -2933,7 +2949,7 @@
             </div>
           </details>
 
-          <details class="collapse" id="doc-design-section">
+          <details class="collapse" data-sgroup="messages" id="doc-design-section">
             <summary>What goes inside your quotes, invoices &amp; contracts</summary>
             <div class="collapse-body">
               <div class="wide">
@@ -3000,7 +3016,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse">
+          <details class="collapse" data-sgroup="messages">
             <summary>WhatsApp message templates (advanced, optional)</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:13.5px;">
@@ -3041,7 +3057,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse">
+          <details class="collapse" data-sgroup="advanced">
             <summary>Advanced — you usually don't need this</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:13px;">These were set up automatically when you signed in. Only change them if you know what you're doing.</p>
@@ -3056,7 +3072,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse">
+          <details class="collapse" data-sgroup="services">
             <summary>Service Descriptions &amp; Add-ons</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3086,7 +3102,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="service-variants-section">
+          <details class="collapse" data-sgroup="services" id="service-variants-section">
             <summary>📦 Service packages &amp; tiers</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3098,7 +3114,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="intake-forms-section">
+          <details class="collapse" data-sgroup="services" id="intake-forms-section">
             <summary>📋 Intake &amp; consultation forms</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3115,7 +3131,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="loyalty-settings-section">
+          <details class="collapse" data-sgroup="services" id="loyalty-settings-section">
             <summary>⭐ Loyalty &amp; retention</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3137,7 +3153,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="gift-cards-settings-section">
+          <details class="collapse" data-sgroup="services" id="gift-cards-settings-section">
             <summary>🎁 Gift cards</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3155,7 +3171,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="promo-codes-settings-section">
+          <details class="collapse" data-sgroup="services" id="promo-codes-settings-section">
             <summary>🏷️ Promo codes</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3173,7 +3189,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="no-show-settings-section">
+          <details class="collapse" data-sgroup="advanced" id="no-show-settings-section">
             <summary>🚫 No-show protection</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3186,7 +3202,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="commission-settings-section">
+          <details class="collapse" data-sgroup="advanced" id="commission-settings-section">
             <summary>💼 Commission &amp; payouts</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3205,7 +3221,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="recurring-settings-section">
+          <details class="collapse" data-sgroup="services" id="recurring-settings-section">
             <summary>🔄 Recurring appointments</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3223,7 +3239,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse" id="email-settings-section">
+          <details class="collapse" data-sgroup="messages" id="email-settings-section">
             <summary>📧 Email notifications (SMTP)</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -3250,7 +3266,7 @@ Party Glam: Party makeup=5000, Lashes=500" style="min-height:72px;"></textarea>
             </div>
           </details>
 
-          <details class="collapse">
+          <details class="collapse" data-sgroup="advanced">
             <summary>Sheet Protection</summary>
             <div class="collapse-body">
               <p class="muted" style="margin-bottom:14px;font-size:14px;">
@@ -5297,10 +5313,33 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       }
 
       // ─── Settings search: find a field without knowing which section it's in ───
+      // Settings groups: only one group of sections on screen at a time — the
+      // basics by default. Hidden sections stay in the form, so saving always
+      // serialises every field regardless of the visible group.
+      let currentSettingsGroup = "basics";
+      function applySettingsGroup(group) {
+        currentSettingsGroup = group;
+        document.querySelectorAll("#config-form details.collapse[data-sgroup]").forEach((d) => {
+          d.style.display = d.getAttribute("data-sgroup") === group ? "" : "none";
+        });
+        document.querySelectorAll("#settings-groups .sgroup-chip").forEach((b) =>
+          b.classList.toggle("active", b.getAttribute("data-sgroup") === group));
+      }
+      document.getElementById("settings-groups")?.addEventListener("click", (e) => {
+        const chip = e.target.closest(".sgroup-chip");
+        if (!chip) return;
+        const search = document.getElementById("settings-search");
+        if (search) search.value = "";
+        applySettingsGroup(chip.getAttribute("data-sgroup"));
+      });
+      applySettingsGroup("basics");
+
       document.getElementById("settings-search")?.addEventListener("input", debounce((e) => {
         const q = String(e.target.value || "").trim().toLowerCase();
         const form = document.getElementById("config-form");
         const sections = document.querySelectorAll("#config-form details.collapse");
+        // Empty search → back to the active group view (not "show all 18").
+        if (!q) { applySettingsGroup(currentSettingsGroup); return; }
         sections.forEach((d) => {
           if (!q) { d.style.display = ""; return; }
           const matches = d.textContent.toLowerCase().includes(q);
@@ -8949,6 +8988,45 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         }
       }
 
+      // The money picture at a glance — the numbers an artist actually asks
+      // about ("what's the advance? was it paid? what about GST? what's left?"),
+      // using the SAME math as the quote/invoice PDFs so nothing ever disagrees.
+      function leadMoneyRows(lead) {
+        const cfg = sessionState?.workspace?.config || {};
+        const price = Number(lead.finalApprovedPrice || lead.initialAiPrice) || 0;
+        if (price <= 0) return "";
+        let pct = Number(cfg.advancePercentage) || 30;
+        try {
+          const perService = JSON.parse(cfg.depositPercentByService || "{}");
+          const override = Number(perService[lead.eventType]);
+          if (Number.isFinite(override) && override > 0) pct = override;
+        } catch { /* malformed override JSON → default % */ }
+        const advance = Math.min(price, Math.max(0, Math.round((price * pct) / 100)));
+        const gstPct = Number(cfg.gstPercentage) || 0;
+        const gstAmt = gstPct > 0 ? Math.round(price) - Math.round(price / (1 + gstPct / 100)) : 0;
+        const booking = lead.bookingId
+          ? (sessionState?.dashboard?.bookings || []).find((b) => b.bookingId === lead.bookingId)
+          : null;
+        const paid = booking ? bookingPaidTotal(booking) : 0;
+        const balance = booking ? Math.max(0, (Number(booking.finalPrice) || price) - paid) : null;
+        const paymentStatus = booking?.paymentStatus || lead.paymentStatus || "Not Started";
+
+        const row = (label, value, style = "") =>
+          `<div class="drawer-row"><span class="drawer-row-label">${label}</span><span class="drawer-row-value" ${style ? `style="${style}"` : ""}>${value}</span></div>`;
+        const rows = [];
+        if (gstAmt > 0) rows.push(row(`Includes GST @ ${gstPct}%`, escapeHtml(formatMoney(gstAmt))));
+        rows.push(row(`Advance to confirm (${pct}%)`, escapeHtml(formatMoney(advance))));
+        if (booking) {
+          rows.push(row("Paid so far", escapeHtml(formatMoney(paid)), paid > 0 ? "color:var(--success);font-weight:700;" : ""));
+          rows.push(row("Balance due", escapeHtml(formatMoney(balance)), balance > 0 ? "color:var(--danger);font-weight:700;" : "color:var(--success);font-weight:700;"));
+        }
+        rows.push(row("Payment", `<span class="${pillClass(paymentStatus)}" style="font-size:11px;">${escapeHtml(paymentStatus)}</span>`));
+        if (!booking && paymentStatus === "Not Started") {
+          rows.push(`<p class="muted" style="margin:8px 0 0;font-size:12.5px;line-height:1.5;">Nothing received yet — ${escapeHtml(formatMoney(advance))} confirms the date.</p>`);
+        }
+        return rows.join("");
+      }
+
       function renderLeadDrawer(lead) {
         document.getElementById("drawer-client-name").textContent = lead.clientName || "Client details";
 
@@ -8980,6 +9058,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             <div class="drawer-section-title">Quote &amp; status</div>
             <div style="margin-bottom:10px;">${priceStr}</div>
             ${!lead.finalApprovedPrice && lead.initialAiPrice && priceExplanation(lead) ? `<p class="muted" style="margin:-4px 0 10px;font-size:12.5px;line-height:1.5;">💡 ${escapeHtml(priceExplanation(lead))}</p>` : ""}
+            ${leadMoneyRows(lead)}
             <div class="drawer-row"><span class="drawer-row-label">Status</span><span class="drawer-row-value">${escapeHtml(statusLabel(lead.status))}</span></div>
             ${lead.status === "Awaiting Client" && lead.holdExpiresAt ? `<div class="drawer-row"><span class="drawer-row-label">Hold expires</span><span class="drawer-row-value" style="color:${new Date(lead.holdExpiresAt) < new Date() ? "var(--danger)" : "var(--warning)"};">${escapeHtml(formatDate(lead.holdExpiresAt))}${new Date(lead.holdExpiresAt) < new Date() ? " — lapsed" : ""}</span></div>` : ""}
             ${lead.profileTier ? `<div class="drawer-row"><span class="drawer-row-label">Client type</span><span class="drawer-row-value">${lead.profileTier === "High" ? "VIP / celebrity" : lead.profileTier === "Mid" ? "Premium" : "Regular"}</span></div>` : ""}
