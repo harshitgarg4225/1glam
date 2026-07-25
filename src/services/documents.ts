@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont, type PDFPage } 
 import { fetchWithTimeout, isPublicHttpUrlResolved } from "./http.js";
 import QRCode from "qrcode";
 import type { Credentials } from "google-auth-library";
-import { buildPublicDocumentUrl, buildInvoicePageUrl, buildQuoteViewUrl } from "./document-links.js";
+import { buildInvoicePageUrl, buildQuoteViewUrl } from "./document-links.js";
 import { getDocumentTheme, type DocumentTheme } from "./document-themes.js";
 import type { WorkspaceRecord } from "../types.js";
 import { computeAdvanceAmount, depositPercentForEvent, parsePaymentsLog, paymentsTotal, type BookingRecord, type LeadRecord } from "./booking.js";
