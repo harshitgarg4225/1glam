@@ -30,7 +30,7 @@ Open the artist's booking link on your phone (share it from the topbar).
 
 - [ ] Page loads fast, burgundy brand, services show prices + durations.
 - [ ] Pick a service → calendar shows availability → pick a date.
-- [ ] **Time:** the question is "What time do you need to be ready by?" (or ready-by-labelled slot chips). Pick one → expect the line "Your artist starts at X — you'll be ready by Y (about Nh)".
+- [ ] **Time:** the question is "What time do you need to be ready by?" (or ready-by-labelled slot chips). Pick one → expect the line "Your artist starts at X — you'll be ready by Y (about Nh)". *If it instead says "Preferred start time", that service has no duration set in Settings → Services — set one and reload. Not a bug, but worth fixing before an artist goes live.*
 - [ ] Negative: try a ready-by too early for the service (e.g. 2 AM) → clear error, submit blocked.
 - [ ] Multi-day: tick "runs over multiple days", try an end date before the start → blocked with a message.
 - [ ] Fill name/WhatsApp (use YOUR real number as the client) → Request booking → warm confirmation screen.
