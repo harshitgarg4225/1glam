@@ -109,7 +109,7 @@ import {
   verifyMetaWebhook,
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
-import { generateConversationReply, deriveToneProfile, draftCampaignMessage } from "./services/grok.js";
+import { generateConversationReply, deriveToneProfile, draftCampaignMessage, extractOwnMessagesFromScreenshots } from "./services/grok.js";
 import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate, parseGupshupInbound, sendPlatformTestWhatsApp } from "./services/messaging.js";
 import { findLeadRouteByClientPhone, storeMode } from "./services/operational-store.js";
 import { startReminderScheduler } from "./services/reminders.js";
@@ -2021,6 +2021,39 @@ app.post("/api/ai/train-tone", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// Screenshots → tone samples: the artist uploads chat screenshots and vision
+// extracts HER outgoing messages, returned for review (never auto-saved — she
+// checks them in the textarea and taps "Learn my tone" herself).
+app.post("/api/ai/tone-from-screenshots", (req, res, next) => {
+  const profile = req.session.profile;
+  if (!profile) return res.status(401).json({ error: "Unauthorized" });
+  upload.array("screenshots", 5)(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || "Upload failed" });
+    try {
+      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+      if (!files.length) return res.status(400).json({ error: "Add at least one chat screenshot." });
+      for (const file of files) {
+        if (!looksLikeImage(file.buffer)) {
+          return res.status(400).json({ error: "One of those files isn't an image — please upload chat screenshots (JPG/PNG)." });
+        }
+      }
+      if (!appConfig.xaiApiKey) {
+        return res.status(503).json({ error: "AI isn't configured yet — paste a few replies manually instead." });
+      }
+      const messages = await extractOwnMessagesFromScreenshots(
+        files.map((f) => ({ mimeType: f.mimetype, base64: f.buffer.toString("base64") })),
+      );
+      if (!messages.length) {
+        return res.status(422).json({ error: "Couldn't find your messages in those screenshots — make sure your own replies (the right-side bubbles) are visible, then try again." });
+      }
+      await meterUsage(profile.email, "aiReply").catch(() => undefined);
+      res.json({ ok: true, messages });
+    } catch (error) {
+      next(error);
+    }
+  });
 });
 
 // Sends a test customer message through the full AI reply pipeline using the
