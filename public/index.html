@@ -8934,6 +8934,15 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         delete leadDrawer.dataset.leadId;
       }
 
+      // Booking actions (invoice, contract, payment) can be fired from this
+      // drawer as well as the Bookings table, so whatever just happened has to
+      // show up in the drawer the artist is still looking at.
+      function refreshOpenLeadDrawer() {
+        if (!leadDrawer.classList.contains("open")) return;
+        const updated = (sessionState?.dashboard?.leads || []).find((l) => l.leadId === leadDrawer.dataset.leadId);
+        if (updated) renderLeadDrawer(updated);
+      }
+
       // ─── Itemized order editor (in the lead drawer) ───
       function parseLeadOrderItems(lead) {
         try { const a = JSON.parse(lead.orderItems || "[]"); return Array.isArray(a) ? a : []; }
@@ -9126,7 +9135,60 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
         if (!booking && paymentStatus === "Not Started") {
           rows.push(`<p class="muted" style="margin:8px 0 0;font-size:12.5px;line-height:1.5;">Nothing received yet — ${escapeHtml(formatMoney(advance))} confirms the date.</p>`);
         }
+        // Money you can act on, not just read: record what came in, or chase
+        // what hasn't — without leaving for the Bookings tab.
+        if (booking && booking.status !== "Cancelled") {
+          const bid = escapeHtml(booking.bookingId);
+          const acts = [];
+          if (booking.paymentStatus !== "Paid in Full") {
+            acts.push(`<button class="button small" type="button" data-booking-record-payment="${bid}" style="background:var(--sage);">💰 Record payment</button>`);
+          }
+          if (booking.paymentStatus === "Advance Due") {
+            acts.push(`<button class="button small secondary" type="button" data-booking-action="advance-reminder" data-booking-id="${bid}">Send advance reminder</button>`);
+          } else if (balance > 0 && booking.paymentStatus === "Advance Paid") {
+            acts.push(`<button class="button small secondary" type="button" data-booking-action="balance-reminder" data-booking-id="${bid}">Send balance reminder</button>`);
+          }
+          if (acts.length) rows.push(`<div class="action-row" style="flex-wrap:wrap;gap:6px;margin-top:10px;">${acts.join("")}</div>`);
+        }
         return rows.join("");
+      }
+
+      // Once a request becomes a booking the money work moves from "quote" to
+      // "invoice" — so this drawer has to carry it, or the artist hits a dead end
+      // exactly where she starts getting paid. Same data-* attributes as the
+      // bookings table, so the existing delegated handlers do all the work.
+      function leadDocumentRows(lead) {
+        if (!lead.bookingId) return "";
+        const booking = (sessionState?.dashboard?.bookings || []).find((b) => b.bookingId === lead.bookingId);
+        if (!booking) return "";
+        const id = escapeHtml(booking.bookingId);
+        const btn = (attrs, label, cls = "button small secondary") =>
+          `<button class="${cls}" type="button" ${attrs}>${label}</button>`;
+
+        const invoice = booking.invoiceUrl
+          ? btn(`data-doc-url="${escapeHtml(booking.invoiceUrl)}" data-doc-title="Invoice" data-doc-pdf="${String(booking.invoiceUrl).startsWith("/d/") ? "1" : "0"}"`, "🧾 View invoice")
+            + btn(`data-booking-action="send-invoice" data-booking-id="${id}"`, "Resend")
+            + btn(`data-doc-edit="invoice" data-doc-edit-id="${id}"`, "✏️ Edit")
+          : btn(`data-booking-action="send-invoice" data-booking-id="${id}"`, "📤 Send invoice", "button small")
+            + btn(`data-doc-url="/api/bookings/${id}/invoice/preview" data-doc-title="Invoice preview" data-doc-pdf="1"`, "👁 Preview")
+            + btn(`data-doc-edit="invoice" data-doc-edit-id="${id}"`, "✏️ Edit");
+
+        const contract = booking.contractUrl
+          ? btn(`data-doc-url="${escapeHtml(booking.contractUrl)}" data-doc-title="Contract" data-doc-pdf="1"`, "📜 View contract")
+            + btn(`data-booking-action="send-contract" data-booking-id="${id}"`, "Resend")
+          : btn(`data-booking-action="send-contract" data-booking-id="${id}"`, "✍️ Send contract")
+            + btn(`data-doc-url="/api/bookings/${id}/contract/preview" data-doc-title="Contract preview" data-doc-pdf="1"`, "👁 Preview")
+            + btn(`data-doc-edit="contract" data-doc-edit-id="${id}"`, "✏️ Edit");
+
+        return `
+          <div class="drawer-section">
+            <div class="drawer-section-title">Invoice &amp; contract</div>
+            <div class="action-row" style="flex-wrap:wrap;gap:6px;">${invoice}</div>
+            <div class="action-row" style="flex-wrap:wrap;gap:6px;margin-top:6px;">${contract}</div>
+            <div class="action-row" style="margin-top:10px;">
+              ${btn(`data-lead-open-booking="${id}"`, "Reschedule, expenses, cancel →")}
+            </div>
+          </div>`;
       }
 
       function renderLeadDrawer(lead) {
@@ -9169,6 +9231,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             ${lead.lostReason ? `<div class="drawer-row"><span class="drawer-row-label">Lost reason</span><span class="drawer-row-value" style="color:var(--danger);">${escapeHtml(lead.lostReason)}</span></div>` : ""}
             ${lead.status === "Lost" ? `<button class="button small secondary" style="margin-top:10px;" data-lead-reopen="${lead.leadId}">↩ Reopen request</button>` : ""}
           </div>
+          ${leadDocumentRows(lead)}
           ${lead.clientNote ? `<div class="drawer-section"><div class="drawer-section-title">Client note</div><div style="font-size:14px;line-height:1.55;color:var(--text);">${escapeHtml(lead.clientNote)}</div></div>` : ""}
           ${lead.aiInsight ? `<div class="drawer-section"><div class="drawer-section-title">AI insight</div><div class="drawer-insight">${escapeHtml(lead.aiInsight)}</div></div>` : ""}
           ${orderEditorHtml(lead)}
@@ -9582,6 +9645,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             toast("Marked completed — lovely work! 🎉", "success");
           }
           await refreshSession();
+          refreshOpenLeadDrawer();
           // The table/drawer re-render replaces their buttons, but a button that
           // SURVIVES the refresh (the assistant's suggested actions) would stay
           // stuck on "…" — clear it. And a successful action makes the rest of
@@ -10839,6 +10903,20 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
       bookingDrawer.addEventListener("click", handleBookingActionButtons);
       bookingDrawer.addEventListener("click", handleBookingUtilityButtons);
 
+      // A confirmed request IS a booking, so the lead drawer carries the same
+      // invoice / contract / payment buttons — and therefore the same handlers.
+      leadDrawer.addEventListener("click", handleBookingActionButtons);
+      leadDrawer.addEventListener("click", handleBookingUtilityButtons);
+      leadDrawer.addEventListener("click", (e) => {
+        const jump = e.target.closest("[data-lead-open-booking]");
+        if (!jump) return;
+        // The rarer booking-only tools (reschedule, expenses, cancel) still live
+        // in the booking drawer; hand off rather than duplicate them here.
+        closeLeadDrawer();
+        activateTab("bookings");
+        setTimeout(() => openBookingDrawer(jump.getAttribute("data-lead-open-booking")), 100);
+      });
+
       function openBookingDrawer(bookingId) {
         const booking = (sessionState?.dashboard?.bookings || []).find((x) => x.bookingId === bookingId);
         if (!booking) return;
@@ -11743,6 +11821,7 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
           const nowPaid = res?.booking?.paymentStatus === "Paid in Full";
           toast(type === "refund" ? `Refund of ${formatMoney(amount)} recorded.` : nowPaid ? `🎉 ${res.booking.clientName} is fully paid — lovely!` : `Payment of ${formatMoney(amount)} recorded.`, "success");
           await refreshSession();
+          refreshOpenLeadDrawer();
         } catch (error) {
           // Surface in BOTH the modal and a toast: recording money is the one
           // place a silently-swallowed failure means the artist thinks a client
