@@ -994,7 +994,15 @@ app.get("/auth/google/callback", async (req, res, next) => {
   try {
     const code = req.query.code;
     if (typeof code !== "string") {
-      return res.status(400).send("Missing OAuth code.");
+      // Google returns here WITHOUT a code whenever consent doesn't complete:
+      // declined at the "unverified app" screen, an account that isn't on the
+      // test-user list while the consent screen is still in Testing, or simply
+      // a stale bookmark. A bare 400 made all of those look like the app was
+      // broken — send them home with something they can act on, and log the
+      // reason so it's diagnosable.
+      const oauthError = typeof req.query.error === "string" ? req.query.error : "";
+      logger.info("google_oauth_no_code", { reason: oauthError || "no_error_param" });
+      return res.redirect(`/?authError=${encodeURIComponent(oauthError || "no_code")}`);
     }
 
     const tokens = await exchangeCodeForTokens(code);

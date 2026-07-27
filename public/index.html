@@ -1374,6 +1374,15 @@
           <div style="font-weight:700;font-size:16px;margin-bottom:6px;">💚 You're on the list!</div>
           <p style="margin:0;font-size:13.5px;line-height:1.6;">We're welcoming our first artists in small batches to give everyone a smooth start. Your spot is saved with this Google account — we'll email you the moment it's your turn, usually within a day or two. Thank you for your patience! ✨</p>
         </div>
+        <!-- Consent didn't complete: Google sends the browser back to our callback
+             with ?error= and no code (declined at the unverified-app screen, or an
+             account that isn't a listed test user while the consent screen is in
+             Testing). That used to render a bare "Missing OAuth code." page, which
+             reads as a broken product. Explain the way past it instead. -->
+        <div id="auth-error-banner" style="display:none;max-width:560px;margin:0 auto 18px;background:#FEF3C7;border:1px solid #F0C674;border-radius:14px;padding:16px 18px;text-align:left;color:#7a5b12;">
+          <div style="font-weight:700;font-size:15px;margin-bottom:6px;">Sign-in didn't finish</div>
+          <p id="auth-error-text" style="margin:0;font-size:13.5px;line-height:1.6;"></p>
+        </div>
         <!-- In-app browser warning: Google blocks OAuth inside Instagram/WhatsApp/
              Facebook webviews ("disallowed_useragent"), which is the #1 reason
              sign-in "doesn't work on my phone". Shown only inside those webviews. -->
@@ -12423,6 +12432,24 @@ Anita Desai, 9812345678" style="width:100%;box-sizing:border-box;font-family:ui-
             catch { copyBtn.textContent = link; }
           });
         }
+      })();
+
+      // Google bounced the browser back without completing consent. Say what
+      // almost certainly happened and how to get past it — an abandoned consent
+      // screen is not a reason to show someone an error page they can't act on.
+      (function () {
+        const err = new URLSearchParams(location.search).get("authError");
+        if (!err) return;
+        const banner = document.getElementById("auth-error-banner");
+        const text = document.getElementById("auth-error-text");
+        if (!banner || !text) return;
+        text.innerHTML = err === "access_denied"
+          ? `Sign-in was cancelled before it finished. If you saw <strong>“Google hasn’t verified this app”</strong>, that’s expected while our review is in progress — tap <strong>Advanced</strong>, then <strong>Go to BusyDays</strong>, and you’ll be straight in. Nothing was saved, so just tap Get started again.`
+          : `Something interrupted the Google sign-in — nothing was saved. Tap <strong>Get started with Google</strong> to try again.`;
+        banner.style.display = "block";
+        banner.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Drop the parameter so a refresh doesn't replay the message.
+        history.replaceState(null, "", location.pathname);
       })();
 
       // Capped signup → warm "you're on the list" message instead of a dead end.
