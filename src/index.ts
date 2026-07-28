@@ -110,7 +110,7 @@ import {
   verifyMetaWebhookSignature,
 } from "./services/meta.js";
 import { generateConversationReply, deriveToneProfile, draftCampaignMessage, extractOwnMessagesFromScreenshots } from "./services/grok.js";
-import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate, parseGupshupInbound, sendPlatformTestWhatsApp } from "./services/messaging.js";
+import { sendChannelMessage, sendBusinessMessage, sendWhatsAppTemplate, parseGupshupInbound, sendPlatformTestWhatsApp, resolveWaTransport } from "./services/messaging.js";
 import { findLeadRouteByClientPhone, storeMode } from "./services/operational-store.js";
 import { startReminderScheduler } from "./services/reminders.js";
 import { logger, captureException } from "./services/logger.js";
@@ -2317,11 +2317,33 @@ app.get("/api/admin/config-health", async (req, res, next) => {
     let dbOk = false;
     try { dbOk = await pingDatabase(2000); } catch { dbOk = false; }
     const gupshupSend = Boolean(appConfig.gupshupApiKey && appConfig.gupshupAppName && appConfig.gupshupSourceNumber);
+    // Which WhatsApp pipe actually wins at send time. Leftover Meta credentials
+    // outrank Gupshup in resolveWaTransport, so a stale WA_ACCESS_TOKEN silently
+    // sends down a dead pipe — worth showing rather than having to reason about.
+    const waTransport = resolveWaTransport({
+      envToken: appConfig.waAccessToken,
+      envPhoneId: appConfig.waPhoneNumberId,
+      gupshupKey: appConfig.gupshupApiKey,
+      gupshupApp: appConfig.gupshupAppName,
+      gupshupSource: appConfig.gupshupSourceNumber,
+    });
+    // Google verification is granted per scope: requesting one that isn't in the
+    // approved set is refused even for a verified app, which surfaces as consent
+    // bouncing back with access_denied. GOOGLE_OAUTH_SCOPES is an env override,
+    // so dropping auth/spreadsheets in code doesn't drop it in production.
+    const asksForSheetsScope = appConfig.googleScopes.some((s) => s.endsWith("/auth/spreadsheets"));
     const checks = [
       { key: "APP_BASE_URL", ok: appConfig.baseUrl === "https://www.busydays.co", value: appConfig.baseUrl, hint: "Should be https://www.busydays.co" },
       { key: "DATABASE_URL + connection", ok: dbOk, hint: "Railway Postgres reachable" },
       { key: "OPERATIONAL_STORE", ok: storeMode() !== "sheets", value: storeMode(), hint: "Set OPERATIONAL_STORE=dual — payments/leads on Postgres" },
       { key: "GOOGLE_CLIENT_ID/SECRET", ok: Boolean(appConfig.googleClientId && appConfig.googleClientSecret), hint: "Google sign-in" },
+      {
+        key: "GOOGLE_OAUTH_SCOPES",
+        ok: !asksForSheetsScope,
+        value: appConfig.googleScopes.map((s) => s.replace("https://www.googleapis.com/auth/", "")).join(", "),
+        hint: "Must NOT include spreadsheets — Google approved the narrower set, and asking for more is refused with access_denied",
+      },
+      { key: "WhatsApp pipe in use", ok: waTransport === "gupshup", value: waTransport ?? "none", hint: "Should be gupshup — 'meta' means stale WA_ACCESS_TOKEN/WA_PHONE_NUMBER_ID are winning" },
       { key: "XAI_API_KEY", ok: Boolean(appConfig.xaiApiKey), hint: "All AI features (console.x.ai)" },
       { key: "GUPSHUP send (key+app+number)", ok: gupshupSend, hint: "Automated WhatsApp sends" },
       { key: "GUPSHUP_WEBHOOK_SECRET", ok: Boolean(appConfig.gupshupWebhookSecret), hint: "Inbound client replies" },
